@@ -56,7 +56,10 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-button { color: inherit; font-family: inherit; }
+/* Reset the native button chrome globally — otherwise buttons styled with
+   helper classes that don't set `border:0` (e.g. .btn-ghost, .btn-sm, a
+   .pill used as a button) leak the UA's default beveled border. */
+button { color: inherit; font-family: inherit; appearance: none; -webkit-appearance: none; border: 0; background: none; }
 
 html, body {
   margin: 0;

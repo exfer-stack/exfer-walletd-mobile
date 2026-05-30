@@ -461,15 +461,21 @@ export function SendSheet({
           <div className="h-row" style={{ marginBottom: 9 }}>
             <div className="eyebrow">Recipients ({outputs.length}/16)</div>
             <button
-              className="btn-ghost btn-sm"
+              className="tap"
               onClick={addRow}
               disabled={outputs.length >= 16}
               style={{
-                color: "var(--accent)",
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                padding: "5px 8px",
+                gap: 5,
+                padding: "7px 13px",
+                borderRadius: 999,
+                cursor: "pointer",
+                background: "var(--surface-2)",
+                color: "var(--accent)",
+                fontSize: 13.5,
+                fontWeight: 600,
+                opacity: outputs.length >= 16 ? 0.4 : 1,
               }}
             >
               <Icon name="plus" size={15} /> Add
