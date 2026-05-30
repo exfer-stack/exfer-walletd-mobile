@@ -353,8 +353,7 @@ export function SendSheet({
   /* step 1 — recipients */
   return (
     <Sheet
-      title="Send EXFER"
-      subtitle="Up to 16 recipients · fee is automatic"
+      title="Send"
       onClose={onClose}
       height="92%"
       footer={

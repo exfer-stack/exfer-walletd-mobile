@@ -228,7 +228,8 @@ body {
   transition: background .14s var(--ease);
 }
 .list-row:last-child { border-bottom: 0; }
-.list-row:active { background: var(--surface-2); }
+.list-row { transition: background .14s var(--ease), transform .12s var(--ease); }
+.list-row:active { background: var(--surface-2); transform: scale(.985); }
 
 /* ── type helpers ───────────────────────────────────────────────── */
 .mono { font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-feature-settings: "tnum" 1; }
@@ -350,18 +351,38 @@ body {
 /* ── animations ─────────────────────────────────────────────────── */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheetDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes scrimIn { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(8px); } }
+@keyframes scrimOut { from { opacity: 1; backdrop-filter: blur(8px); } to { opacity: 0; backdrop-filter: blur(0); } }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulseDot { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes qrIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
 .fade-up { animation: fadeUp .26s var(--ease) both; }
-.sheet { animation: sheetUp .34s var(--ease); }
-.scrim { animation: scrimIn .2s ease both; }
+.sheet { animation: sheetUp .3s var(--ease); }
+.scrim { animation: scrimIn .26s ease both; }
+.sheet.closing { animation: sheetDown .22s cubic-bezier(.4,0,1,1) both; }
+.scrim.closing { animation: scrimOut .22s ease both; }
 .toast { animation: toastIn .28s var(--ease) both; }
 .pop { animation: pop .4s var(--ease) both; }
 .spin { animation: spin .8s linear infinite; }
+.pending-dot { animation: pulseDot 1.6s ease-in-out infinite; }
+.qr-img { animation: qrIn .3s var(--ease) both; }
 
-.tap { transition: transform .12s var(--ease); }
+.tap { transition: transform .18s var(--ease); }
 .tap:active { transform: scale(.96); }
 
 .divider { height: 1px; background: var(--border-soft); border: 0; margin: 0; }
+
+/* Respect reduced-motion: keep a faint opacity fade, drop transforms,
+   loops, and the slide/blur choreography. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .fade-up, .toast { animation: fadeUp .12s ease both; }
+}

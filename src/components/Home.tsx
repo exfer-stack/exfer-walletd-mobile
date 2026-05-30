@@ -23,11 +23,14 @@ function PrimaryAction({
   icon,
   label,
   onClick,
+  variant,
 }: {
   icon: string;
   label: string;
   onClick: () => void;
+  variant: "primary" | "secondary";
 }) {
+  const primary = variant === "primary";
   return (
     <button
       onClick={onClick}
@@ -37,34 +40,20 @@ function PrimaryAction({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: 11,
-        padding: "16px 14px",
-        borderRadius: 18,
-        border: 0,
+        gap: 8,
+        padding: "14px 16px",
+        borderRadius: 16,
         cursor: "pointer",
         font: "inherit",
         fontWeight: 600,
-        fontSize: 16,
+        fontSize: 15,
         letterSpacing: "-.01em",
-        color: "var(--accent-ink)",
-        background:
-          "linear-gradient(165deg, color-mix(in srgb, var(--accent) 92%, #fff 8%), var(--accent-strong))",
-        boxShadow:
-          "0 10px 26px -12px color-mix(in srgb, var(--accent) 75%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent)",
+        color: primary ? "var(--accent-ink)" : "var(--text)",
+        background: primary ? "var(--accent)" : "var(--surface-2)",
+        border: primary ? 0 : "1px solid var(--border)",
       }}
     >
-      <span
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 9,
-          display: "grid",
-          placeItems: "center",
-          background: "color-mix(in srgb, var(--accent-ink) 14%, transparent)",
-        }}
-      >
-        <Icon name={icon} size={19} stroke={2.3} />
-      </span>
+      <Icon name={icon} size={18} stroke={2} />
       {label}
     </button>
   );
@@ -137,20 +126,13 @@ export function Home({
   return (
     <div className="screen">
       <div className="screen-pad">
-        <div className="h-row" style={{ padding: "10px 0 12px" }}>
+        <div className="h-row" style={{ padding: "10px 0 14px" }}>
           <img
             src={wordmark}
             alt="EXFER"
-            style={{ height: 56, width: "auto", filter: "var(--wordmark-filter, none)" }}
+            style={{ height: 42, width: "auto", filter: "var(--wordmark-filter, none)" }}
             draggable={false}
           />
-          <button
-            className="icon-btn"
-            onClick={toggle}
-            aria-label="Toggle balance visibility"
-          >
-            <Icon name={hidden ? "eye-off" : "eye"} size={19} />
-          </button>
         </div>
 
         <button
@@ -165,10 +147,10 @@ export function Home({
             padding: "14px 0 20px",
           }}
         >
-          <div className="eyebrow" style={{ marginBottom: 14, letterSpacing: ".16em" }}>
+          <div className="eyebrow" style={{ marginBottom: 10, letterSpacing: ".12em" }}>
             Total balance
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
             <span
               style={{
                 fontFamily: '"Geist Variable","Geist", sans-serif',
@@ -193,7 +175,7 @@ export function Home({
             <span
               style={{
                 fontSize: 15,
-                fontWeight: 600,
+                fontWeight: 500,
                 color: "var(--text-faint)",
                 letterSpacing: ".06em",
               }}
@@ -201,34 +183,22 @@ export function Home({
               EXFER
             </span>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              marginTop: 18,
-              flexWrap: "wrap",
-            }}
-          >
-            <span className="dim" style={{ fontSize: 14 }}>
-              across{" "}
-              <b style={{ color: "var(--text)", fontWeight: 600 }}>{vis.length}</b>{" "}
-              {vis.length === 1 ? "address" : "addresses"}
-            </span>
-            {pendingIn > 0 && !hidden && (
+          {pendingIn > 0 && !hidden && (
+            <div style={{ marginTop: 12 }}>
               <span
-                className="pill pill-success"
+                className="pill pill-accent fade-up"
                 style={{ padding: "3px 10px", fontSize: 12 }}
               >
-                +{formatBalanceCompact(pendingIn).replace(" EXFER", "")} confirming
+                <PendingDot />+
+                {formatBalanceCompact(pendingIn).replace(" EXFER", "")} confirming
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </button>
 
-        <div style={{ display: "flex", gap: 12, padding: "8px 0 26px" }}>
-          <PrimaryAction icon="receive" label="Receive" onClick={onReceive} />
-          <PrimaryAction icon="send" label="Send" onClick={onSend} />
+        <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
+          <PrimaryAction icon="receive" label="Receive" onClick={onReceive} variant="secondary" />
+          <PrimaryAction icon="send" label="Send" onClick={onSend} variant="primary" />
         </div>
 
         <div className="h-row" style={{ marginBottom: 11 }}>

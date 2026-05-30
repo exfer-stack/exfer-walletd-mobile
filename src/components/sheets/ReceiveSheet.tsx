@@ -42,7 +42,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet title="Receive" subtitle="Share your address or QR" onClose={onClose} height="92%">
+    <Sheet title="Receive" onClose={onClose} height="92%">
       <div
         style={{
           display: "flex",
@@ -59,7 +59,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
             className="tap"
             style={{
               flex: "0 0 auto",
-              padding: "8px 13px",
+              padding: "10px 15px",
               borderRadius: 999,
               cursor: "pointer",
               fontSize: 13.5,
@@ -140,11 +140,6 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               {sel}
             </code>
             <CopyButton text={sel} label="Address copied" />
-          </div>
-
-          <div className="banner banner-info" style={{ marginBottom: 16 }}>
-            Anyone can send EXFER to this address — no permission needed. Reuse it
-            freely, or mint a fresh one per payer for privacy.
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>

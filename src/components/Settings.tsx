@@ -177,11 +177,6 @@ export function Settings({
 
         {/* Back up & restore */}
         <Section label="Back up & restore" />
-        <div className="banner banner-info" style={{ marginBottom: 12 }}>
-          Every address is its own key. One encrypted <b>.vault</b> file backs them
-          all up at once — no seed phrase to copy. It's encrypted with your wallet
-          password; keep both safe.
-        </div>
         <div className="list" style={{ marginBottom: 22 }}>
           <SettingRow
             icon="shield"

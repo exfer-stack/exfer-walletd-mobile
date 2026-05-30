@@ -22,9 +22,10 @@ export function Qr({ value, size = 222 }: { value: string; size?: number }) {
     };
   }, [value, size]);
   if (!url) {
+    // Placeholder sits inside a white QR card, so keep it a light neutral.
     return (
       <div
-        style={{ width: size, height: size, background: "#eee", borderRadius: 8 }}
+        style={{ width: size, height: size, background: "#f1f1f4", borderRadius: 8 }}
       />
     );
   }
@@ -34,6 +35,7 @@ export function Qr({ value, size = 222 }: { value: string; size?: number }) {
       width={size}
       height={size}
       alt="QR code"
+      className="qr-img"
       style={{ width: size, height: size, display: "block" }}
       draggable={false}
     />

@@ -140,15 +140,6 @@ export function AddressSheet({
         </button>
       </div>
 
-      <p
-        className="faint"
-        style={{ fontSize: 12, textAlign: "center", marginTop: 14, lineHeight: 1.5, padding: "0 6px" }}
-      >
-        Each address is its own key. Back it up with its 24-word recovery phrase or
-        an encrypted wallet.key — or back up every address at once from Settings →
-        Back up wallet.
-      </p>
-
       {menu && (
         <ActionMenu
           title={addrName(entry)}

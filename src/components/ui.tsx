@@ -1,6 +1,7 @@
 // Shared mobile UI primitives, ported from the prototype's components.jsx.
 
 import {
+  useCallback,
   useEffect,
   useState,
   type CSSProperties,
@@ -179,17 +180,32 @@ export function Sheet({
   children: ReactNode;
   height?: string;
 }) {
+  // Play an exit animation before the parent unmounts us: flip `closing`,
+  // then fire the real onClose once the ~230ms slide-down has run.
+  const [closing, setClosing] = useState(false);
+  const requestClose = useCallback(() => {
+    if (!onClose) return;
+    setClosing(true);
+    window.setTimeout(onClose, 230);
+  }, [onClose]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose?.();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [requestClose]);
   return (
     <>
-      <div className="scrim" onClick={onClose} />
-      <div className="sheet" style={{ height }} role="dialog">
+      <div
+        className={"scrim" + (closing ? " closing" : "")}
+        onClick={requestClose}
+      />
+      <div
+        className={"sheet" + (closing ? " closing" : "")}
+        style={{ height }}
+        role="dialog"
+      >
         <div className="sheet-grip" />
         <div className="sheet-head">
           <div
@@ -221,7 +237,7 @@ export function Sheet({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {right}
             {onClose && (
-              <button className="icon-btn" onClick={onClose} aria-label="Close">
+              <button className="icon-btn" onClick={requestClose} aria-label="Close">
                 <Icon name="close" size={19} />
               </button>
             )}
@@ -362,15 +378,18 @@ export function ActionMenu({
 
 /* ── small bits ─────────────────────────────────────────────────── */
 export function PendingDot({ title }: { title?: string }) {
+  // Cyan + breathing: "money arriving" is the one place a quiet screen
+  // should light up with the brand accent, no words needed.
   return (
     <span
       title={title}
+      className="pending-dot"
       style={{
         display: "inline-block",
         width: 6,
         height: 6,
         borderRadius: 999,
-        background: "var(--text-faint)",
+        background: "var(--accent)",
       }}
     />
   );
