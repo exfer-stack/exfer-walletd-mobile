@@ -13,7 +13,7 @@ import {
 } from "../../lib/rpc";
 import type { TransferReceipt } from "../../lib/types";
 import { isHidden } from "../../lib/hidden";
-import { addrName, EXFER_UNIT } from "../../lib/format";
+import { addrName } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
 import { appendHistory, listRecentRecipients, rememberRecipient } from "../../lib/history";
 import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
@@ -125,7 +125,7 @@ export function SendSheet({
     for (let i = 0; i < outputs.length; i++) {
       const o = outputs[i];
       if (!HEX64.test(o.to.trim()))
-        return `Recipient ${i + 1}: address must be 64 hex characters.`;
+        return `Recipient ${i + 1}: that doesn't look like a valid address.`;
       try {
         if (parseExferAmount(o.amount) <= 0) return `Recipient ${i + 1}: enter an amount.`;
       } catch (e) {
@@ -500,13 +500,28 @@ export function SendSheet({
                     </button>
                   )}
                 </div>
-                <input
-                  className="field mono"
-                  style={{ marginBottom: 9 }}
-                  placeholder="Recipient address (64 hex)"
-                  value={o.to}
-                  onChange={(e) => setOut(i, { to: e.target.value })}
-                />
+                <div style={{ display: "flex", gap: 9, alignItems: "center", marginBottom: 9 }}>
+                  <input
+                    className="field mono"
+                    style={{ flex: 1 }}
+                    placeholder="Paste address"
+                    value={o.to}
+                    onChange={(e) => setOut(i, { to: e.target.value })}
+                  />
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      try {
+                        const t = await navigator.clipboard.readText();
+                        if (t) setOut(i, { to: t.trim() });
+                      } catch {
+                        /* clipboard blocked — user can still type/scan */
+                      }
+                    }}
+                  >
+                    <Icon name="copy" size={15} /> Paste
+                  </button>
+                </div>
                 <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
                   <input
                     className="field mono"
@@ -521,7 +536,7 @@ export function SendSheet({
                     onClick={() => {
                       if (!fromEntry) return;
                       const max = Math.max(0, fromEntry.balance - fee);
-                      setOut(i, { amount: (max / EXFER_UNIT).toString() });
+                      setOut(i, { amount: formatExfer(max).replace(" EXFER", "") });
                     }}
                   >
                     Max

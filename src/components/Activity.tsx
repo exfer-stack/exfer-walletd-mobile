@@ -98,7 +98,7 @@ export function Activity() {
           title="Activity"
           subtitle={`${history.length} ${
             history.length === 1 ? "transfer" : "transfers"
-          } · local to this device`}
+          }`}
           right={
             <button className="icon-btn" onClick={refresh} aria-label="Refresh">
               {polling ? <Spinner /> : <Icon name="refresh" size={19} />}
@@ -188,7 +188,7 @@ export function Activity() {
                       </div>
                       <span
                         className={"pill " + st.cls}
-                        style={{ marginTop: 4, padding: "2px 8px", fontSize: 10.5 }}
+                        style={{ marginTop: 6, padding: "3px 9px", fontSize: 11 }}
                       >
                         {st.text}
                         {st.height ? ` @ ${st.height.toLocaleString()}` : ""}
@@ -200,8 +200,7 @@ export function Activity() {
                     style={{ fontSize: 12, display: "flex", justifyContent: "space-between" }}
                   >
                     <span>
-                      {recips.length} recipient{recips.length > 1 ? "s" : ""} · fee{" "}
-                      {formatExfer(t.fee).replace(" EXFER", "")}
+                      {recips.length} recipient{recips.length > 1 ? "s" : ""}
                     </span>
                     <span className="mono">{shortAddress(t.tx_id, 6, 5)}</span>
                   </div>

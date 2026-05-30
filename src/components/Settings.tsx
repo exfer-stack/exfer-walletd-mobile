@@ -100,7 +100,7 @@ export function Settings({
 
         {/* Appearance */}
         <Section label="Appearance" />
-        <div className="list" style={{ marginBottom: 22 }}>
+        <div className="list" style={{ marginBottom: 10 }}>
           <div className="list-row" style={{ cursor: "default" }}>
             <span style={iconBox}>
               <Icon name="spark" size={20} />
@@ -160,24 +160,18 @@ export function Settings({
 
         {/* Network */}
         <Section label="Network" />
-        <div className="list" style={{ marginBottom: 22 }}>
+        <div className="list" style={{ marginBottom: 10 }}>
           <SettingRow
             icon="node"
             label="Upstream node"
             sub={nodeUrl}
             onClick={() => setNodeOpen(true)}
           />
-          <SettingRow
-            icon="refresh"
-            label="App updates"
-            sub="Delivered through the App Store / Google Play"
-            right={<></>}
-          />
         </div>
 
         {/* Back up & restore */}
         <Section label="Back up & restore" />
-        <div className="list" style={{ marginBottom: 22 }}>
+        <div className="list" style={{ marginBottom: 10 }}>
           <SettingRow
             icon="shield"
             label="Back up wallet"
@@ -194,7 +188,7 @@ export function Settings({
 
         {/* Export & import data */}
         <Section label="Export & import data" />
-        <div className="list" style={{ marginBottom: 22 }}>
+        <div className="list" style={{ marginBottom: 10 }}>
           <SettingRow icon="download" label="Export addresses (CSV)" onClick={exportCsv} />
           <SettingRow icon="download" label="Export labels (JSON)" onClick={exportLabels} />
           <SettingRow
@@ -207,7 +201,7 @@ export function Settings({
 
         {/* Daemon */}
         <Section label="Daemon status" />
-        <div className="card" style={{ overflow: "hidden", marginBottom: 22 }}>
+        <div className="card" style={{ overflow: "hidden", marginBottom: 10 }}>
           <DRow label="Version" value={status?.version ?? "—"} />
           <DRow label="Upstream" value={status?.upstream?.url ?? nodeUrl} copy />
           <DRow label="Wallets" value={String(status?.wallet_count ?? entries.length)} />
@@ -233,10 +227,8 @@ export function Settings({
             Reset wallet
           </div>
           <div className="dim" style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 13 }}>
-            Erases the encrypted keys, tokens & cert from this device and clears the
-            saved password. On-chain coins are untouched, but without a backup (vault
-            file, or each address's recovery phrase / private key) you can't get back
-            in.
+            Erases this wallet from this device. Coins stay on-chain, but without a
+            backup you can't get back in.
           </div>
           <button className="btn btn-danger btn-block" onClick={() => setResetOpen(true)}>
             Reset wallet…
@@ -292,7 +284,7 @@ function download(text: string, name: string, type: string) {
 
 function Section({ label }: { label: string }) {
   return (
-    <div className="eyebrow" style={{ margin: "4px 4px 11px" }}>
+    <div className="eyebrow" style={{ margin: "22px 4px 9px" }}>
       {label}
     </div>
   );

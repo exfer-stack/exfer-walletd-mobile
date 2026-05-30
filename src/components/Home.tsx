@@ -42,7 +42,7 @@ function PrimaryAction({
         justifyContent: "center",
         gap: 8,
         padding: "14px 16px",
-        borderRadius: 16,
+        borderRadius: 14,
         cursor: "pointer",
         font: "inherit",
         fontWeight: 600,
@@ -50,7 +50,9 @@ function PrimaryAction({
         letterSpacing: "-.01em",
         color: primary ? "var(--accent-ink)" : "var(--text)",
         background: primary ? "var(--accent)" : "var(--surface-2)",
-        border: primary ? 0 : "1px solid var(--border)",
+        // Both keep a 1px border so the box models (and label baselines)
+        // match exactly — the accent one is just transparent.
+        border: primary ? "1px solid transparent" : "1px solid var(--border)",
       }}
     >
       <Icon name={icon} size={18} stroke={2} />

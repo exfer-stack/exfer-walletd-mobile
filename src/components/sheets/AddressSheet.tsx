@@ -14,7 +14,6 @@ import {
   Modal,
   Field,
   CopyButton,
-  AddrAvatar,
   ActionMenu,
   Spinner,
 } from "../ui";
@@ -74,33 +73,33 @@ export function AddressSheet({
           <Icon name="more" size={20} />
         </button>
       }
-      height="90%"
+      height="auto"
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <AddrAvatar address={address} size={48} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            className="mono"
-            style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}
-          >
-            {formatBalanceCompact(bal).replace(" EXFER", "")}
-            <span className="dim" style={{ fontSize: 14, fontWeight: 600 }}>
-              {" "}
-              EXFER
-            </span>
-          </div>
-          <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
-            {utxoCount} {utxoCount === 1 ? "UTXO" : "UTXOs"}
-            {(entry.pending_received ?? 0) > 0 &&
-              ` · ${formatBalanceCompact(entry.pending_received ?? 0).replace(
-                " EXFER",
-                "",
-              )} confirming`}
-          </div>
+      <div style={{ textAlign: "center", marginBottom: 14 }}>
+        <div
+          className="mono"
+          style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-.02em" }}
+        >
+          {formatBalanceCompact(bal).replace(" EXFER", "")}
+          <span className="dim" style={{ fontSize: 15, fontWeight: 600 }}>
+            {" "}
+            EXFER
+          </span>
+        </div>
+        <div
+          className="eyebrow"
+          style={{ marginTop: 5, letterSpacing: ".12em" }}
+        >
+          {utxoCount} {utxoCount === 1 ? "UTXO" : "UTXOs"}
+          {(entry.pending_received ?? 0) > 0 &&
+            ` · ${formatBalanceCompact(entry.pending_received ?? 0).replace(
+              " EXFER",
+              "",
+            )} confirming`}
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", margin: "8px 0 18px" }}>
+      <div style={{ display: "flex", justifyContent: "center", margin: "0 0 18px" }}>
         <div style={{ background: "#fff", padding: 16, borderRadius: 20 }}>
           <Qr value={address} size={190} />
         </div>
