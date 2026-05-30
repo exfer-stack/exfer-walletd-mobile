@@ -359,6 +359,13 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulseDot { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
 @keyframes qrIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+/* transfer-success choreography */
+@keyframes discIn { 0% { transform: scale(.4); opacity: 0; } 55% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes checkDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ringPulse { 0% { transform: scale(.7); opacity: .5; } 100% { transform: scale(2.2); opacity: 0; } }
+.success-disc { animation: discIn .52s var(--ease) both; }
+.success-check { stroke-dasharray: 1; stroke-dashoffset: 1; animation: checkDraw .34s cubic-bezier(.65,0,.35,1) .16s forwards; }
+.success-ring { position: absolute; inset: 0; border-radius: 999px; border: 2px solid #34d399; animation: ringPulse .64s ease-out .26s both; pointer-events: none; }
 .fade-up { animation: fadeUp .26s var(--ease) both; }
 .sheet { animation: sheetUp .3s var(--ease); }
 .scrim { animation: scrimIn .26s ease both; }

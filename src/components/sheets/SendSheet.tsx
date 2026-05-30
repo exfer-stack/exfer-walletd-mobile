@@ -17,6 +17,7 @@ import { addrName, EXFER_UNIT } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
 import { appendHistory, listRecentRecipients, rememberRecipient } from "../../lib/history";
 import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
+import { useCountUp } from "../../lib/anim";
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 const FEE_RATE = 1;
@@ -59,6 +60,8 @@ export function SendSheet({
       }, 0),
     [outputs],
   );
+  // Count the receipt amount up from 0 when the success screen appears.
+  const shownTotal = useCountUp(step === 3 ? total : 0, 650);
   const recents = useMemo(() => listRecentRecipients().slice(0, 4), []);
   // Fall back to a rough local estimate before the sim returns.
   const fee = simFee ?? FEE_RATE * (70 + 45 * outputs.length);
@@ -178,23 +181,36 @@ export function SendSheet({
     return (
       <Sheet title="Sent" onClose={onClose} height="86%">
         <div style={{ textAlign: "center", padding: "10px 0 22px" }}>
-          <div
-            className="pop"
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 999,
-              margin: "0 auto 16px",
-              display: "grid",
-              placeItems: "center",
-              background: "color-mix(in srgb,#34d399 18%,transparent)",
-              color: "#34d399",
-            }}
-          >
-            <Icon name="check" size={38} stroke={2.4} />
+          <div style={{ position: "relative", width: 72, height: 72, margin: "0 auto 16px" }}>
+            <span className="success-ring" />
+            <div
+              className="success-disc"
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 999,
+                display: "grid",
+                placeItems: "center",
+                background: "color-mix(in srgb,#34d399 18%,transparent)",
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width={34}
+                height={34}
+                fill="none"
+                stroke="#34d399"
+                strokeWidth={2.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path className="success-check" pathLength={1} d="M5 12.5l4.2 4.2L19 6.5" />
+              </svg>
+            </div>
           </div>
           <div className="mono" style={{ fontSize: 30, fontWeight: 600 }}>
-            {formatExfer(total).replace(" EXFER", "")}
+            {formatExfer(shownTotal).replace(" EXFER", "")}
             <span className="dim" style={{ fontSize: 16 }}>
               {" "}
               EXFER
@@ -372,45 +388,75 @@ export function SendSheet({
         </div>
       ) : (
         <>
-          <div className="eyebrow" style={{ margin: "2px 0 9px" }}>
-            From
-          </div>
-          <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
-            {sendable.map((a) => (
-              <button
-                key={a.address}
-                onClick={() => setFrom(a.address)}
-                className="tap"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  padding: "12px 13px",
-                  borderRadius: 14,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  border:
-                    "1px solid " +
-                    (from === a.address ? "var(--accent)" : "var(--border-soft)"),
-                  background:
-                    from === a.address
-                      ? "color-mix(in srgb,var(--accent) 10%,transparent)"
-                      : "var(--surface)",
-                }}
-              >
-                <AddrAvatar address={a.address} size={36} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14.5 }}>{addrName(a)}</div>
-                  <div className="mono faint" style={{ fontSize: 11.5 }}>
-                    {shortAddress(a.address, 6, 6)}
-                  </div>
+          {sendable.length > 1 ? (
+            <>
+              <div className="eyebrow" style={{ margin: "2px 0 9px" }}>
+                From
+              </div>
+              <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
+                {sendable.map((a) => (
+                  <button
+                    key={a.address}
+                    onClick={() => setFrom(a.address)}
+                    className="tap"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 11,
+                      padding: "12px 13px",
+                      borderRadius: 14,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      border:
+                        "1px solid " +
+                        (from === a.address ? "var(--accent)" : "var(--border-soft)"),
+                      background:
+                        from === a.address
+                          ? "color-mix(in srgb,var(--accent) 10%,transparent)"
+                          : "var(--surface)",
+                    }}
+                  >
+                    <AddrAvatar address={a.address} size={36} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14.5 }}>{addrName(a)}</div>
+                      <div className="mono faint" style={{ fontSize: 11.5 }}>
+                        {shortAddress(a.address, 6, 6)}
+                      </div>
+                    </div>
+                    <div className="mono" style={{ fontSize: 13.5, fontWeight: 500 }}>
+                      {formatBalanceCompact(a.balance).replace(" EXFER", "")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            // Single fundable address: no decision to make — show it as a
+            // calm, non-interactive line instead of a picker.
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 11,
+                padding: "12px 13px",
+                borderRadius: 14,
+                border: "1px solid var(--border-soft)",
+                background: "var(--surface)",
+                marginBottom: 20,
+              }}
+            >
+              <AddrAvatar address={sendable[0].address} size={36} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="eyebrow" style={{ marginBottom: 2 }}>From</div>
+                <div style={{ fontWeight: 600, fontSize: 14.5 }}>
+                  {addrName(sendable[0])}
                 </div>
-                <div className="mono" style={{ fontSize: 13.5, fontWeight: 500 }}>
-                  {formatBalanceCompact(a.balance).replace(" EXFER", "")}
-                </div>
-              </button>
-            ))}
-          </div>
+              </div>
+              <div className="mono" style={{ fontSize: 13.5, fontWeight: 500 }}>
+                {formatBalanceCompact(sendable[0].balance).replace(" EXFER", "")}
+              </div>
+            </div>
+          )}
 
           <div className="h-row" style={{ marginBottom: 9 }}>
             <div className="eyebrow">Recipients ({outputs.length}/16)</div>
