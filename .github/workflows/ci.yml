@@ -1,0 +1,88 @@
+name: CI
+
+# Fast feedback on every push/PR. The frontend job is the hard gate (it
+# runs everywhere with no native toolchain). The two native mobile jobs
+# compile the Rust + embedded walletd for iOS/Android; they are marked
+# continue-on-error until the mobile toolchain + signing are provisioned
+# (see docs/RELEASE.md), so a finicky first run never blocks a PR while
+# still surfacing build breakage.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend (tsc + vite build)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  android-build:
+    name: Android build-check (debug APK)
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK + platform
+        run: sdkmanager "ndk;26.1.10909125" "platforms;android-34" "build-tools;34.0.0"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - run: npm ci
+      - name: Generate Android project
+        run: npm run tauri android init -- --skip-targets-install
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+      - name: Build debug APK
+        run: npm run tauri android build -- --apk --debug
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: ignore
+
+  ios-build:
+    name: iOS build-check (compile)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - run: npm ci
+      - name: Generate iOS project
+        run: npm run tauri ios init
+      - name: Build (unsigned, simulator target)
+        # No signing on PRs — just prove it compiles + links for iOS.
+        run: npm run tauri ios build -- --target aarch64-sim --ci

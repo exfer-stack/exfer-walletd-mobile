@@ -1,0 +1,65 @@
+[package]
+name        = "exfer-walletd-mobile"
+version     = "0.1.0"
+description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
+edition     = "2021"
+license     = "MIT"
+
+[lib]
+# The `_lib` suffix avoids a Windows-only conflict between the lib and
+# bin names (see https://github.com/rust-lang/cargo/issues/8519).
+# crate-type covers every target: staticlib (iOS), cdylib (Android +
+# desktop plugin), rlib (the desktop bin in main.rs).
+name        = "exfer_walletd_mobile_lib"
+crate-type  = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri              = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+
+# Produce the official Exfer CLI "wallet.key" (EXFK) format for
+# per-address export: Argon2id KDF + AES-256-GCM, byte-identical to the
+# exfer crate's Wallet::save_encrypted so exfer.dev / the CLI import it.
+argon2             = "0.5"
+aes-gcm            = "0.10"
+rand               = "0.8"
+tokio              = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio-util         = { version = "0.7", features = ["rt"] }
+
+# The embedded walletd. Same pin as the desktop app.
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", tag = "v1.9.6" }
+
+# HTTP client used by the Tauri Rust side to talk to the embedded
+# walletd over loopback HTTPS. `rustls-tls-manual-roots` disables
+# webpki-roots entirely so the fingerprint verifier is the only path
+# the TLS handshake can take. Works unchanged on iOS + Android.
+reqwest            = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }
+rustls             = "0.23"
+sha2               = "0.10"
+hex                = "0.4"
+
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+anyhow             = "1"
+thiserror          = "1"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Persist the keystore passphrase in the platform secure store. The
+# `keyring` crate covers iOS (apple-native → Security.framework Keychain),
+# macOS, Windows, and Linux. Android has no backend in this crate, so the
+# Android target intentionally omits it and `secrets.rs` falls back to
+# app-private storage (the Android per-app sandbox); hardware-backed
+# Android Keystore is a hardening follow-up via tauri-plugin-keystore.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
