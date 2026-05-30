@@ -278,15 +278,18 @@ export function Home({
                 </span>
                 <span
                   style={{
-                    textAlign: "right",
                     display: "flex",
                     alignItems: "center",
                     gap: 7,
                   }}
                 >
-                  {(a.pending_received ?? 0) > 0 && (
-                    <PendingDot title="incoming, confirming" />
-                  )}
+                  {/* fixed-width slot so the amount stays on a hard right rail
+                      whether or not the row is confirming */}
+                  <span style={{ width: 6, display: "inline-flex", justifyContent: "center" }}>
+                    {(a.pending_received ?? 0) > 0 && (
+                      <PendingDot title="incoming, confirming" />
+                    )}
+                  </span>
                   <span
                     className="mono"
                     style={{
@@ -296,7 +299,17 @@ export function Home({
                     }}
                   >
                     <Masked dots="•••">
-                      {formatBalanceCompact(bal).replace(" EXFER", "")}
+                      {(() => {
+                        const s = splitBalanceCompact(bal);
+                        return (
+                          <>
+                            {s.whole}
+                            {s.frac && (
+                              <span style={{ color: "var(--text-faint)" }}>.{s.frac}</span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </Masked>
                   </span>
                 </span>
