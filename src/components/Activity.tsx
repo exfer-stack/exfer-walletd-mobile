@@ -125,14 +125,57 @@ export function Activity() {
             >
               <Icon name="activity" size={26} />
             </div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>No transfers yet</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>No activity yet</div>
             <div className="faint" style={{ fontSize: 13 }}>
-              Every transfer you broadcast lands here.
+              Sends and deposits land here.
             </div>
           </div>
         ) : (
           <div style={{ display: "grid", gap: 11 }}>
             {history.map((t) => {
+              if (t.kind === "received") {
+                return (
+                  <div
+                    key={t.tx_id}
+                    className="card"
+                    style={{
+                      padding: "14px 15px",
+                      border: "1px solid var(--border-soft)",
+                      background: "var(--surface)",
+                    }}
+                  >
+                    <div className="h-row">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 11,
+                            display: "grid",
+                            placeItems: "center",
+                            background: "color-mix(in srgb,#34d399 16%,transparent)",
+                            color: "#34d399",
+                          }}
+                        >
+                          <Icon name="receive" size={18} />
+                        </span>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14.5 }}>Received</div>
+                          <div className="faint" style={{ fontSize: 11.5 }}>
+                            {relTime(t.broadcast_at)}
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className="mono"
+                        style={{ fontWeight: 600, fontSize: 15, color: "#34d399" }}
+                      >
+                        +{formatBalanceCompact(t.amount ?? 0).replace(" EXFER", "")}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               const recips = t.outputs.filter((o) => !o.is_change);
               const sent = recips.reduce((s, o) => s + o.amount, 0);
               const st = statusOf(t, confirmed);

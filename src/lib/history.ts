@@ -7,14 +7,19 @@ const HISTORY_KEY = "exfer-walletd-desktop-history-v1";
 const RECENT_RECIPS_KEY = "exfer-walletd-desktop-recents-v1";
 
 export interface HistoryEntry {
+  // Omitted on older entries → treated as "sent" (back-compat).
+  kind?: "sent" | "received";
   tx_id: string;
   fee: number;
   size: number;
   inputs: TransferReceipt["inputs"];
   outputs: TransferReceipt["outputs"];
   built_at_height: number;
-  // ISO timestamp when we broadcast.
+  // ISO timestamp when we broadcast (sent) or first saw the credit (received).
   broadcast_at: string;
+  // Credited amount, set on "received" entries (walletd gives us no tx id
+  // for inbound funds, so these are derived from the balance increase).
+  amount?: number;
 }
 
 function load(): HistoryEntry[] {
@@ -49,6 +54,25 @@ export function appendHistory(receipt: TransferReceipt) {
     outputs: receipt.outputs,
     built_at_height: receipt.built_at_height,
     broadcast_at: new Date().toISOString(),
+  });
+  save(entries);
+}
+
+/** Log an inbound deposit detected from a balance increase. walletd has no
+ *  tx id for incoming funds (no indexer), so we synthesize one and store the
+ *  credited amount — enough for Activity to show "Received +X". */
+export function recordReceived(amount: number) {
+  const entries = load();
+  entries.push({
+    kind: "received",
+    tx_id: "recv-" + Date.now(),
+    fee: 0,
+    size: 0,
+    inputs: [],
+    outputs: [],
+    built_at_height: 0,
+    broadcast_at: new Date().toISOString(),
+    amount,
   });
   save(entries);
 }
