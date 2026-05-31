@@ -16,11 +16,12 @@ import {
 } from "../lib/rpc";
 import { listLabels } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
+import { biometricStatus } from "../lib/biometric";
+import { biometricLockEnabled, setBiometricLock } from "../lib/biolock";
 import type { ThemeMode, AccentKey } from "../lib/theme";
 import { ACCENTS } from "../lib/theme";
 import { AppBar, Modal, Field, SettingRow, CopyButton, Spinner } from "./ui";
 import { ImportKeyFileModal } from "./modals/ImportModals";
-import { pickFile, pickSavePath } from "../lib/dialog";
 
 interface StatusResp {
   version?: string;
@@ -52,6 +53,9 @@ export function Settings({
 
   const [nodeUrl, setNodeUrl] = useState<string>("");
   const [status, setStatus] = useState<StatusResp | null>(null);
+  // Biometric unlock: only render the toggle where the device supports it.
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioLock, setBioLock] = useState<boolean>(biometricLockEnabled);
 
   const [nodeOpen, setNodeOpen] = useState(false);
   const [impOpen, setImpOpen] = useState(false);
@@ -66,7 +70,15 @@ export function Settings({
     rpc<StatusResp>("get_status")
       .then(setStatus)
       .catch(() => setStatus(null));
+    biometricStatus()
+      .then((s) => setBioAvailable(s.available))
+      .catch(() => setBioAvailable(false));
   }, []);
+
+  function toggleBioLock(v: boolean) {
+    setBioLock(v);
+    setBiometricLock(v);
+  }
 
   function exportCsv() {
     const labels = listLabels();
@@ -157,6 +169,31 @@ export function Settings({
             <Toggle value={hideBalance} onChange={setHideBalance} />
           </div>
         </div>
+
+        {/* Security — only where the device exposes biometrics. */}
+        {bioAvailable && (
+          <>
+            <Section label="Security" />
+            <div className="list" style={{ marginBottom: 10 }}>
+              <div className="list-row" style={{ cursor: "default" }}>
+                <span style={iconBox}>
+                  <Icon name="shield" size={20} />
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span
+                    style={{ display: "block", fontSize: 15.5, fontWeight: 500 }}
+                  >
+                    Unlock with Face ID / fingerprint
+                  </span>
+                  <span className="faint" style={{ fontSize: 12.5 }}>
+                    Require biometrics each time the app opens
+                  </span>
+                </span>
+                <Toggle value={bioLock} onChange={toggleBioLock} />
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Network */}
         <Section label="Network" />
@@ -479,17 +516,8 @@ function VaultBackupModal({ onClose }: { onClose: () => void }) {
     }
     setBusy(true);
     try {
-      const dest = await pickSavePath({
-        defaultPath: `exfer-wallet-backup-${today()}.vault`,
-        filters: [{ name: "Wallet vault", extensions: ["vault"] }],
-        title: "Save wallet backup",
-      });
-      if (!dest) {
-        setBusy(false);
-        return;
-      }
-      await exportVaultFile({ walletPassword: pw, dest });
-      toast.success("Backup saved", "One encrypted file holds every address.");
+      const location = await exportVaultFile({ walletPassword: pw });
+      toast.success("Backup saved", `Saved to ${location}. One encrypted file holds every address.`);
       onClose();
     } catch (e) {
       toast.error("Backup failed", String(e instanceof Error ? e.message : e));
@@ -541,30 +569,20 @@ function VaultRestoreModal({
   onRestored: () => void | Promise<void>;
 }) {
   const toast = useToast();
-  const [path, setPath] = useState<string | null>(null);
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
-  async function choose() {
-    try {
-      const p = await pickFile({
-        title: "Choose backup file",
-        filters: [{ name: "Wallet vault", extensions: ["vault"] }],
-      });
-      if (p) setPath(p);
-    } catch (e) {
-      toast.error("Could not open file picker", String(e));
-    }
-  }
+  // The .vault file is picked inside importVaultFile() (a document picker
+  // that works on iOS + Android); the user taps Restore, then chooses it.
   async function go() {
-    if (!path || pw.length < 4) return;
+    if (pw.length < 4) return;
     setBusy(true);
     try {
-      const n = await importVaultFile({ path, filePassword: pw });
+      const n = await importVaultFile({ filePassword: pw });
       await onRestored();
       toast.success(
         "Backup restored",
         n === 0
-          ? "Every address was already in this wallet."
+          ? "Every address was already in this wallet (or no file was chosen)."
           : `${n} address${n === 1 ? "" : "es"} restored.`,
       );
       onClose();
@@ -585,47 +603,20 @@ function VaultRestoreModal({
           </button>
           <button
             className="btn btn-block"
-            disabled={!path || pw.length < 4 || busy}
+            disabled={pw.length < 4 || busy}
             onClick={go}
           >
-            {busy ? <Spinner /> : "Restore"}
+            {busy ? <Spinner /> : "Choose file & restore"}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Load addresses from a <b>.vault</b> file. Addresses already in this wallet
-        are skipped.
+        Load addresses from a <b>.vault</b> file. Enter the backup password, then
+        tap Restore to choose the file. Addresses already in this wallet are
+        skipped.
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <button
-          className="card card-2 tap"
-          onClick={choose}
-          style={{
-            padding: 14,
-            border: "1px dashed var(--border)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 11,
-            textAlign: "left",
-          }}
-        >
-          <Icon name="shield" size={22} />
-          <span style={{ flex: 1 }}>
-            <span style={{ display: "block", fontWeight: 600, fontSize: 14 }}>
-              {path ? ".vault file selected" : "Choose backup file"}
-            </span>
-            <span className="faint" style={{ fontSize: 12 }}>
-              {path ?? "Tap to browse"}
-            </span>
-          </span>
-          {path && (
-            <span style={{ color: "var(--accent)" }}>
-              <Icon name="check" size={20} />
-            </span>
-          )}
-        </button>
         <Field label="Backup password">
           <input
             className="field"

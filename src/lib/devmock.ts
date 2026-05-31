@@ -272,23 +272,24 @@ export const devmock = {
   async export_wallet_key(args: {
     address: string;
     exportPassword: string;
-  }): Promise<void> {
-    // Dev mode can't write files / build EXFK; just validate inputs so
-    // the modal flow is exercisable.
+  }): Promise<string> {
+    // Dev mode can't build a real EXFK; validate inputs and return a fake
+    // hex blob so the wrapper's saveBytes() download flow is exercisable.
     if (args.exportPassword.length < 6) {
       throw new Error("export password must be at least 6 characters");
     }
-    // no-op: a real Tauri build writes the .key file.
+    // 81-byte EXFK length → 162 hex chars; content is deterministic noise.
+    return fakeHex(`exfk-${args.address}`, 162);
   },
 
   async import_wallet_key(args: {
-    path: string;
+    fileHex: string;
     filePassword: string;
     label?: string;
   }): Promise<string> {
-    // Dev mode can't read EXFK files; fabricate a fake "imported" address
-    // so the modal flow is exercisable end-to-end in the browser.
-    if (!args.path) throw new Error("no wallet.key file selected");
+    // Dev mode can't decrypt EXFK; fabricate a fake "imported" address so
+    // the modal flow is exercisable end-to-end in the browser.
+    if (!args.fileHex) throw new Error("no wallet.key file selected");
     if (!args.filePassword) throw new Error("file password required");
     const s = loadState();
     const address = fakeHex(`imported-${Date.now()}`, 64);
@@ -305,25 +306,22 @@ export const devmock = {
 
   async export_vault_file(args: {
     walletPassword: string;
-    dest: string;
-  }): Promise<void> {
-    // Dev mode can't write files; just validate so the flow is exercisable.
+  }): Promise<string> {
+    // Dev mode can't seal a real vault; validate + return a fake location.
     if (!args.walletPassword) throw new Error("wallet password required");
-    // no-op: a real Tauri build writes the sealed .vault file.
+    return "Download/exfer-backup.vault";
   },
 
   async import_vault_file(args: {
-    path: string;
     filePassword: string;
   }): Promise<number> {
     // Dev mode can't read files; fabricate a couple of restored addresses
     // so the restore flow is exercisable end-to-end in the browser.
-    if (!args.path) throw new Error("no backup file selected");
     if (!args.filePassword) throw new Error("file password required");
     const s = loadState();
     let added = 0;
     for (let i = 0; i < 2; i++) {
-      const address = fakeHex(`vault-${args.path}-${i}`, 64);
+      const address = fakeHex(`vault-${args.filePassword}-${i}`, 64);
       if (s.addresses.find((a) => a.address === address)) continue;
       s.addresses.push({
         address,

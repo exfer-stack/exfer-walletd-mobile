@@ -72,11 +72,13 @@ async fn rpc(
         .map_err(|e| e.to_user_string())
 }
 
-/// Export a single address's key as an official Exfer `wallet.key`
-/// (EXFK) file at `dest`, encrypted with `export_password`. The raw
-/// secret is fetched from walletd (authorized by `wallet_password`),
-/// turned into the EXFK format, and written to disk — the plaintext key
-/// never crosses into the webview. The resulting file imports directly
+/// Build a single address's key as an official Exfer `wallet.key`
+/// (EXFK) blob, encrypted with `export_password`, and return it as a hex
+/// string. The raw secret is fetched from walletd (authorized by
+/// `wallet_password`), turned into the EXFK format, and hex-encoded — the
+/// plaintext key never crosses into the webview. The JS side writes the
+/// decoded bytes to disk (works on iOS + Android, where Rust has no path
+/// to the user-chosen save location). The resulting file imports directly
 /// into exfer.dev ("Import wallet.key") and the exfer CLI.
 #[tauri::command]
 async fn export_wallet_key(
@@ -84,8 +86,7 @@ async fn export_wallet_key(
     address: String,
     wallet_password: String,
     export_password: String,
-    dest: String,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if export_password.len() < 6 {
         return Err("export password must be at least 6 characters".into());
     }
@@ -114,39 +115,35 @@ async fn export_wallet_key(
     hex::decode_to_slice(secret_hex, &mut secret)
         .map_err(|_| "secret_hex not 32 bytes".to_string())?;
 
-    // 2. Build the EXFK file + write it (0600). Zeroize the secret after.
+    // 2. Build the EXFK blob. Zeroize the secret after. Return hex; the JS
+    //    side decodes + writes the file via the FS plugin.
     let exfk = export_key::build_exfk(&secret, export_password.as_bytes());
     secret.fill(0);
     let exfk = exfk?;
 
-    std::fs::write(&dest, &exfk).map_err(|e| format!("writing {dest}: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+    Ok(hex::encode(exfk))
 }
 
-/// Import a wallet.key (EXFK) file as a non-derived address. Reads the
-/// file, decrypts it with `file_password`, hands the raw secret to
-/// walletd's `import_private_key` RPC, and returns the resulting address.
+/// Import a wallet.key (EXFK) file as a non-derived address. The JS side
+/// reads the file (via the FS plugin) and hands us its bytes hex-encoded
+/// as `file_hex`; we decrypt with `file_password`, hand the raw secret to
+/// walletd's `import_private_key` RPC, and return the resulting address.
 /// The plaintext key never crosses into the webview.
 ///
 /// Errors are surfaced as short user strings (wrong password, malformed
-/// file, duplicate address, etc.). `file_password` and the in-memory
-/// secret buffer are zeroed before the call returns.
+/// file, duplicate address, etc.). The in-memory secret buffer is zeroed
+/// before the call returns.
 #[tauri::command]
 async fn import_wallet_key(
     ctx: State<'_, AppCtx>,
-    path: String,
+    file_hex: String,
     file_password: String,
     label: Option<String>,
 ) -> Result<String, String> {
-    if path.is_empty() {
+    if file_hex.is_empty() {
         return Err("no wallet.key file selected".into());
     }
-    let buf = std::fs::read(&path).map_err(|e| format!("reading {path}: {e}"))?;
+    let buf = hex::decode(&file_hex).map_err(|_| "wallet.key not valid hex".to_string())?;
 
     let mut secret = export_key::parse_exfk(&buf, file_password.as_bytes())?;
 
@@ -178,89 +175,6 @@ async fn import_wallet_key(
         .ok_or("walletd response missing address")?
         .to_string();
     Ok(address)
-}
-
-/// Export the WHOLE keyring as one passphrase-sealed vault file at
-/// `dest`. walletd seals every managed key (verified by `wallet_password`)
-/// into a single WDV1 blob; we write its raw bytes to disk (0600). This is
-/// the keyring-model backup — one file, no seed mnemonic to copy. Restores
-/// via `import_vault_file`.
-#[tauri::command]
-async fn export_vault_file(
-    ctx: State<'_, AppCtx>,
-    wallet_password: String,
-    dest: String,
-) -> Result<(), String> {
-    let (client, conn) = {
-        let inner = ctx.inner.lock().await;
-        match (inner.client.clone(), inner.conn.clone()) {
-            (Some(c), Some(k)) => (c, k),
-            _ => return Err("walletd not ready".into()),
-        }
-    };
-    let result = rpc_client::forward_rpc(
-        &client,
-        &conn,
-        "export_vault",
-        serde_json::json!({ "passphrase": wallet_password }),
-    )
-    .await
-    .map_err(|e| e.to_user_string())?;
-
-    let vault_hex = result
-        .get("vault_hex")
-        .and_then(|v| v.as_str())
-        .ok_or("walletd response missing vault_hex")?;
-    let bytes = hex::decode(vault_hex).map_err(|_| "vault_hex not valid hex".to_string())?;
-
-    std::fs::write(&dest, &bytes).map_err(|e| format!("writing {dest}: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
-}
-
-/// Restore keys from a vault file written by `export_vault_file`. Reads the
-/// sealed blob, hands it to walletd's `import_vault` (decrypted with
-/// `file_password` — the password the backup was created with). Each key is
-/// re-imported as an independent key; already-present addresses are
-/// skipped. Returns the number of addresses newly restored.
-#[tauri::command]
-async fn import_vault_file(
-    ctx: State<'_, AppCtx>,
-    path: String,
-    file_password: String,
-) -> Result<usize, String> {
-    if path.is_empty() {
-        return Err("no backup file selected".into());
-    }
-    let bytes = std::fs::read(&path).map_err(|e| format!("reading {path}: {e}"))?;
-    let vault_hex = hex::encode(&bytes);
-
-    let (client, conn) = {
-        let inner = ctx.inner.lock().await;
-        match (inner.client.clone(), inner.conn.clone()) {
-            (Some(c), Some(k)) => (c, k),
-            _ => return Err("walletd not ready".into()),
-        }
-    };
-    let result = rpc_client::forward_rpc(
-        &client,
-        &conn,
-        "import_vault",
-        serde_json::json!({ "vault_hex": vault_hex, "passphrase": file_password }),
-    )
-    .await
-    .map_err(|e| e.to_user_string())?;
-
-    let count = result
-        .get("imported")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
-    Ok(count)
 }
 
 #[tauri::command]
@@ -329,11 +243,14 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init());
-    // Camera QR scanner is a mobile-only plugin (no desktop backend).
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init());
+    // Camera QR scanner + biometric unlock are mobile-only plugins (no
+    // desktop backends).
     #[cfg(mobile)]
     {
         builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+        builder = builder.plugin(tauri_plugin_biometric::init());
     }
     builder
         .setup(|app| {
@@ -378,8 +295,6 @@ pub fn run() {
             reset_wallet,
             export_wallet_key,
             import_wallet_key,
-            export_vault_file,
-            import_vault_file,
             restore_from_mnemonic,
         ])
         .run(tauri::generate_context!())

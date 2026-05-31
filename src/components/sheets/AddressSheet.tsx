@@ -19,7 +19,6 @@ import {
 } from "../ui";
 import { Qr } from "../Qr";
 import { LabelModal } from "../modals/LabelModal";
-import { pickSavePath } from "../../lib/dialog";
 
 export function AddressSheet({
   address,
@@ -198,7 +197,7 @@ export function AddressSheet({
         <LabelModal address={address} onClose={() => setLabelOpen(false)} onSaved={bump} />
       )}
       {exportOpen && (
-        <ExportKeyModal address={address} name={addrName(entry)} onClose={() => setExportOpen(false)} />
+        <ExportKeyModal address={address} onClose={() => setExportOpen(false)} />
       )}
       {phraseOpen && (
         <RecoveryPhraseModal address={address} onClose={() => setPhraseOpen(false)} />
@@ -469,11 +468,9 @@ function DeleteAddressModal({
 /* export this address as an encrypted wallet.key file */
 function ExportKeyModal({
   address,
-  name,
   onClose,
 }: {
   address: string;
-  name: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -487,23 +484,12 @@ function ExportKeyModal({
     if (!valid) return;
     setBusy(true);
     try {
-      const fileName = `${name}.key`.replace(/\s+/g, "-").toLowerCase();
-      const dest = await pickSavePath({
-        defaultPath: fileName,
-        filters: [{ name: "Wallet key", extensions: ["key"] }],
-        title: "Save wallet.key",
-      });
-      if (!dest) {
-        setBusy(false);
-        return;
-      }
-      await exportWalletKey({
+      const location = await exportWalletKey({
         address,
         walletPassword: walletPw,
         exportPassword: exportPw,
-        dest,
       });
-      toast.success("wallet.key exported", "Encrypted file saved. Import it on exfer.dev.");
+      toast.success("wallet.key exported", `Saved to ${location}. Import it on exfer.dev.`);
       onClose();
     } catch (e) {
       toast.error("Export failed", String(e instanceof Error ? e.message : e));

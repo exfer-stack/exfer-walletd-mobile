@@ -1,13 +1,11 @@
 // Import-address modals: 24-word recovery phrase, and encrypted wallet.key.
 
 import { useState } from "react";
-import { Icon } from "../../lib/icons";
 import { Modal, Field, Spinner } from "../ui";
 import { useToast } from "../../lib/toast";
 import { rpc, importWalletKey } from "../../lib/rpc";
 import { shortAddress } from "../../lib/labels";
 import { setLabel as saveLabel } from "../../lib/labels";
-import { pickFile } from "../../lib/dialog";
 
 export function ImportPhraseModal({
   onClose,
@@ -101,29 +99,17 @@ export function ImportKeyFileModal({
   onImported: () => void | Promise<void>;
 }) {
   const toast = useToast();
-  const [path, setPath] = useState<string | null>(null);
   const [pw, setPw] = useState("");
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function choose() {
-    try {
-      const p = await pickFile({
-        title: "Choose wallet.key file",
-        filters: [{ name: "Wallet key", extensions: ["key"] }],
-      });
-      if (p) setPath(p);
-    } catch (e) {
-      toast.error("Could not open file picker", String(e));
-    }
-  }
-
+  // The file is picked inside importWalletKey() (a document picker that
+  // works on iOS + Android); the user taps Import, then chooses the file.
   async function go() {
-    if (!path || !pw) return;
+    if (!pw) return;
     setBusy(true);
     try {
       const address = await importWalletKey({
-        path,
         filePassword: pw,
         label: label.trim() || undefined,
       });
@@ -153,47 +139,20 @@ export function ImportKeyFileModal({
           </button>
           <button
             className="btn btn-block"
-            disabled={!path || !pw || busy}
+            disabled={!pw || busy}
             onClick={go}
           >
-            {busy ? <Spinner /> : "Import"}
+            {busy ? <Spinner /> : "Choose file & import"}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
         Adds an externally-held address from an encrypted <b>.key</b> file (e.g.
-        exported from exfer.dev).
+        exported from exfer.dev). Enter the file's password, then tap Import to
+        choose the <b>.key</b> file.
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <button
-          className="card card-2 tap"
-          onClick={choose}
-          style={{
-            padding: 14,
-            border: "1px dashed var(--border)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 11,
-            textAlign: "left",
-          }}
-        >
-          <Icon name="key" size={22} />
-          <span style={{ flex: 1 }}>
-            <span style={{ display: "block", fontWeight: 600, fontSize: 14 }}>
-              {path ? "wallet.key selected" : "Choose wallet.key file"}
-            </span>
-            <span className="faint" style={{ fontSize: 12 }}>
-              {path ?? "Tap to browse"}
-            </span>
-          </span>
-          {path && (
-            <span style={{ color: "var(--accent)" }}>
-              <Icon name="check" size={20} />
-            </span>
-          )}
-        </button>
         <Field label="File password">
           <input
             className="field"

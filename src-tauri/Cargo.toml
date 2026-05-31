@@ -20,6 +20,10 @@ tauri-build = { version = "2", features = [] }
 tauri              = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+# Filesystem read/write. Works on all targets (desktop + mobile); the
+# JS side does the actual file I/O so export/import works on iOS + Android
+# where dialog.save() is unavailable.
+tauri-plugin-fs = "2"
 
 # Produce the official Exfer CLI "wallet.key" (EXFK) format for
 # per-address export: Argon2id KDF + AES-256-GCM, byte-identical to the
@@ -58,6 +62,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # QR scanner for recipient addresses — mobile only (camera).
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
+# Face ID / Touch ID / fingerprint unlock — mobile-only plugin (no desktop
+# backend).
+tauri-plugin-biometric = "2"
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

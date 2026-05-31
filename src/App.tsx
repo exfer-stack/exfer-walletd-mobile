@@ -5,6 +5,9 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { BootstrapStatus } from "./lib/types";
 import { bootstrapStatus } from "./lib/rpc";
+import { biometricStatus, biometricUnlock } from "./lib/biometric";
+import { biometricLockEnabled } from "./lib/biolock";
+import wordmark from "./assets/wordmark.png";
 import { ToastProvider, ToastHost } from "./lib/toast";
 import { WalletProvider } from "./lib/wallet";
 import { BalanceProvider } from "./lib/balance";
@@ -67,6 +70,26 @@ function Shell() {
   const [boot, setBoot] = useState<BootstrapStatus | null>(null);
   const [tab, setTab] = useState<Tab>("wallet");
   const [overlay, setOverlay] = useState<Overlay>(null);
+
+  // Biometric app lock. `locked === null` means we haven't yet decided
+  // whether a lock is needed (avoids a flash of the wallet on launch).
+  const [locked, setLocked] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!biometricLockEnabled()) {
+        if (!cancelled) setLocked(false);
+        return;
+      }
+      const s = await biometricStatus();
+      if (cancelled) return;
+      // Flag on + biometrics present → lock; otherwise no lock.
+      setLocked(s.available);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setTheme = useCallback((t: ThemeMode) => {
     setThemeState(t);
@@ -146,6 +169,13 @@ function Shell() {
           ) : (
             <Onboarding onReady={reboot} />
           )
+        ) : locked !== false ? (
+          // Hold behind the biometric lock until unlocked (or until we've
+          // confirmed no lock is needed). `locked === null` → still deciding.
+          <LockScreen
+            deciding={locked === null}
+            onUnlocked={() => setLocked(false)}
+          />
         ) : (
           <WalletProvider>
             {tab === "wallet" && (
@@ -221,6 +251,68 @@ function TabButton({
       <Icon name={icon} size={24} stroke={active === id ? 2.2 : 1.9} />
       {label}
     </button>
+  );
+}
+
+function LockScreen({
+  deciding,
+  onUnlocked,
+}: {
+  deciding: boolean;
+  onUnlocked: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const unlock = useCallback(async () => {
+    setBusy(true);
+    setFailed(false);
+    const ok = await biometricUnlock("Unlock your wallet");
+    setBusy(false);
+    if (ok) onUnlocked();
+    else setFailed(true);
+  }, [onUnlocked]);
+
+  // Prompt automatically on first mount once we know a lock is needed.
+  useEffect(() => {
+    if (!deciding) void unlock();
+  }, [deciding, unlock]);
+
+  return (
+    <div
+      className="screen"
+      style={{ display: "grid", placeItems: "center", padding: 40 }}
+    >
+      <div style={{ textAlign: "center", maxWidth: 320 }}>
+        <img
+          src={wordmark}
+          alt="EXFER"
+          style={{
+            width: "70%",
+            maxWidth: 240,
+            height: "auto",
+            filter: "var(--wordmark-filter, none)",
+            marginBottom: 22,
+          }}
+          draggable={false}
+        />
+        <div className="dim" style={{ fontSize: 14, marginBottom: 18 }}>
+          {deciding
+            ? "Checking…"
+            : failed
+              ? "Unlock cancelled or failed. Try again."
+              : "Locked. Unlock to continue."}
+        </div>
+        <button
+          className="btn btn-block"
+          style={{ padding: "14px" }}
+          disabled={busy || deciding}
+          onClick={unlock}
+        >
+          {busy ? "Unlocking…" : "Unlock"}
+        </button>
+      </div>
+    </div>
   );
 }
 

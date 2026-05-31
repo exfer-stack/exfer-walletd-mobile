@@ -101,3 +101,26 @@ declaration that lives in the generated native projects:
 
 Because `gen/` is regenerated in CI, commit the `gen/` directory once you
 add the Info.plist string so it persists (see the `.gitignore` note).
+
+## Biometric unlock (Face ID / Touch ID / fingerprint)
+
+`tauri-plugin-biometric` (mobile only; `#[cfg(mobile)]`, perms in
+`capabilities/mobile.json`). A Settings → Security toggle ("Unlock with
+Face ID / fingerprint") appears only when `checkStatus().isAvailable`; when
+on, a lock screen gates the wallet on launch and calls `authenticate()`.
+
+- **iOS** — add `NSFaceIDUsageDescription` to the Info.plist (e.g. "Unlock
+  your exfer wallet with Face ID").
+- **Android** — needs `androidx.biometric:biometric` (the plugin's gradle
+  normally pulls it; verify in `src-tauri/gen/android/app/build.gradle.kts`)
+  and the `USE_BIOMETRIC` permission (plugin-contributed).
+
+## File import / export (vault + wallet.key)
+
+File I/O is done in JS via `tauri-plugin-fs` + `tauri-plugin-dialog` so it
+works on iOS + Android (Rust only does the EXFK crypto, returning/taking
+hex). Import uses `open({ pickerMode: "document", fileAccessMode: "copy" })`
+then `readFile`. Export: `dialog.save()` on desktop, and since `save()` has
+no mobile impl, mobile falls back to `writeFile(..., { baseDir:
+BaseDirectory.Download })` (then `Document`). Vault backup/restore go
+straight through the walletd `export_vault` / `import_vault` RPCs.

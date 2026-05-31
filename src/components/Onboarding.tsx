@@ -7,7 +7,6 @@ import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
 import { submitPassword, importVaultFile } from "../lib/rpc";
-import { pickFile } from "../lib/dialog";
 
 type Mode = "create" | "restore";
 
@@ -16,35 +15,24 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   const [mode, setMode] = useState<Mode>("create");
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [vaultPw, setVaultPw] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function chooseVault() {
-    try {
-      const path = await pickFile({
-        title: "Choose backup file",
-        filters: [{ name: "Wallet vault", extensions: ["vault"] }],
-      });
-      if (path) setVaultPath(path);
-    } catch (e) {
-      toast.error("Could not open file picker", String(e));
-    }
-  }
-
   async function submit() {
     setErr(null);
     if (mode === "restore") {
-      if (!vaultPath) return setErr("Choose a backup (.vault) file.");
       if (pw.length < 8) return setErr("Password must be at least 8 characters.");
       if (pw !== confirm) return setErr("Passwords do not match.");
       if (vaultPw.length < 4) return setErr("Enter the backup password.");
       setBusy(true);
       try {
+        // The .vault file is chosen via the document picker inside
+        // importVaultFile() — works on iOS + Android. n === 0 means either
+        // nothing new to restore or the picker was cancelled.
         await submitPassword(pw);
-        const n = await importVaultFile({ path: vaultPath, filePassword: vaultPw });
+        const n = await importVaultFile({ filePassword: vaultPw });
         toast.success(
           "Wallet restored",
           n === 0
@@ -80,7 +68,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       : "Restoring…"
     : mode === "create"
       ? "Create wallet"
-      : "Restore from backup";
+      : "Choose file & restore";
 
   return (
     <div className="screen">
@@ -175,34 +163,10 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
 
         <div style={{ display: "grid", gap: 14, flex: 1 }}>
           {mode === "restore" && (
-            <button
-              className="card card-2 tap"
-              onClick={chooseVault}
-              style={{
-                padding: 15,
-                border: "1px dashed var(--border)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                textAlign: "left",
-              }}
-            >
-              <Icon name="shield" size={24} />
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontWeight: 600, fontSize: 14.5 }}>
-                  {vaultPath ? ".vault file selected" : "Choose backup file"}
-                </span>
-                <span className="faint" style={{ fontSize: 12 }}>
-                  {vaultPath ?? "Tap to browse for a .vault file"}
-                </span>
-              </span>
-              {vaultPath && (
-                <span style={{ color: "var(--accent)" }}>
-                  <Icon name="check" size={20} />
-                </span>
-              )}
-            </button>
+            <div className="banner banner-info" style={{ fontSize: 12.5 }}>
+              Set a new local password and your backup's password below, then tap
+              Restore to choose your <b>.vault</b> file.
+            </div>
           )}
 
           <Field

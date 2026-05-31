@@ -8,6 +8,8 @@
     "barcode-scanner:allow-scan",
     "barcode-scanner:allow-cancel",
     "barcode-scanner:allow-check-permissions",
-    "barcode-scanner:allow-request-permissions"
+    "barcode-scanner:allow-request-permissions",
+    "biometric:allow-authenticate",
+    "biometric:allow-status"
   ]
 }

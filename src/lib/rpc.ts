@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { BootstrapStatus } from "./types";
 import { devmock } from "./devmock";
+import { bytesToHex, hexToBytes, readPickedFile, saveBytes } from "./fsfile";
 
 /// Forward a JSON-RPC call through the Rust shell to the embedded
 /// walletd. The shell picks the right scoped token + handles TLS
@@ -55,68 +56,84 @@ export function resetWallet(): Promise<BootstrapStatus> {
   return invoke<BootstrapStatus>("reset_wallet");
 }
 
-/// Export one address as an official Exfer `wallet.key` (EXFK) file at
-/// `dest`, encrypted with `exportPassword`. `walletPassword` authorizes
-/// pulling the secret from walletd. Importable on exfer.dev.
-export function exportWalletKey(args: {
+/// Export one address as an official Exfer `wallet.key` (EXFK) file,
+/// encrypted with `exportPassword`. `walletPassword` authorizes pulling
+/// the secret from walletd; Rust builds + hex-encodes the EXFK blob and we
+/// write the bytes to a user-chosen / platform location here in JS (works
+/// on iOS + Android). Importable on exfer.dev. Returns the save location.
+export async function exportWalletKey(args: {
   address: string;
   walletPassword: string;
   exportPassword: string;
-  dest: string;
-}): Promise<void> {
-  if (devmock.isActive()) return devmock.export_wallet_key(args);
-  return invoke<void>("export_wallet_key", {
+}): Promise<string> {
+  if (devmock.isActive()) {
+    const hex = await devmock.export_wallet_key(args);
+    return saveBytes(args.address.slice(0, 8) + ".key", hexToBytes(hex));
+  }
+  const hex = await invoke<string>("export_wallet_key", {
     address: args.address,
     walletPassword: args.walletPassword,
     exportPassword: args.exportPassword,
-    dest: args.dest,
   });
+  return saveBytes(args.address.slice(0, 8) + ".key", hexToBytes(hex));
 }
 
-/// Import a `wallet.key` (EXFK) file as a non-derived address. `path`
-/// points to the file on disk; `filePassword` decrypts it. The Rust
-/// shell parses the file, hands the raw secret to walletd's
+/// Import a `wallet.key` (EXFK) file as a non-derived address. The file is
+/// picked + read here in JS (works on mobile); its bytes are hex-encoded
+/// and handed to Rust, which parses them, hands the raw secret to walletd's
 /// `import_private_key` RPC, and returns the resulting address.
-export function importWalletKey(args: {
-  path: string;
+export async function importWalletKey(args: {
   filePassword: string;
   label?: string;
 }): Promise<string> {
-  if (devmock.isActive()) return devmock.import_wallet_key(args);
+  const bytes = await readPickedFile([{ name: "wallet.key", extensions: ["key"] }]);
+  if (!bytes) throw new Error("No file selected");
+  if (devmock.isActive()) {
+    return devmock.import_wallet_key({
+      fileHex: bytesToHex(bytes),
+      filePassword: args.filePassword,
+      label: args.label,
+    });
+  }
   return invoke<string>("import_wallet_key", {
-    path: args.path,
+    fileHex: bytesToHex(bytes),
     filePassword: args.filePassword,
     label: args.label ?? null,
   });
 }
 
-/// Export the WHOLE keyring as one passphrase-sealed vault file at
-/// `dest`. The keyring-model backup: a single encrypted file, no seed
-/// phrase to copy. `walletPassword` authorizes + seals it. Restore with
-/// `importVaultFile` using that same password.
-export function exportVaultFile(args: {
+/// Export the WHOLE keyring as one passphrase-sealed vault file. The
+/// keyring-model backup: a single encrypted file, no seed phrase to copy.
+/// walletd seals it (authorized by `walletPassword`) via the `export_vault`
+/// RPC; we write the bytes to a user-chosen / platform location here in JS.
+/// Restore with `importVaultFile` using that same password. Returns the
+/// save location.
+export async function exportVaultFile(args: {
   walletPassword: string;
-  dest: string;
-}): Promise<void> {
+}): Promise<string> {
   if (devmock.isActive()) return devmock.export_vault_file(args);
-  return invoke<void>("export_vault_file", {
-    walletPassword: args.walletPassword,
-    dest: args.dest,
+  const { vault_hex } = await rpc<{ vault_hex: string }>("export_vault", {
+    passphrase: args.walletPassword,
   });
+  return saveBytes("exfer-backup.vault", hexToBytes(vault_hex));
 }
 
-/// Restore keys from a vault file written by `exportVaultFile`.
-/// `filePassword` is the password the backup was created with. Returns the
-/// count of addresses newly restored (already-present ones are skipped).
-export function importVaultFile(args: {
-  path: string;
+/// Restore keys from a vault file written by `exportVaultFile`. The file is
+/// picked + read here in JS, hex-encoded, and handed to walletd's
+/// `import_vault` RPC. `filePassword` is the password the backup was
+/// created with. Returns the count of addresses newly restored (0 if the
+/// picker was cancelled or every address was already present).
+export async function importVaultFile(args: {
   filePassword: string;
 }): Promise<number> {
   if (devmock.isActive()) return devmock.import_vault_file(args);
-  return invoke<number>("import_vault_file", {
-    path: args.path,
-    filePassword: args.filePassword,
+  const bytes = await readPickedFile([{ name: "Vault", extensions: ["vault"] }]);
+  if (!bytes) return 0;
+  const r = await rpc<{ imported: string[] }>("import_vault", {
+    vault_hex: bytesToHex(bytes),
+    passphrase: args.filePassword,
   });
+  return r.imported.length;
 }
 
 /// Desktop UX cap on managed addresses. walletd itself supports ~4B
