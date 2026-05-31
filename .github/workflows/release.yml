@@ -230,10 +230,34 @@ jobs:
           releaseFiles: src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
           track: internal
 
+      # Rename the Gradle-default `app-*-release.apk` / `app-*.aab` to
+      # `exfer-wallet_<version>_<flavor>.apk|aab` so the GitHub Release
+      # assets carry the product name and version (matches the file name
+      # docs/INSTALL.md tells users to look for).
+      - name: Rename Android artifacts to exfer-wallet_<version>_<flavor>
+        run: |
+          set -eu
+          VER="${GITHUB_REF_NAME#v}"
+          shopt -s globstar nullglob
+          for f in src-tauri/gen/android/app/build/outputs/apk/**/*.apk \
+                   src-tauri/gen/android/app/build/outputs/bundle/**/*.aab; do
+            d=$(dirname "$f")
+            b=$(basename "$f")
+            ext="${b##*.}"
+            # Strip the leading `app-` and trailing `-release`/`-debug`,
+            # leaving the flavor (`universal`, `arm64-v8a`, etc).
+            flavor=$(echo "$b" \
+              | sed -E 's/^app-//; s/\.(apk|aab)$//; s/-(release|debug)$//')
+            [ -z "$flavor" ] && flavor=universal
+            new="exfer-wallet_${VER}_${flavor}.${ext}"
+            mv "$f" "$d/$new"
+            echo "renamed: $b -> $new"
+          done
+
       - name: Attach .aab/.apk to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "exfer wallet ${{ github.ref_name }}"
+          name: "Exfer Wallet ${{ github.ref_name }}"
           body: |
             Mobile wallet for the Exfer blockchain (iOS + Android).
 
