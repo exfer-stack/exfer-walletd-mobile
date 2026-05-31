@@ -10,7 +10,6 @@ import {
   rpc,
   MAX_ADDRESSES,
   splitBalanceCompact,
-  formatBalanceCompact,
 } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
@@ -72,7 +71,7 @@ export function Home({
 }) {
   const { balance, refresh } = useWallet();
   const toast = useToast();
-  const { hidden, toggle } = useBalanceMask();
+  const { toggle } = useBalanceMask();
   const [showHidden, setShowHidden] = useState(false);
   const [addMenu, setAddMenu] = useState(false);
   const [impPhrase, setImpPhrase] = useState(false);
@@ -91,10 +90,6 @@ export function Home({
           s + a.balance + (a.pending_received ?? 0) - (a.pending_spent ?? 0),
         0,
       ),
-    [vis],
-  );
-  const pendingIn = useMemo(
-    () => vis.reduce((s, a) => s + (a.pending_received ?? 0), 0),
     [vis],
   );
   const { whole, frac } = splitBalanceCompact(projected);
@@ -185,17 +180,10 @@ export function Home({
               EXFER
             </span>
           </div>
-          {pendingIn > 0 && !hidden && (
-            <div style={{ marginTop: 12 }}>
-              <span
-                className="pill pill-accent fade-up"
-                style={{ padding: "3px 10px", fontSize: 12 }}
-              >
-                <PendingDot />+
-                {formatBalanceCompact(pendingIn).replace(" EXFER", "")} confirming
-              </span>
-            </div>
-          )}
+          {/* No "confirming" pill here: the hero already shows the projected
+              total, so incoming funds read as arrived instantly. The
+              still-confirming state lives only on the address row (a small
+              dot) and in the address detail. */}
         </button>
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
