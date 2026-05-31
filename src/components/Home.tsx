@@ -69,6 +69,9 @@ export function Home({
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, refresh } = useWallet();
+  // `balance` is null until the first successful load — show skeletons then,
+  // not a misleading "0 EXFER / No addresses yet" empty state.
+  const firstLoad = balance === null;
   const toast = useToast();
   const { toggle } = useBalanceMask();
   const [showHidden, setShowHidden] = useState(false);
@@ -137,39 +140,46 @@ export function Home({
           <div className="eyebrow" style={{ marginBottom: 10, letterSpacing: ".12em" }}>
             Total balance
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+          {firstLoad ? (
             <span
-              style={{
-                fontFamily: '"Geist Variable","Geist", sans-serif',
-                fontSize: 58,
-                fontWeight: 600,
-                letterSpacing: "-.045em",
-                lineHeight: 1,
-                fontFeatureSettings: '"tnum" 1',
-              }}
-            >
-              <Masked dots="••••">
-                <span>{whole}</span>
-                {frac && (
-                  <span
-                    style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: "0.6em" }}
-                  >
-                    .{frac}
-                  </span>
-                )}
-              </Masked>
-            </span>
-            <span
-              style={{
-                fontSize: 15,
-                fontWeight: 500,
-                color: "var(--text-faint)",
-                letterSpacing: ".06em",
-              }}
-            >
-              EXFER
-            </span>
-          </div>
+              className="skeleton"
+              style={{ width: 168, height: 46, borderRadius: 12, verticalAlign: "middle" }}
+            />
+          ) : (
+            <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+              <span
+                style={{
+                  fontFamily: '"Geist Variable","Geist", sans-serif',
+                  fontSize: 58,
+                  fontWeight: 600,
+                  letterSpacing: "-.045em",
+                  lineHeight: 1,
+                  fontFeatureSettings: '"tnum" 1',
+                }}
+              >
+                <Masked dots="••••">
+                  <span>{whole}</span>
+                  {frac && (
+                    <span
+                      style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: "0.6em" }}
+                    >
+                      .{frac}
+                    </span>
+                  )}
+                </Masked>
+              </span>
+              <span
+                style={{
+                  fontSize: 15,
+                  fontWeight: 500,
+                  color: "var(--text-faint)",
+                  letterSpacing: ".06em",
+                }}
+              >
+                EXFER
+              </span>
+            </div>
+          )}
           {/* No "confirming" pill here: the hero already shows the projected
               total, so incoming funds read as arrived instantly. The
               still-confirming state lives only on the address row (a small
@@ -207,7 +217,25 @@ export function Home({
         </div>
 
         <div className="list">
-          {list.length === 0 && (
+          {firstLoad &&
+            [0, 1].map((i) => (
+              <div
+                key={"sk" + i}
+                className="list-row"
+                style={{ cursor: "default" }}
+              >
+                <span
+                  className="skeleton"
+                  style={{ width: 40, height: 40, borderRadius: 12, flex: "0 0 auto" }}
+                />
+                <span style={{ flex: 1, display: "grid", gap: 7 }}>
+                  <span className="skeleton" style={{ width: "42%", height: 13, borderRadius: 6 }} />
+                  <span className="skeleton" style={{ width: "64%", height: 11, borderRadius: 6 }} />
+                </span>
+                <span className="skeleton" style={{ width: 56, height: 14, borderRadius: 6 }} />
+              </div>
+            ))}
+          {!firstLoad && list.length === 0 && (
             <div style={{ padding: "30px 18px", textAlign: "center" }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>No addresses yet</div>
               <div className="faint" style={{ fontSize: 13, marginBottom: 14 }}>
@@ -218,7 +246,7 @@ export function Home({
               </button>
             </div>
           )}
-          {list.map((a) => {
+          {!firstLoad && list.map((a) => {
             // Projected: confirmed + incoming − outgoing (mirror the total
             // at the top). Without the −pending_spent term a row overstates
             // its balance while one of its own sends is still in the mempool.
