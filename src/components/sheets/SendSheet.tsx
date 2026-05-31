@@ -549,17 +549,35 @@ export function SendSheet({
                   </button>
                 </div>
                 {recents.length > 0 && i === 0 && !o.to && (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
-                    {recents.map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => setOut(i, { to: r })}
-                        className="pill pill-muted tap"
-                        style={{ cursor: "pointer" }}
-                      >
-                        {shortAddress(r, 5, 4)}
-                      </button>
-                    ))}
+                  <div style={{ marginTop: 12 }}>
+                    <div className="eyebrow" style={{ marginBottom: 8 }}>Recent</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {recents.map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setOut(i, { to: r })}
+                          className="tap"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "7px 13px 7px 7px",
+                            borderRadius: 999,
+                            cursor: "pointer",
+                            background: "var(--elevated)",
+                            border: "1px solid var(--border)",
+                          }}
+                        >
+                          <AddrAvatar address={r} size={22} />
+                          <span
+                            className="mono"
+                            style={{ fontSize: 12.5, color: "var(--text)" }}
+                          >
+                            {shortAddress(r, 5, 4)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
