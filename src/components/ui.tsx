@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../lib/icons";
-import { avatarStyle } from "../lib/format";
+import { avatarData, AVATAR_GRID } from "../lib/format";
 import { useToast } from "../lib/toast";
 
 /* ── status bar ─────────────────────────────────────────────────── */
@@ -508,15 +508,35 @@ export function AddrAvatar({
   address: string;
   size?: number;
 }) {
+  const { bg, fg, cells } = avatarData(address);
+  const cell = 100 / AVATAR_GRID;
   const style: CSSProperties = {
-    ...avatarStyle(address),
-    width: size,
-    height: size,
-    borderRadius: 12,
+    borderRadius: Math.round(size * 0.3),
     flex: "0 0 auto",
     display: "block",
+    overflow: "hidden",
   };
-  return <span style={style} />;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      style={style}
+      aria-hidden="true"
+    >
+      <rect width="100" height="100" fill={bg} />
+      {cells.map((c, i) => (
+        <rect
+          key={i}
+          x={(c.x * cell).toFixed(2)}
+          y={(c.y * cell).toFixed(2)}
+          width={(cell + 0.5).toFixed(2)}
+          height={(cell + 0.5).toFixed(2)}
+          fill={fg}
+        />
+      ))}
+    </svg>
+  );
 }
 
 /* ── review-row (key/value line inside a card) ──────────────────── */

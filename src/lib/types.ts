@@ -38,6 +38,48 @@ export interface WalletBalance {
   pending_supported: boolean;
 }
 
+// walletd `get_address_mempool` — the node's unconfirmed (mempool) view of
+// one address: the txs crediting (`received`) or debiting (`spent`) it, with
+// the real tx ids. This is how a deposit watcher gets a TRUE inbound tx id
+// the moment funds hit the mempool, ahead of confirmation. `received`/`spent`
+// default to empty server-side, so treat them as optional.
+export interface AddressMempoolResponse {
+  address: string;
+  tip_height: number;
+  mempool?: MempoolTx[];
+}
+
+export interface MempoolTx {
+  tx_id: string;
+  received?: { output_index: number; value: number }[];
+  spent?: { tx_id: string; output_index: number; value: number }[];
+}
+
+// walletd `get_address_history` (delegated to the upstream exfer-indexer) —
+// the authoritative CONFIRMED per-address timeline: every on-chain credit
+// (`direction: "output"`, an output paying this address) and debit
+// (`direction: "input"`, one of this address's outputs being spent), each with
+// a real on-chain `tx_id` and the `block_height` it confirmed at. Unlike the
+// mempool/poll capture, this surfaces deposits that landed while the app was
+// closed — the indexer scanned the whole chain, so nothing is missed.
+export interface AddressHistoryRow {
+  block_height: number;
+  tx_id: string;
+  amount: number;
+  direction: "input" | "output";
+  is_coinbase: boolean;
+  // Addresses on the other side of this tx (senders for an "output"/received
+  // row, recipients for an "input"/spent row), self excluded. Lets Activity
+  // show From/To natively. Absent on older indexers.
+  counterparties?: string[];
+}
+
+export interface AddressHistoryResponse {
+  history: AddressHistoryRow[];
+  // Opaque pagination token; present when more rows exist past this page.
+  next_cursor?: string;
+}
+
 export interface GeneratedAddress {
   address: string;
   /// HD derivation index — present only for legacy seeded `generate_address`.

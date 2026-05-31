@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { Modal, Field, Spinner } from "../ui";
+import { Icon } from "../../lib/icons";
 import { useToast } from "../../lib/toast";
 import { rpc } from "../../lib/rpc";
 import { setLabel, shortAddress } from "../../lib/labels";
@@ -76,13 +77,49 @@ export function NewAddressModal({
           onKeyDown={(e) => e.key === "Enter" && !busy && create()}
         />
       </Field>
+      {/* Secondary path as a tappable list-row — clearly an entry point, not
+          body copy. */}
       <button
-        className="btn-ghost btn-sm"
+        className="tap"
         onClick={onImport}
         disabled={busy}
-        style={{ marginTop: 14, width: "100%", color: "var(--text-dim)" }}
+        style={{
+          marginTop: 18,
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 13px",
+          borderRadius: 14,
+          border: "1px solid var(--border-soft)",
+          background: "var(--surface-2)",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
       >
-        Have a recovery phrase or wallet.key? Import instead
+        <span
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            flexShrink: 0,
+            display: "grid",
+            placeItems: "center",
+            background: "color-mix(in srgb, var(--accent) 15%, transparent)",
+            color: "var(--accent)",
+          }}
+        >
+          <Icon name="key" size={17} />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>
+            Import an existing key
+          </div>
+          <div className="faint" style={{ fontSize: 12 }}>
+            Recovery phrase or wallet.key
+          </div>
+        </div>
+        <Icon name="chevron" size={18} />
       </button>
     </Modal>
   );

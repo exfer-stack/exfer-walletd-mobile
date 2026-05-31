@@ -13,6 +13,7 @@
 //! Frontend polls [`crate::commands::bootstrap_status`] and reacts to the
 //! variant it gets back.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,6 +22,7 @@ use exfer_walletd::sse_client::WalletNudge;
 use exfer_walletd::{run_embedded, EmbeddedTokens, ServerHandle};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -34,6 +36,17 @@ pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
 // wallet observes incoming pending balance within ~RTT instead of
 // the 2 s poll interval. Tokyo region.
 pub const DEFAULT_NODE_RPC: &str = "http://198.13.38.245:9334";
+// Upstream exfer-indexer, co-located with the default node on the same host
+// (systemd `exfer-indexer.service`, public on :9335, token-gated). Lets walletd
+// answer `get_address_history` — the authoritative per-address confirmed
+// credit/debit timeline that powers Activity, including deposits that landed
+// while the app was closed (which the local mempool/poll capture can never
+// see). The token is a public bind-gate, not a secret: the indexer is
+// read-only (holds no keys), and matching the node's open posture, anyone can
+// query it — the token only keeps drive-by scanners off and satisfies the
+// indexer's refuse-to-bind-publicly-without-auth safety rule.
+pub const DEFAULT_INDEXER_RPC: &str = "http://198.13.38.245:9335";
+pub const DEFAULT_INDEXER_TOKEN: &str = "c5a0e5aca096d97d015e08d76f218674fd29f69aaf1c5505";
 pub const DESKTOP_CONFIG_FILE: &str = "desktop-config.json";
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,12 +69,41 @@ pub struct DesktopConfig {
     /// Upstream Exfer node URL(s). Comma-separated for multi-node
     /// round-robin (walletd's native format).
     pub node_rpc: String,
+    /// Upstream exfer-indexer URL. `None`/empty ⇒ use [`DEFAULT_INDEXER_RPC`].
+    /// `serde(default)` so configs written before this field existed still
+    /// parse (they just fall back to the default).
+    #[serde(default)]
+    pub indexer_rpc: Option<String>,
+    /// Bearer token for the indexer. `None`/empty ⇒ [`DEFAULT_INDEXER_TOKEN`].
+    #[serde(default)]
+    pub indexer_token: Option<String>,
 }
 
 impl Default for DesktopConfig {
     fn default() -> Self {
         Self {
             node_rpc: DEFAULT_NODE_RPC.to_string(),
+            indexer_rpc: None,
+            indexer_token: None,
+        }
+    }
+}
+
+impl DesktopConfig {
+    /// Effective indexer URL: the configured one, or the built-in default when
+    /// unset/blank.
+    pub fn effective_indexer_rpc(&self) -> String {
+        match self.indexer_rpc.as_deref() {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => DEFAULT_INDEXER_RPC.to_string(),
+        }
+    }
+
+    /// Effective indexer bearer token (configured, or built-in default).
+    pub fn effective_indexer_token(&self) -> String {
+        match self.indexer_token.as_deref() {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => DEFAULT_INDEXER_TOKEN.to_string(),
         }
     }
 }
@@ -149,13 +191,15 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
         upstream_timeout_secs: 15,
         upstream_attempts: 3,
         upstream_retry_backoff_ms: 250,
-        // No upstream indexer: the desktop only queries its own wallet's
-        // addresses, which the node answers directly. The indexer-delegated
-        // methods (get_address_history, contract_stats, …) return
-        // -32041 IndexerNotConfigured, which the desktop never calls.
-        indexer_rpc: None,
-        indexer_token: None,
-        indexer_timeout_secs: None,
+        // Upstream indexer delegation: walletd proxies `get_address_history`
+        // (and the other non-owned-data methods) to the co-located
+        // exfer-indexer. This is what lets Activity show a complete, real
+        // per-address confirmed history with true tx ids — including deposits
+        // that confirmed while the app was closed. Without it these methods
+        // return -32007 IndexerNotConfigured.
+        indexer_rpc: Some(desktop_cfg.effective_indexer_rpc()),
+        indexer_token: Some(desktop_cfg.effective_indexer_token()),
+        indexer_timeout_secs: Some(15),
     }
 }
 
@@ -199,56 +243,10 @@ pub async fn start_with_app(
         }
     };
 
-    // Phase 2 push bridge: subscribe to walletd's WalletEvents and emit
-    // a Tauri event the React frontend listens for. The bridge task
-    // ends when the SseClient task ends (shutdown cancels both).
-    if let Some(app) = app {
-        let mut rx = handle.events.subscribe();
-        tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(WalletNudge::Script(script)) => {
-                        let _ = app.emit(
-                            "wallet-nudge",
-                            serde_json::json!({
-                                "kind": "script",
-                                "script": hex::encode(script),
-                            }),
-                        );
-                    }
-                    Ok(WalletNudge::Tip(height)) => {
-                        let _ = app.emit(
-                            "wallet-nudge",
-                            serde_json::json!({
-                                "kind": "tip",
-                                "height": height,
-                            }),
-                        );
-                    }
-                    Ok(WalletNudge::Resync) => {
-                        let _ = app.emit(
-                            "wallet-nudge",
-                            serde_json::json!({ "kind": "resync" }),
-                        );
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(
-                            dropped = n,
-                            "wallet-nudge bridge: lagged; emitting resync"
-                        );
-                        let _ = app.emit(
-                            "wallet-nudge",
-                            serde_json::json!({ "kind": "resync" }),
-                        );
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        tracing::info!("wallet-nudge bridge: walletd shut down");
-                        break;
-                    }
-                }
-            }
-        });
-    }
+    // The Phase 2 push bridge is spawned below, after the rpc client is
+    // built — the bridge needs the client to read balances for native
+    // deposit notifications. Subscribe now while `handle` is still owned.
+    let events_rx = app.as_ref().map(|_| handle.events.subscribe());
 
     let fingerprint = handle
         .fingerprint
@@ -281,6 +279,62 @@ pub async fn start_with_app(
         }
     };
 
+    // Phase 2 push bridge: forward walletd's WalletEvents to the frontend as
+    // `wallet-nudge` events AND fire a native OS notification on an incoming
+    // deposit. The native path matters because the JS deposit toast only runs
+    // while the webview is awake; emitting from here means the user is told
+    // even when the app is backgrounded (as long as the process is alive —
+    // surviving a full OS kill / long lock additionally needs a foreground
+    // service on Android or push on iOS). The task ends when the SseClient
+    // task ends (shutdown cancels both).
+    if let (Some(app), Some(mut rx)) = (app, events_rx) {
+        let client = client.clone();
+        let conn = conn.clone();
+        tokio::spawn(async move {
+            // Seed the baseline from the current projected balance so funds
+            // already present at startup don't trigger a phantom notification.
+            let mut last_total: Option<u64> = current_projected(&client, &conn).await;
+            // Crediting tx ids we've already notified for — makes notifications
+            // idempotent so a mempool→confirmed double-count never re-fires.
+            let mut seen: HashSet<String> = HashSet::new();
+            loop {
+                match rx.recv().await {
+                    Ok(WalletNudge::Script(script)) => {
+                        tracing::info!(script = %hex::encode(&script), "nudge-bridge: forwarding script_changed → wallet-nudge");
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({ "kind": "script", "script": hex::encode(script) }),
+                        );
+                    }
+                    Ok(WalletNudge::Tip(height)) => {
+                        tracing::info!(height, "nudge-bridge: forwarding tip → wallet-nudge");
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({ "kind": "tip", "height": height }),
+                        );
+                    }
+                    Ok(WalletNudge::Resync) => {
+                        tracing::info!("nudge-bridge: forwarding resync → wallet-nudge");
+                        let _ = app.emit("wallet-nudge", serde_json::json!({ "kind": "resync" }));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(dropped = n, "wallet-nudge bridge: lagged; emitting resync");
+                        let _ = app.emit("wallet-nudge", serde_json::json!({ "kind": "resync" }));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("wallet-nudge bridge: walletd shut down");
+                        break;
+                    }
+                }
+                // Any nudge can mean funds moved — re-read the projected balance
+                // and notify if it rose. Own-sends lower it, confirmations leave
+                // it flat; only genuine inbound credit raises it (mirrors the JS
+                // deposit detector), and per-tx-id dedup blocks double-fires.
+                notify_if_deposited(&app, &client, &conn, &mut last_total, &mut seen).await;
+            }
+        });
+    }
+
     let status = BootstrapStatus::Ready {
         local_addr: handle.local_addr.to_string(),
         fingerprint,
@@ -290,6 +344,162 @@ pub async fn start_with_app(
     inner.conn = Some(conn);
     inner.client = Some(client);
     status
+}
+
+/// Read walletd's projected total — confirmed balance + pending credit −
+/// pending debit, in exfers (1e8 = 1 EXFER). `None` on any transport/parse
+/// failure (treated as "no reading", never as zero).
+async fn current_projected(client: &reqwest::Client, conn: &ConnectionInfo) -> Option<u64> {
+    let result = crate::rpc_client::forward_rpc(
+        client,
+        conn,
+        "get_wallet_balance",
+        serde_json::json!({ "utxos": false, "pending": true }),
+    )
+    .await
+    .ok()?;
+    result.get("projected_total").and_then(|v| v.as_u64())
+}
+
+/// Fire a native "Deposit received" notification on an incoming deposit.
+///
+/// Two-stage, mirroring the JS detector:
+///  1. Cheap gate — only act when `projected_total` ROSE since the last read
+///     (confirmations leave it flat, own-sends lower it).
+///  2. On a rise, resolve the real crediting tx id(s) from each address's
+///     mempool and notify once per NEW id (deduped against `seen`). Keying on
+///     tx id makes this idempotent: a transient mempool→confirmed double-count
+///     re-sees the same id and is skipped — no duplicate notification.
+///
+/// Falls back to one synthetic notification when a rise can't be attributed to
+/// any mempool tx (deposit confirmed between reads, or node too old for
+/// `get_address_mempool`). All notifications are logged with `source = "sse"`
+/// since this bridge only runs off SSE nudges.
+async fn notify_if_deposited(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    conn: &ConnectionInfo,
+    last_total: &mut Option<u64>,
+    seen: &mut HashSet<String>,
+) {
+    let balance = match crate::rpc_client::forward_rpc(
+        client,
+        conn,
+        "get_wallet_balance",
+        serde_json::json!({ "utxos": false, "pending": true }),
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let now = match balance.get("projected_total").and_then(|v| v.as_u64()) {
+        Some(v) => v,
+        None => return,
+    };
+    // Confirmed-only total — gates the synthetic fallback below.
+    let confirmed = balance.get("total").and_then(|v| v.as_u64()).unwrap_or(now);
+    let prev = *last_total;
+    *last_total = Some(now);
+    // Only a genuine increase is worth resolving; bail otherwise.
+    if !matches!(prev, Some(p) if now > p) {
+        return;
+    }
+
+    let addrs: Vec<String> = balance
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    e.get("address")
+                        .and_then(|s| s.as_str())
+                        .map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut saw_credit = false;
+    for addr in &addrs {
+        let m = match crate::rpc_client::forward_rpc(
+            client,
+            conn,
+            "get_address_mempool",
+            serde_json::json!({ "address": addr }),
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let Some(txs) = m.get("mempool").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for tx in txs {
+            let credit: u64 = tx
+                .get("received")
+                .and_then(|v| v.as_array())
+                .map(|outs| {
+                    outs.iter()
+                        .filter_map(|o| o.get("value").and_then(|v| v.as_u64()))
+                        .sum()
+                })
+                .unwrap_or(0);
+            if credit == 0 {
+                continue; // a tx that only spends from us
+            }
+            saw_credit = true;
+            let Some(tx_id) = tx.get("tx_id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if seen.insert(tx_id.to_string()) {
+                let amount = format_exfer(credit);
+                tracing::info!(amount = %amount, tx_id = %tx_id, source = "sse", "deposit: native notification");
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Deposit received")
+                    .body(format!("+{amount} EXFER"))
+                    .show();
+            }
+        }
+    }
+
+    // Synthetic fallback ONLY when the rise is genuinely new CONFIRMED money
+    // (confirmed total rose above the previous projected) — never a confirmation
+    // double-count of pending funds we'd already resolved by tx id.
+    if !saw_credit {
+        if let Some(p) = prev {
+            if confirmed > p {
+                let amount = format_exfer(now - p);
+                tracing::info!(amount = %amount, source = "sse", "deposit: native notification (synthetic)");
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Deposit received")
+                    .body(format!("+{amount} EXFER"))
+                    .show();
+            }
+        }
+    }
+}
+
+/// exfers (1e8 = 1 EXFER) → trimmed decimal string. Mirrors JS `formatExfer`:
+/// "10000000" → "0.1", "100000000" → "1", trailing fractional zeros dropped.
+fn format_exfer(exfers: u64) -> String {
+    const UNIT: u64 = 100_000_000;
+    let whole = exfers / UNIT;
+    let frac = exfers % UNIT;
+    if frac == 0 {
+        whole.to_string()
+    } else {
+        let mut f = format!("{frac:08}");
+        while f.ends_with('0') {
+            f.pop();
+        }
+        format!("{whole}.{f}")
+    }
 }
 
 /// Stop the embedded walletd (if any) and reset state to
@@ -315,6 +525,7 @@ pub async fn restore(
     ctx: &AppCtx,
     phrase: &str,
     password: &str,
+    app: Option<AppHandle>,
 ) -> Result<BootstrapStatus, AppError> {
     use exfer_walletd::store::HdSeedStore;
 
@@ -332,8 +543,10 @@ pub async fn restore(
         .map_err(|e| AppError::Other(anyhow::anyhow!(e.to_string())))?;
 
     // Persist the password + boot walletd against the restored seed.
+    // Boot WITH the app handle (when present) so the SSE push bridge spawns
+    // for the restored wallet, not just on the next launch.
     crate::secrets::set_passphrase(KEYRING_SERVICE, password).map_err(AppError::Other)?;
-    let status = start(ctx, password).await;
+    let status = start_with_app(ctx, password, app).await;
     if !matches!(status, BootstrapStatus::Ready { .. }) {
         return Ok(status);
     }

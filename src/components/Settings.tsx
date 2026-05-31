@@ -1,7 +1,7 @@
 // Settings — appearance, node RPC, export/import data, vault backup/restore,
 // sensitive export, daemon status, danger-zone WIPE.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
@@ -9,6 +9,8 @@ import {
   rpc,
   getNodeRpc,
   setNodeRpc,
+  getIndexerConfig,
+  setIndexerConfig,
   resetWallet,
   exportVaultFile,
   importVaultFile,
@@ -27,7 +29,13 @@ interface StatusResp {
   version?: string;
   wallet_count?: number;
   in_flight_transfers?: number;
-  upstream?: { url?: string; mode?: string };
+  // walletd reports upstream reachability + the synced tip directly. These
+  // are the daemon's real field names (the old `upstream: {url}` shape never
+  // matched the wire format, so the URL silently fell back to the local
+  // nodeUrl and `upstream_ok` was never read anywhere).
+  upstream_ok?: boolean;
+  upstream_nodes?: string[];
+  tip?: { height?: number; block_id?: string };
 }
 
 export function Settings({
@@ -53,27 +61,58 @@ export function Settings({
 
   const [nodeUrl, setNodeUrl] = useState<string>("");
   const [status, setStatus] = useState<StatusResp | null>(null);
+  // Whether the first get_status has settled — until then the node pill
+  // reads "Checking…" instead of flashing "Offline".
+  const [statusTried, setStatusTried] = useState(false);
   // Biometric unlock: only render the toggle where the device supports it.
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioLock, setBioLock] = useState<boolean>(biometricLockEnabled);
 
   const [nodeOpen, setNodeOpen] = useState(false);
+  // Configured indexer URL ("" = using built-in default).
+  const [indexerUrl, setIndexerUrl] = useState<string>("");
+  const [indexerOpen, setIndexerOpen] = useState(false);
   const [impOpen, setImpOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
 
+  // One-time reads: configured node URL + biometric availability.
   useEffect(() => {
     getNodeRpc()
       .then(setNodeUrl)
       .catch(() => setNodeUrl("(unknown)"));
-    rpc<StatusResp>("get_status")
-      .then(setStatus)
-      .catch(() => setStatus(null));
+    getIndexerConfig()
+      .then((c) => setIndexerUrl(c.rpc))
+      .catch(() => setIndexerUrl(""));
     biometricStatus()
       .then((s) => setBioAvailable(s.available))
       .catch(() => setBioAvailable(false));
   }, []);
+
+  // Live daemon status. Re-poll while Settings is open so the node pill
+  // reflects reachability now, not just at mount. One cheap get_status
+  // call; the same data backs the pill, block height, and upstream list.
+  const loadStatus = useCallback(() => {
+    rpc<StatusResp>("get_status")
+      .then(setStatus)
+      .catch(() => setStatus(null))
+      .finally(() => setStatusTried(true));
+  }, []);
+  useEffect(() => {
+    loadStatus();
+    const id = window.setInterval(loadStatus, 8000);
+    return () => window.clearInterval(id);
+  }, [loadStatus]);
+
+  // undefined → unknown (Checking / older daemon); true → Online; false →
+  // Offline. status == null after a settled try means walletd itself is
+  // unreachable, which is also "offline" from the user's seat.
+  const nodeOk: boolean | undefined = !statusTried
+    ? undefined
+    : status == null
+      ? false
+      : status.upstream_ok;
 
   function toggleBioLock(v: boolean) {
     setBioLock(v);
@@ -203,6 +242,19 @@ export function Settings({
             label="Upstream node"
             sub={nodeUrl}
             onClick={() => setNodeOpen(true)}
+            right={
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <StatusPill ok={nodeOk} />
+                <Icon name="chevron" size={18} stroke={2} />
+              </span>
+            }
+          />
+          <SettingRow
+            icon="activity"
+            label="Indexer"
+            sub={indexerUrl || "Default (bundled)"}
+            onClick={() => setIndexerOpen(true)}
+            right={<Icon name="chevron" size={18} stroke={2} />}
           />
         </div>
 
@@ -240,7 +292,12 @@ export function Settings({
         <Section label="Daemon status" />
         <div className="card" style={{ overflow: "hidden", marginBottom: 10 }}>
           <DRow label="Version" value={status?.version ?? "—"} />
-          <DRow label="Upstream" value={status?.upstream?.url ?? nodeUrl} copy />
+          <DRow label="Node" plain value={<StatusPill ok={nodeOk} online="Reachable" />} />
+          <DRow
+            label="Block height"
+            value={status?.tip?.height != null ? status.tip.height.toLocaleString() : "—"}
+          />
+          <DRow label="Upstream" value={status?.upstream_nodes?.join(", ") ?? nodeUrl} copy />
           <DRow label="Wallets" value={String(status?.wallet_count ?? entries.length)} />
           <DRow
             label="In-flight transfers"
@@ -282,6 +339,13 @@ export function Settings({
           current={nodeUrl}
           onClose={() => setNodeOpen(false)}
           onSaved={(url) => setNodeUrl(url)}
+        />
+      )}
+      {indexerOpen && (
+        <ChangeIndexerModal
+          current={indexerUrl}
+          onClose={() => setIndexerOpen(false)}
+          onSaved={(url) => setIndexerUrl(url)}
         />
       )}
       {impOpen && (
@@ -332,11 +396,15 @@ function DRow({
   value,
   copy,
   last,
+  plain,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   copy?: boolean;
   last?: boolean;
+  // `plain` renders the value as-is (e.g. a pill) instead of wrapping it in
+  // the mono code style the metric rows use.
+  plain?: boolean;
 }) {
   return (
     <div
@@ -353,20 +421,56 @@ function DRow({
         {label}
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-        <code
-          className="mono"
-          style={{
-            fontSize: 12.5,
-            color: "var(--text)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {value}
-        </code>
-        {copy && <CopyButton text={value} className="icon-btn" size={15} />}
+        {plain ? (
+          value
+        ) : (
+          <code
+            className="mono"
+            style={{
+              fontSize: 12.5,
+              color: "var(--text)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {value}
+          </code>
+        )}
+        {copy && typeof value === "string" && (
+          <CopyButton text={value} className="icon-btn" size={15} />
+        )}
       </span>
     </div>
+  );
+}
+
+// Node reachability pill. Reuses the app's existing `.pill` palette
+// (success/danger/muted) with a small currentColor dot — no new component
+// or colour introduced. `ok` undefined = unknown/checking.
+function StatusPill({
+  ok,
+  online = "Online",
+  offline = "Offline",
+}: {
+  ok?: boolean;
+  online?: string;
+  offline?: string;
+}) {
+  const cls = ok === undefined ? "pill-muted" : ok ? "pill-success" : "pill-danger";
+  const text = ok === undefined ? "Checking…" : ok ? online : offline;
+  return (
+    <span className={"pill " + cls}>
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: "currentColor",
+          flex: "0 0 auto",
+        }}
+      />
+      {text}
+    </span>
   );
 }
 
@@ -458,13 +562,37 @@ function ChangeNodeModal({
   const toast = useToast();
   const [val, setVal] = useState(current);
   const [busy, setBusy] = useState(false);
+  // After saving we probe the new endpoint so the user learns its
+  // reachability right away. null = not probed; { ok:false } = saved but
+  // not responding (we keep the modal open and warn instead of a misleading
+  // success toast).
+  const [probe, setProbe] = useState<{ ok: boolean } | null>(null);
   async function save() {
     setBusy(true);
+    setProbe(null);
     try {
       await setNodeRpc(val.trim());
       onSaved(val.trim());
-      toast.success("Node updated", "Reconnected to the new endpoint.");
-      onClose();
+      // Probe the freshly-set node. walletd reconnects on set_node_rpc, so
+      // get_status now reflects the new endpoint.
+      let st: StatusResp | null = null;
+      try {
+        st = await rpc<StatusResp>("get_status");
+      } catch {
+        st = null;
+      }
+      if (st?.upstream_ok) {
+        toast.success(
+          "Node connected",
+          st.tip?.height != null
+            ? `Reachable · block ${st.tip.height.toLocaleString()}`
+            : "Upstream node is responding.",
+        );
+        onClose();
+      } else {
+        // Saved, but not reachable (yet). Stay open and say so.
+        setProbe({ ok: false });
+      }
     } catch (e) {
       toast.error("Could not update node", String(e instanceof Error ? e.message : e));
     } finally {
@@ -490,6 +618,12 @@ function ChangeNodeModal({
         </>
       }
     >
+      {probe && !probe.ok && (
+        <div className="banner banner-warn" style={{ marginBottom: 14 }}>
+          Saved, but this endpoint isn't responding yet. Double-check the host and
+          port — walletd will keep retrying in the background.
+        </div>
+      )}
       <Field
         label="JSON-RPC endpoint"
         help="walletd reconnects on save. Comma-separated for round-robin + failover."
@@ -497,8 +631,93 @@ function ChangeNodeModal({
         <input
           className="field mono"
           value={val}
-          onChange={(e) => setVal(e.target.value)}
+          onChange={(e) => {
+            setVal(e.target.value);
+            setProbe(null);
+          }}
           placeholder="http://80.78.31.82:9334"
+        />
+      </Field>
+    </Modal>
+  );
+}
+
+function ChangeIndexerModal({
+  current,
+  onClose,
+  onSaved,
+}: {
+  current: string;
+  onClose: () => void;
+  onSaved: (url: string) => void;
+}) {
+  const toast = useToast();
+  const [url, setUrl] = useState(current);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Prefill both fields from the stored config (blank = using the default).
+  useEffect(() => {
+    getIndexerConfig()
+      .then((c) => {
+        setUrl(c.rpc);
+        setToken(c.token);
+      })
+      .catch(() => {});
+  }, []);
+  async function save() {
+    setBusy(true);
+    try {
+      await setIndexerConfig(url.trim(), token.trim());
+      onSaved(url.trim());
+      toast.success(
+        "Indexer updated",
+        url.trim()
+          ? "walletd reconnected to the new indexer."
+          : "Reverted to the bundled default indexer.",
+      );
+      onClose();
+    } catch (e) {
+      toast.error(
+        "Could not update indexer",
+        String(e instanceof Error ? e.message : e),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal
+      title="Indexer"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn-secondary btn-block" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-block" disabled={busy} onClick={save}>
+            {busy ? <Spinner /> : "Save"}
+          </button>
+        </>
+      }
+    >
+      <div className="banner banner-info" style={{ marginBottom: 14 }}>
+        Resolves confirmed address history — the Activity feed and the From/To on
+        each transfer. Leave both blank to use the bundled default.
+      </div>
+      <Field label="Indexer URL" help="walletd reconnects on save.">
+        <input
+          className="field mono"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="http://198.13.38.245:9335"
+        />
+      </Field>
+      <Field label="Bearer token (optional)">
+        <input
+          className="field mono"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="Leave blank for default"
         />
       </Field>
     </Modal>

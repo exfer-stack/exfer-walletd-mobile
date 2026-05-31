@@ -51,6 +51,26 @@ export function setNodeRpc(url: string): Promise<BootstrapStatus> {
   return invoke<BootstrapStatus>("set_node_rpc", { url });
 }
 
+export interface IndexerConfig {
+  /** Configured indexer URL; empty string ⇒ the app uses its built-in default. */
+  rpc: string;
+  /** Configured bearer token; empty string ⇒ built-in default. */
+  token: string;
+}
+
+export function getIndexerConfig(): Promise<IndexerConfig> {
+  if (devmock.isActive()) return devmock.get_indexer_config();
+  return invoke<IndexerConfig>("get_indexer_config");
+}
+
+export function setIndexerConfig(
+  rpc: string,
+  token: string,
+): Promise<BootstrapStatus> {
+  if (devmock.isActive()) return devmock.set_indexer_config(rpc, token);
+  return invoke<BootstrapStatus>("set_indexer_config", { rpc, token });
+}
+
 export function resetWallet(): Promise<BootstrapStatus> {
   if (devmock.isActive()) return devmock.reset_wallet();
   return invoke<BootstrapStatus>("reset_wallet");

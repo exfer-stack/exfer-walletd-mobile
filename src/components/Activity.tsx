@@ -1,22 +1,24 @@
-// Activity — local transfer history with per-tx status from the node, plus a
-// TxSheet detail view (From block + copy buttons + explorer link).
+// Activity — a unified, derived transfer feed. Confirmed rows come from the
+// exfer-indexer (`get_address_history`, the authoritative per-address on-chain
+// timeline), pending rows from the live mempool, and our own sends are enriched
+// with the rich local broadcast record (recipients, fee, change). Every row —
+// incoming or outgoing, confirmed or pending — opens a detail sheet with a real
+// tx id + explorer link. See lib/activity.ts for the merge model.
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
-import { rpc, formatExfer, formatBalanceCompact } from "../lib/rpc";
+import { formatExfer, formatBalanceCompact } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER } from "../lib/format";
 import {
-  listHistory,
-  loadConfirmed,
-  rememberConfirmed,
-  type HistoryEntry,
-} from "../lib/history";
+  buildActivityFeed,
+  loadFeedCache,
+  saveFeedCache,
+  type ActivityItem,
+} from "../lib/activity";
 import { AppBar, Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "./ui";
-
-type Confirmed = Record<string, { block_height: number; block_id?: string }>;
 
 function relTime(iso: string): string {
   const ts = new Date(iso).getTime();
@@ -31,64 +33,96 @@ function relTime(iso: string): string {
   return new Date(ts).toLocaleDateString();
 }
 
-function statusOf(
-  tx: HistoryEntry,
-  confirmed: Confirmed,
-): { text: string; cls: string; height?: number } {
-  const c = confirmed[tx.tx_id];
-  if (c) return { text: "confirmed", cls: "pill-success", height: c.block_height };
+// A row's status pill — just the status word. The block height (for rows with
+// no local timestamp) lives in the subtitle via whenLabel, so the pill must NOT
+// repeat it ("block 682,431" subtitle + "confirmed @ 682,431" pill read as a
+// bug). The full "@ height" detail still shows in the TxSheet header.
+function statusPill(it: ActivityItem): { text: string; cls: string } {
+  if (it.status === "confirmed") {
+    return { text: "confirmed", cls: "pill-success" };
+  }
   return { text: "in mempool", cls: "pill-accent" };
 }
 
-// The node's get_transaction shape (best-effort; not all nodes/dev-mock
-// implement it, so reads are wrapped in try/catch).
-interface TxStatusResp {
-  status?: { block_height?: number; block_id?: string; in_mempool?: boolean };
-  block_height?: number;
+// When a row has no local timestamp (a confirmed-only deposit the indexer
+// surfaced — e.g. it landed while the app was closed), fall back to the block.
+function whenLabel(it: ActivityItem): string {
+  if (it.ts) return relTime(it.ts);
+  if (it.block_height) return `block ${it.block_height.toLocaleString()}`;
+  return "";
 }
 
 export function Activity() {
-  const toast = useToast();
   const { balance } = useWallet();
-  const [history] = useState<HistoryEntry[]>(() => listHistory());
-  const [confirmed, setConfirmed] = useState<Confirmed>(() => loadConfirmed());
-  const [polling, setPolling] = useState(false);
+  // Seed from the cached feed so reopening Activity paints instantly instead of
+  // flashing a skeleton and cold-loading every time. `loading` is only true
+  // when there's nothing cached to show.
+  const [items, setItems] = useState<ActivityItem[]>(
+    () => loadFeedCache()?.items ?? [],
+  );
+  const [loading, setLoading] = useState(() => !loadFeedCache());
+  const [refreshing, setRefreshing] = useState(false);
+  const [indexerOk, setIndexerOk] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
 
   const ownAddrs = useMemo(
-    () => new Set((balance?.entries ?? []).map((e) => e.address)),
+    () => (balance?.entries ?? []).map((e) => e.address),
     [balance],
   );
+  // Stable key so the load effect re-runs only when the address set changes.
+  const ownKey = ownAddrs.join(",");
 
-  async function refresh() {
-    setPolling(true);
-    let newlyConfirmed = 0;
-    const next: Confirmed = { ...confirmed };
-    for (const tx of history) {
-      if (next[tx.tx_id]) continue;
-      try {
-        const r = await rpc<TxStatusResp>("get_transaction", { tx_id: tx.tx_id });
-        const h = r.status?.block_height ?? r.block_height;
-        if (h != null) {
-          next[tx.tx_id] = { block_height: h, block_id: r.status?.block_id };
-          rememberConfirmed(tx.tx_id, h, r.status?.block_id);
-          newlyConfirmed++;
-        }
-      } catch {
-        // Node may not implement get_transaction — leave as in-mempool.
+  const load = useCallback(
+    async (announce: boolean) => {
+      if (!ownAddrs.length) {
+        setItems([]);
+        setLoading(false);
+        return;
       }
-    }
-    setConfirmed(next);
-    setPolling(false);
-    if (newlyConfirmed) {
-      toast.success(
-        "Status updated",
-        `${newlyConfirmed} transfer${newlyConfirmed > 1 ? "s" : ""} confirmed.`,
-      );
+      if (announce) setRefreshing(true);
+      try {
+        const { items, indexerOk } = await buildActivityFeed(ownAddrs);
+        setItems(items);
+        setIndexerOk(indexerOk);
+        saveFeedCache(ownKey, items);
+      } finally {
+        setLoading(false);
+        if (announce) setRefreshing(false);
+      }
+    },
+    [ownAddrs, ownKey],
+  );
+
+  // Re-seed from cache when the wallet (address set) changes: show its cached
+  // feed at once, or a skeleton if there's nothing cached for it. Guarded on a
+  // non-empty key so the brief "balance not loaded yet" tick doesn't wipe the
+  // first-paint cache.
+  useEffect(() => {
+    if (!ownKey) return;
+    const cached = loadFeedCache();
+    if (cached && cached.ownKey === ownKey && cached.items.length) {
+      setItems(cached.items);
+      setLoading(false);
     } else {
-      toast.info("Up to date", "No newly-confirmed transfers.");
+      setItems([]);
+      setLoading(true);
     }
-  }
+  }, [ownKey]);
+
+  // Refresh on mount and whenever the wallet's balance moves — both the
+  // confirmed `total` (a tx confirmed) AND the `projected` total (a tx just hit
+  // the mempool, pending). Keying on both means a pending deposit/send appears
+  // within one provider poll (~4–18s) or instantly on an SSE push, and flips to
+  // confirmed when it lands — without re-running on no-op polls (the numbers
+  // only change when money actually moves). No separate timer: we piggyback on
+  // the provider's existing poll + SSE so Activity never out-of-syncs the
+  // balance. The cached feed stays on screen while the refresh runs.
+  useEffect(() => {
+    void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownKey, balance?.total, balance?.projected]);
+
+  const opened = items.find((t) => t.tx_id === open) ?? null;
 
   return (
     <div className="screen">
@@ -96,17 +130,37 @@ export function Activity() {
         <AppBar
           large
           title="Activity"
-          subtitle={`${history.length} ${
-            history.length === 1 ? "transfer" : "transfers"
+          subtitle={`${items.length} ${
+            items.length === 1 ? "transfer" : "transfers"
           }`}
           right={
-            <button className="icon-btn" onClick={refresh} aria-label="Refresh">
-              {polling ? <Spinner /> : <Icon name="refresh" size={19} />}
+            <button
+              className="icon-btn"
+              onClick={() => load(true)}
+              aria-label="Refresh"
+            >
+              {refreshing ? <Spinner /> : <Icon name="refresh" size={19} />}
             </button>
           }
         />
 
-        {history.length === 0 ? (
+        {!indexerOk && items.length > 0 && (
+          <div
+            className="faint"
+            style={{ fontSize: 11.5, margin: "0 2px 10px", lineHeight: 1.5 }}
+          >
+            Showing the live + locally-recorded view — full on-chain history is
+            momentarily unavailable.
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ display: "grid", gap: 11 }}>
+            {[0, 1, 2].map((i) => (
+              <SkeletonRow key={i} />
+            ))}
+          </div>
+        ) : items.length === 0 ? (
           <div
             className="card"
             style={{ padding: "36px 22px", textAlign: "center", marginTop: 8 }}
@@ -132,133 +186,22 @@ export function Activity() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 11 }}>
-            {history.map((t) => {
-              if (t.kind === "received") {
-                return (
-                  <div
-                    key={t.tx_id}
-                    className="card"
-                    style={{
-                      padding: "14px 15px",
-                      border: "1px solid var(--border-soft)",
-                      background: "var(--surface)",
-                    }}
-                  >
-                    <div className="h-row">
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 11,
-                            display: "grid",
-                            placeItems: "center",
-                            background: "color-mix(in srgb,#34d399 16%,transparent)",
-                            color: "#34d399",
-                          }}
-                        >
-                          <Icon name="receive" size={18} />
-                        </span>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14.5 }}>Received</div>
-                          <div className="faint" style={{ fontSize: 11.5 }}>
-                            {relTime(t.broadcast_at)}
-                          </div>
-                        </div>
-                      </div>
-                      <div
-                        className="mono"
-                        style={{ fontWeight: 600, fontSize: 15, color: "#34d399" }}
-                      >
-                        +{formatBalanceCompact(t.amount ?? 0).replace(" EXFER", "")}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              const recips = t.outputs.filter((o) => !o.is_change);
-              const sent = recips.reduce((s, o) => s + o.amount, 0);
-              const st = statusOf(t, confirmed);
-              const change = t.outputs.find((o) => o.is_change);
-              const fromAddr = change?.to;
-              const fromEntry =
-                fromAddr && ownAddrs.has(fromAddr)
-                  ? (balance?.entries ?? []).find((a) => a.address === fromAddr)
-                  : null;
-              const fromName = fromEntry ? addrName(fromEntry) : "this wallet";
-              return (
-                <button
-                  key={t.tx_id}
-                  className="card tap"
-                  onClick={() => setOpen(t.tx_id)}
-                  style={{
-                    padding: "14px 15px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    border: "1px solid var(--border-soft)",
-                    background: "var(--surface)",
-                    display: "block",
-                    width: "100%",
-                  }}
-                >
-                  <div className="h-row" style={{ marginBottom: 11 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 11,
-                          display: "grid",
-                          placeItems: "center",
-                          background: "var(--surface-2)",
-                          color: "var(--text-dim)",
-                        }}
-                      >
-                        <Icon name="send" size={18} />
-                      </span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14.5 }}>
-                          Sent from {fromName}
-                        </div>
-                        <div className="faint" style={{ fontSize: 11.5 }}>
-                          {relTime(t.broadcast_at)}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>
-                        −{formatBalanceCompact(sent).replace(" EXFER", "")}
-                      </div>
-                      <span
-                        className={"pill " + st.cls}
-                        style={{ marginTop: 6, padding: "3px 9px", fontSize: 11 }}
-                      >
-                        {st.text}
-                        {st.height ? ` @ ${st.height.toLocaleString()}` : ""}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className="faint"
-                    style={{ fontSize: 12, display: "flex", justifyContent: "space-between" }}
-                  >
-                    <span>
-                      {recips.length} recipient{recips.length > 1 ? "s" : ""}
-                    </span>
-                    <span className="mono">{shortAddress(t.tx_id, 6, 5)}</span>
-                  </div>
-                </button>
-              );
-            })}
+            {items.map((t) => (
+              <ActivityRow
+                key={t.tx_id}
+                item={t}
+                entries={balance?.entries ?? []}
+                onOpen={() => setOpen(t.tx_id)}
+              />
+            ))}
           </div>
         )}
       </div>
 
-      {open && (
+      {opened && (
         <TxSheet
-          tx={history.find((t) => t.tx_id === open)!}
-          confirmed={confirmed}
-          ownAddrs={ownAddrs}
+          item={opened}
+          entries={balance?.entries ?? []}
           onClose={() => setOpen(null)}
         />
       )}
@@ -266,32 +209,165 @@ export function Activity() {
   );
 }
 
+type Entry = NonNullable<ReturnType<typeof useWallet>["balance"]>["entries"][number];
+
+// Shimmering placeholder row (shared `.skeleton` animation), shaped like a real
+// activity row so the cold-load state reads as "loading" rather than empty.
+function SkeletonRow() {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "14px 15px",
+        border: "1px solid var(--border-soft)",
+        background: "var(--surface)",
+      }}
+    >
+      <div className="h-row">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            className="skeleton"
+            style={{ width: 36, height: 36, borderRadius: 11 }}
+          />
+          <div style={{ display: "grid", gap: 6 }}>
+            <span
+              className="skeleton"
+              style={{ width: 124, height: 14, borderRadius: 6 }}
+            />
+            <span
+              className="skeleton"
+              style={{ width: 64, height: 11, borderRadius: 6 }}
+            />
+          </div>
+        </div>
+        <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
+          <span
+            className="skeleton"
+            style={{ width: 58, height: 15, borderRadius: 6 }}
+          />
+          <span
+            className="skeleton"
+            style={{ width: 74, height: 18, borderRadius: 999 }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityRow({
+  item,
+  entries,
+  onOpen,
+}: {
+  item: ActivityItem;
+  entries: Entry[];
+  onOpen: () => void;
+}) {
+  const st = statusPill(item);
+  const received = item.kind === "received";
+
+  // Received: name the address that got credited (if it's one we can name).
+  const toEntry = received
+    ? entries.find((e) => item.toAddresses?.includes(e.address))
+    : null;
+  // Sent: name the funding (change-returning) address when we have local detail.
+  const fromAddr = item.detail?.outputs.find((o) => o.is_change)?.to;
+  const fromEntry = fromAddr ? entries.find((e) => e.address === fromAddr) : null;
+
+  const title = received
+    ? item.is_coinbase
+      ? "Mining reward"
+      : toEntry
+        ? `Received to ${addrName(toEntry)}`
+        : "Received"
+    : fromEntry
+      ? `Sent from ${addrName(fromEntry)}`
+      : "Sent";
+
+  return (
+    <button
+      className="card tap"
+      onClick={onOpen}
+      style={{
+        padding: "14px 15px",
+        textAlign: "left",
+        cursor: "pointer",
+        border: "1px solid var(--border-soft)",
+        background: "var(--surface)",
+        display: "block",
+        width: "100%",
+      }}
+    >
+      <div className="h-row">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              display: "grid",
+              placeItems: "center",
+              background: received
+                ? "color-mix(in srgb,#34d399 16%,transparent)"
+                : "var(--surface-2)",
+              color: received ? "#34d399" : "var(--text-dim)",
+            }}
+          >
+            <Icon name={received ? "receive" : "send"} size={18} />
+          </span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14.5 }}>{title}</div>
+            <div className="faint" style={{ fontSize: 11.5 }}>
+              {whenLabel(item)}
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div
+            className="mono"
+            style={{
+              fontWeight: 600,
+              fontSize: 15,
+              color: received ? "#34d399" : undefined,
+            }}
+          >
+            {received ? "+" : "−"}
+            {formatBalanceCompact(item.amount).replace(" EXFER", "")}
+          </div>
+          <span
+            className={"pill " + st.cls}
+            style={{ marginTop: 6, padding: "3px 9px", fontSize: 11 }}
+          >
+            {st.text}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function TxSheet({
-  tx,
-  confirmed,
-  ownAddrs,
+  item,
+  entries,
   onClose,
 }: {
-  tx: HistoryEntry;
-  confirmed: Confirmed;
-  ownAddrs: Set<string>;
+  item: ActivityItem;
+  entries: Entry[];
   onClose: () => void;
 }) {
   const toast = useToast();
-  const { balance } = useWallet();
-  const recips = tx.outputs.filter((o) => !o.is_change);
-  const change = tx.outputs.find((o) => o.is_change);
-  const sent = recips.reduce((s, o) => s + o.amount, 0);
-  const st = statusOf(tx, confirmed);
-  const dt = new Date(tx.broadcast_at);
-  const fromAddr = change?.to;
-  const fromEntry =
-    fromAddr && ownAddrs.has(fromAddr)
-      ? (balance?.entries ?? []).find((a) => a.address === fromAddr)
-      : null;
+  const st = statusPill(item);
+  const received = item.kind === "received";
+  const detail = item.detail;
+
+  // From/To come natively from the indexer's counterparties (resolved at index
+  // time): senders for a received deposit, recipients for a send. No per-tx
+  // re-decode. Empty only for a still-pending tx the indexer hasn't seen yet.
+  const senders = received ? (item.counterparties ?? []) : [];
 
   function openExplorer() {
-    const url = `${EXPLORER}/tx/${tx.tx_id}`;
+    const url = `${EXPLORER}/tx/${item.tx_id}`;
     try {
       window.open(url, "_blank", "noopener");
     } catch {
@@ -300,11 +376,154 @@ function TxSheet({
     }
   }
 
+  const subtitle = item.ts
+    ? new Date(item.ts).toLocaleString()
+    : item.block_height
+      ? `Block ${item.block_height.toLocaleString()}`
+      : undefined;
+
+  const txIdCard = (
+    <div className="card card-2" style={{ padding: "12px 14px", marginBottom: 16 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>
+        Transaction ID
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <code
+          className="mono"
+          style={{
+            flex: 1,
+            fontSize: 12,
+            wordBreak: "break-all",
+            color: "var(--text-dim)",
+            lineHeight: 1.5,
+          }}
+        >
+          {item.tx_id}
+        </code>
+        <CopyButton text={item.tx_id} label="Tx ID copied" />
+      </div>
+    </div>
+  );
+
+  const explorerBtn = (
+    <button className="btn btn-secondary btn-block" onClick={openExplorer}>
+      <Icon name="share" size={18} /> View on Exfer Explorer
+    </button>
+  );
+
+  // ---- Received ----------------------------------------------------------
+  if (received) {
+    const toAddr = item.toAddresses?.[0];
+    const toEntry = toAddr ? entries.find((e) => e.address === toAddr) : null;
+    return (
+      <Sheet title="Deposit" subtitle={subtitle} onClose={onClose} height="90%">
+        <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
+          <div
+            className="mono"
+            style={{ fontSize: 30, fontWeight: 600, color: "#34d399" }}
+          >
+            +{formatExfer(item.amount).replace(" EXFER", "")}
+            <span className="dim" style={{ fontSize: 15 }}>
+              {" "}
+              EXFER
+            </span>
+          </div>
+          <span className={"pill " + st.cls} style={{ marginTop: 10 }}>
+            {st.text}
+          </span>
+        </div>
+
+        {senders && senders.length > 0 && (
+          <>
+            <div className="eyebrow" style={{ marginBottom: 9 }}>
+              From
+            </div>
+            <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
+              {senders.map((addr, i) => {
+                const e = entries.find((x) => x.address === addr);
+                return (
+                  <div
+                    key={addr}
+                    style={{
+                      padding: "12px 14px",
+                      borderBottom:
+                        i < senders.length - 1
+                          ? "1px solid var(--border-soft)"
+                          : "0",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <AddrAvatar address={addr} size={32} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                        {e ? addrName(e) : "External address"}
+                      </div>
+                      <code className="mono faint" style={{ fontSize: 11.5 }}>
+                        {shortAddress(addr, 8, 8)}
+                      </code>
+                    </div>
+                    <CopyButton text={addr} label="Address copied" />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {toAddr && (
+          <>
+            <div className="eyebrow" style={{ marginBottom: 9 }}>
+              To
+            </div>
+            <div
+              className="card"
+              style={{
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 16,
+              }}
+            >
+              <AddrAvatar address={toAddr} size={32} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {toEntry ? addrName(toEntry) : "This wallet"}
+                </div>
+                <code className="mono faint" style={{ fontSize: 11.5 }}>
+                  {shortAddress(toAddr, 8, 8)}
+                </code>
+              </div>
+              <CopyButton text={toAddr} label="Address copied" />
+            </div>
+          </>
+        )}
+
+        {txIdCard}
+        {explorerBtn}
+      </Sheet>
+    );
+  }
+
+  // ---- Sent --------------------------------------------------------------
+  const recips = detail?.outputs.filter((o) => !o.is_change) ?? [];
+  const change = detail?.outputs.find((o) => o.is_change);
+  const fromAddr = change?.to;
+  const fromEntry = fromAddr ? entries.find((e) => e.address === fromAddr) : null;
+  // Fallback recipients for a send with no local record (broadcast from another
+  // device): the indexer's counterparties, minus any of our own addresses
+  // (those are change, not recipients).
+  const peerRecipients = (item.counterparties ?? []).filter(
+    (a) => !entries.some((e) => e.address === a),
+  );
+
   return (
-    <Sheet title="Transfer" subtitle={dt.toLocaleString()} onClose={onClose} height="90%">
+    <Sheet title="Transfer" subtitle={subtitle} onClose={onClose} height="90%">
       <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
         <div className="mono" style={{ fontSize: 30, fontWeight: 600 }}>
-          −{formatExfer(sent).replace(" EXFER", "")}
+          −{formatExfer(item.amount).replace(" EXFER", "")}
           <span className="dim" style={{ fontSize: 15 }}>
             {" "}
             EXFER
@@ -312,7 +531,6 @@ function TxSheet({
         </div>
         <span className={"pill " + st.cls} style={{ marginTop: 10 }}>
           {st.text}
-          {st.height ? ` @ ${st.height.toLocaleString()}` : ""}
         </span>
       </div>
 
@@ -345,81 +563,116 @@ function TxSheet({
         </>
       )}
 
-      <div className="eyebrow" style={{ marginBottom: 9 }}>
-        Sent to
-      </div>
-      <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
-        {recips.map((o, i) => (
-          <div
-            key={i}
-            style={{
-              padding: "12px 14px",
-              borderBottom: i < recips.length - 1 ? "1px solid var(--border-soft)" : "0",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <AddrAvatar address={o.to} size={32} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>External address</div>
-              <code className="mono faint" style={{ fontSize: 11.5 }}>
-                {shortAddress(o.to, 8, 8)}
-              </code>
-            </div>
-            <span className="mono" style={{ fontWeight: 600, fontSize: 14 }}>
-              {formatBalanceCompact(o.amount).replace(" EXFER", "")}
-            </span>
-            <CopyButton text={o.to} label="Address copied" />
+      {recips.length > 0 ? (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 9 }}>
+            Sent to
           </div>
-        ))}
-      </div>
+          <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
+            {recips.map((o, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom:
+                    i < recips.length - 1 ? "1px solid var(--border-soft)" : "0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <AddrAvatar address={o.to} size={32} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                    External address
+                  </div>
+                  <code className="mono faint" style={{ fontSize: 11.5 }}>
+                    {shortAddress(o.to, 8, 8)}
+                  </code>
+                </div>
+                <span className="mono" style={{ fontWeight: 600, fontSize: 14 }}>
+                  {formatBalanceCompact(o.amount).replace(" EXFER", "")}
+                </span>
+                <CopyButton text={o.to} label="Address copied" />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : peerRecipients.length > 0 ? (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 9 }}>
+            Sent to
+          </div>
+          <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
+            {peerRecipients.map((addr, i) => (
+              <div
+                key={addr}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom:
+                    i < peerRecipients.length - 1
+                      ? "1px solid var(--border-soft)"
+                      : "0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <AddrAvatar address={addr} size={32} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                    External address
+                  </div>
+                  <code className="mono faint" style={{ fontSize: 11.5 }}>
+                    {shortAddress(addr, 8, 8)}
+                  </code>
+                </div>
+                <CopyButton text={addr} label="Address copied" />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div
+          className="card card-2"
+          style={{ padding: "12px 14px", marginBottom: 16 }}
+        >
+          <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+            This transfer was broadcast from another device, so its recipient
+            breakdown isn't recorded here. The amount, status, and transaction
+            ID below are exact — open the explorer for the full output list.
+          </div>
+        </div>
+      )}
 
-      <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
-        <RvRow
-          label="Network fee"
-          value={formatExfer(tx.fee).replace(" EXFER", "") + " EXFER"}
-          mono
-        />
-        <RvRow
-          label="Inputs / outputs"
-          value={`${tx.inputs.length} in · ${tx.outputs.length} out`}
-          mono
-        />
-        {change && (
+      {detail && (
+        <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
           <RvRow
-            label="Change returned"
-            value={formatBalanceCompact(change.amount).replace(" EXFER", "") + " EXFER"}
+            label="Network fee"
+            value={formatExfer(detail.fee).replace(" EXFER", "") + " EXFER"}
             mono
           />
-        )}
-        <RvRow label="Size" value={`${tx.size} bytes`} mono last />
-      </div>
-
-      <div className="card card-2" style={{ padding: "12px 14px", marginBottom: 16 }}>
-        <div className="eyebrow" style={{ marginBottom: 6 }}>
-          Transaction ID
+          <RvRow
+            label="Inputs / outputs"
+            value={`${detail.inputs.length} in · ${detail.outputs.length} out`}
+            mono
+          />
+          {change && (
+            <RvRow
+              label="Change returned"
+              value={
+                formatBalanceCompact(change.amount).replace(" EXFER", "") +
+                " EXFER"
+              }
+              mono
+            />
+          )}
+          <RvRow label="Size" value={`${detail.size} bytes`} mono last />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <code
-            className="mono"
-            style={{
-              flex: 1,
-              fontSize: 12,
-              wordBreak: "break-all",
-              color: "var(--text-dim)",
-              lineHeight: 1.5,
-            }}
-          >
-            {tx.tx_id}
-          </code>
-          <CopyButton text={tx.tx_id} label="Tx ID copied" />
-        </div>
-      </div>
+      )}
 
-      <button className="btn btn-secondary btn-block" onClick={openExplorer}>
-        <Icon name="share" size={18} /> View on Exfer Explorer
-      </button>
+      {txIdCard}
+      {explorerBtn}
     </Sheet>
   );
 }

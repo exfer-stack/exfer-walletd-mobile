@@ -14,8 +14,8 @@ use serde_json::Value;
 use tauri::{Manager, State};
 
 use walletd_supervisor::{
-    read_desktop_config, restart, restore, start, start_with_app, stop, write_desktop_config,
-    AppCtx, BootstrapStatus, DesktopConfig, KEYRING_SERVICE,
+    read_desktop_config, restart, restore, start_with_app, stop, write_desktop_config,
+    AppCtx, BootstrapStatus, KEYRING_SERVICE,
 };
 
 #[tauri::command]
@@ -38,6 +38,7 @@ async fn submit_password(
 
 #[tauri::command]
 async fn restore_from_mnemonic(
+    app: tauri::AppHandle,
     ctx: State<'_, AppCtx>,
     phrase: String,
     password: String,
@@ -49,7 +50,10 @@ async fn restore_from_mnemonic(
     if words != 24 {
         return Err(format!("recovery phrase must be 24 words (got {words})"));
     }
-    restore(&ctx, phrase.trim(), &password)
+    // Pass the AppHandle so the restored wallet boots WITH the SSE push
+    // bridge — without it, a just-restored wallet ran poll-only until the
+    // next app launch (where the keyring auto-start re-attaches it).
+    restore(&ctx, phrase.trim(), &password, Some(app))
         .await
         .map_err(|e| e.to_user_string())
 }
@@ -194,8 +198,51 @@ async fn set_node_rpc(
         return Err("node_rpc URL must not be empty".into());
     }
     let datadir = ctx.inner.lock().await.datadir.clone();
-    write_desktop_config(&datadir, &DesktopConfig { node_rpc: url })
-        .map_err(|e| format!("persisting config: {e}"))?;
+    // Read-modify-write so changing the node preserves the indexer config.
+    let mut cfg = read_desktop_config(&datadir);
+    cfg.node_rpc = url;
+    write_desktop_config(&datadir, &cfg).map_err(|e| format!("persisting config: {e}"))?;
+    restart(&ctx).await.map_err(|e| e.to_user_string())
+}
+
+/// The configured indexer endpoint. Empty strings mean "use the built-in
+/// default" — the frontend shows the default as the field placeholder.
+#[derive(serde::Serialize)]
+struct IndexerConfig {
+    rpc: String,
+    token: String,
+}
+
+#[tauri::command]
+async fn get_indexer_config(ctx: State<'_, AppCtx>) -> Result<IndexerConfig, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    let cfg = read_desktop_config(&datadir);
+    Ok(IndexerConfig {
+        rpc: cfg.indexer_rpc.unwrap_or_default(),
+        token: cfg.indexer_token.unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+async fn set_indexer_config(
+    ctx: State<'_, AppCtx>,
+    rpc: String,
+    token: String,
+) -> Result<BootstrapStatus, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    let mut cfg = read_desktop_config(&datadir);
+    // Blank ⇒ store None so the effective_* helpers fall back to the default.
+    let norm = |s: String| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    cfg.indexer_rpc = norm(rpc);
+    cfg.indexer_token = norm(token);
+    write_desktop_config(&datadir, &cfg).map_err(|e| format!("persisting config: {e}"))?;
     restart(&ctx).await.map_err(|e| e.to_user_string())
 }
 
@@ -295,6 +342,8 @@ pub fn run() {
             rpc,
             get_node_rpc,
             set_node_rpc,
+            get_indexer_config,
+            set_indexer_config,
             reset_wallet,
             export_wallet_key,
             import_wallet_key,

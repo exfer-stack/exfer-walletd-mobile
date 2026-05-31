@@ -15,14 +15,69 @@ export function addrName(entry: WalletEntry): string {
   return "Imported";
 }
 
-/** Deterministic, low-chroma gradient from an address — keeps avatars
- *  inside the monochrome brand instead of shouting. */
-export function avatarStyle(address: string): { background: string } {
-  let h = 0;
-  for (let i = 0; i < address.length; i += 4) {
-    h = (h * 31 + address.charCodeAt(i)) % 360;
+/** Generative symmetric-identicon avatar: a foreground glyph painted on a
+ *  5×5 grid (mirrored left↔right) over a dark brand-hued tile. `cells` are
+ *  grid coordinates 0–4; the renderer scales them into a 0–100 viewBox. */
+export const AVATAR_GRID = 5;
+
+export interface AvatarCell {
+  x: number;
+  y: number;
+}
+
+export interface AvatarData {
+  bg: string;
+  fg: string;
+  cells: AvatarCell[];
+}
+
+/** FNV-1a fold of the address seeding a small xorshift32 stream, so the
+ *  whole avatar is deterministic per address (same address → same art). */
+function seededRng(address: string): () => number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < address.length; i++) {
+    h ^= address.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
   }
-  const a = `oklch(0.72 0.12 ${h})`;
-  const b = `oklch(0.62 0.13 ${(h + 38) % 360})`;
-  return { background: `linear-gradient(135deg, ${a}, ${b})` };
+  let s = h >>> 0 || 1;
+  return () => {
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s / 4294967296;
+  };
+}
+
+/** Hue picker biased toward the cool cyan→violet brand range, with the
+ *  occasional warm pop so the address list never reads as one color. */
+function brandHue(r: () => number): number {
+  const cool = [170, 185, 195, 200, 215, 230, 250, 265, 280];
+  const warm = [320, 30, 12];
+  return r() < 0.82
+    ? cool[Math.floor(r() * cool.length)]
+    : warm[Math.floor(r() * warm.length)];
+}
+
+/** Deterministic symmetric identicon from an address: a bright brand-hued
+ *  glyph on a dark tile, mirrored across the vertical axis so it reads as a
+ *  unique mark. Same address → same art. */
+export function avatarData(address: string): AvatarData {
+  const r = seededRng(address);
+  const hue = brandHue(r);
+  const fg = `oklch(0.78 0.14 ${hue})`;
+  const bg = `oklch(0.22 0.04 ${(hue + 20) % 360})`;
+  const cells: AvatarCell[] = [];
+  const half = Math.ceil(AVATAR_GRID / 2); // columns 0..2 drive the mirror
+  for (let x = 0; x < half; x++) {
+    for (let y = 0; y < AVATAR_GRID; y++) {
+      if (r() > 0.5) {
+        cells.push({ x, y });
+        const mx = AVATAR_GRID - 1 - x;
+        if (mx !== x) cells.push({ x: mx, y });
+      }
+    }
+  }
+  return { bg, fg, cells };
 }

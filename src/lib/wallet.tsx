@@ -8,9 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { rpc, formatExfer } from "./rpc";
-import type { WalletBalance, WalletEntry } from "./types";
+import type { AddressMempoolResponse, WalletBalance, WalletEntry } from "./types";
 import { useToast } from "./toast";
-import { osNotify } from "./notify";
 import { recordReceived } from "./history";
 import { isHidden } from "./hidden";
 
@@ -75,6 +74,68 @@ function byIndex(a: WalletEntry, b: WalletEntry): number {
   return a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
 }
 
+// Resolve a just-detected deposit to its REAL crediting tx id(s). We diff
+// per-address contributions to find which address(es) grew, then ask walletd's
+// get_address_mempool for that address — each mempool tx's `received` outputs
+// are the funds paying us, and the tx carries a true on-chain id.
+//
+// This drives the instant in-app "Received" toast and seeds a local fallback
+// record (recordReceived, deduped by tx_id). It is NOT the source of truth for
+// Activity anymore — that's the exfer-indexer's get_address_history, which
+// surfaces every confirmed deposit with full detail even ones we never saw in
+// the mempool. So there's deliberately NO synthetic placeholder here: a deposit
+// either resolves to a real tx id (toast + cache) or it's left for the indexer
+// to show. recordReceived's tx_id dedup also means the mempool→confirmed
+// transition (which re-detects the same funds) fires neither a second toast nor
+// a phantom row.
+//
+// `source` attributes each log line to the SSE push bridge ("sse") vs the
+// background poll ("poll"), plus the non-deposit triggers (mount, manual).
+type LoadSource = "mount" | "manual" | "poll" | "sse";
+
+async function recordDeposit(
+  entries: WalletEntry[],
+  prevByAddr: Map<string, number>,
+  source: LoadSource,
+): Promise<boolean> {
+  const grew = entries.filter((e) => {
+    const cur =
+      e.balance + (e.pending_received ?? 0) - (e.pending_spent ?? 0);
+    // Unknown address ⇒ no prior reading to compare; treat as no growth so
+    // we don't scan it. The indexer-backed Activity still covers the deposit.
+    const was = prevByAddr.get(e.address) ?? cur;
+    return cur > was;
+  });
+
+  let addedNew = 0;
+  for (const e of grew) {
+    try {
+      const m = await rpc<AddressMempoolResponse>("get_address_mempool", {
+        address: e.address,
+      });
+      for (const tx of m.mempool ?? []) {
+        const credit = (tx.received ?? []).reduce((s, r) => s + r.value, 0);
+        if (credit <= 0) continue; // a tx that only spends from us
+        if (recordReceived({ tx_id: tx.tx_id, amount: credit, address: e.address })) {
+          addedNew++;
+          console.info(
+            `[deposit] recorded +${formatExfer(credit)} tx=${tx.tx_id.slice(0, 12)}… source=${source}`,
+          );
+        }
+      }
+    } catch {
+      // Node too old for get_address_mempool, or a transient scan failure —
+      // the indexer-backed Activity still surfaces the deposit on next refresh.
+    }
+  }
+
+  // True only when a genuinely NEW deposit was resolved. The caller gates the
+  // in-app toast on this so a transient mempool→confirmed double-count (which
+  // only re-resolves an already-logged tx) fires neither a phantom row nor a
+  // phantom toast.
+  return addedNew > 0;
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const [balance, setBalance] = useState<WalletBalance | null>(null);
@@ -84,6 +145,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // Track the last-seen total so we can detect deposits. `null` until the
   // first successful read so we don't toast the initial balance.
   const lastTotal = useRef<number | null>(null);
+  // Per-address contribution (confirmed + pending credit − pending debit) at
+  // the previous read, so a detected deposit can tell WHICH address grew and
+  // query just that address's mempool for the real crediting tx id.
+  const prevByAddr = useRef<Map<string, number>>(new Map());
   const inFlight = useRef(false);
   // All known entries (including hidden, kept at their last-seen balance).
   // Used to compute the visible poll set and to merge poll results without
@@ -101,7 +166,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 
   const load = useCallback(
-    async (isPoll: boolean) => {
+    async (isPoll: boolean, source: LoadSource) => {
       if (inFlight.current) return;
       inFlight.current = true;
       if (!isPoll) setLoading(true);
@@ -155,12 +220,31 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           // Lead with the amount — it reads as money that just landed, not a
           // status update. The balance already reflects it (feels instant).
           const amount = formatExfer(delta);
-          toast.incoming(`+${amount}`, "Received");
-          osNotify("Deposit received", `+${amount}`);
-          // Log it so the deposit also shows up in Activity (walletd gives
-          // us no inbound tx history, so this client-side record is it).
-          recordReceived(delta);
+          // Resolve the REAL crediting tx id from the mempool and gate the
+          // in-app toast on a genuinely NEW resolution — a transient
+          // mempool→confirmed double-count re-detects the same funds (same tx
+          // id, deduped), so it fires no second toast. Activity itself is now
+          // driven by the indexer, so a deposit we can't resolve here still
+          // shows up there with full detail.
+          //
+          // The OS-level notification fires separately from the native layer
+          // (the walletd_supervisor SSE bridge) so a deposit notifies even
+          // while this webview is suspended/backgrounded.
+          void recordDeposit(entries, prevByAddr.current, source).then(
+            (added) => {
+              if (added) toast.incoming(`+${amount}`, "Received");
+            },
+          );
         }
+        // Snapshot per-address contributions for the next deposit diff.
+        const snap = new Map<string, number>();
+        for (const e of entries) {
+          snap.set(
+            e.address,
+            e.balance + (e.pending_received ?? 0) - (e.pending_spent ?? 0),
+          );
+        }
+        prevByAddr.current = snap;
         lastTotal.current = projected;
       } catch (e) {
         // Don't clobber a good balance on a transient poll failure;
@@ -174,7 +258,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [toast, visibleAddrs],
   );
 
-  const refresh = useCallback(() => load(false), [load]);
+  const refresh = useCallback(() => load(false, "manual"), [load]);
 
   const refreshUtxos = useCallback(async () => {
     try {
@@ -211,11 +295,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       timer = window.setTimeout(run, delay);
     };
     const run = async () => {
-      await load(true);
+      await load(true, "poll");
       if (!cancelled) schedule();
     };
     // Initial full load, then begin the paced poll loop.
-    load(false).finally(() => {
+    load(false, "mount").finally(() => {
       if (!cancelled) schedule();
     });
     return () => {
@@ -244,16 +328,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         if (cancelled) return;
-        unlisten = await listen("wallet-nudge", () => {
+        unlisten = await listen<{ kind?: string }>("wallet-nudge", (e) => {
+          // SSE-push debug: confirms a wallet-nudge reached the webview (the
+          // last hop of node→walletd→Tauri→JS). Pair with walletd's
+          // `sse_client` tracing to localize a broken push chain.
+          console.debug("[sse] wallet-nudge", e.payload, new Date().toISOString());
           const now = Date.now();
           if (now - lastRefreshAt < COALESCE_MS) return;
           lastRefreshAt = now;
-          load(true).catch(() => {
+          load(true, "sse").catch(() => {
             /* transient; next poll covers it */
           });
         });
-      } catch {
+        console.debug("[sse] wallet-nudge listener attached");
+      } catch (err) {
         // listen unavailable (e.g. vite dev outside Tauri); stay on poll.
+        console.debug("[sse] wallet-nudge listener unavailable, polling only", err);
       }
     })();
 
