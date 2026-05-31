@@ -233,7 +233,7 @@ jobs:
       # Rename the Gradle-default `app-*-release.apk` / `app-*.aab` to
       # `exfer-wallet_<version>_<flavor>.apk|aab` so the GitHub Release
       # assets carry the product name and version (matches the file name
-      # docs/INSTALL.md tells users to look for).
+      # the README install steps tell users to look for).
       - name: Rename Android artifacts to exfer-wallet_<version>_<flavor>
         run: |
           set -eu
@@ -262,7 +262,7 @@ jobs:
             Mobile wallet for the Exfer blockchain (iOS + Android).
 
             **Android:** download the `.apk` below and install it — see
-            [docs/INSTALL.md](https://github.com/exfer-stack/exfer-walletd-mobile/blob/main/docs/INSTALL.md).
+            [the install steps](https://github.com/exfer-stack/exfer-walletd-mobile/blob/main/README.md#install).
             **iOS:** sideloading isn't possible; an App Store / TestFlight
             build follows once signing is provisioned.
           files: |
