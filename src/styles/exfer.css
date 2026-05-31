@@ -140,7 +140,9 @@ body {
   scrollbar-width: none;
 }
 .screen::-webkit-scrollbar { width: 0; height: 0; }
-.screen-pad { padding: 4px 20px 28px; }
+/* Top pad clears the device status bar / notch (we no longer draw a fake
+   one — the OS provides it). */
+.screen-pad { padding: calc(env(safe-area-inset-top) + 10px) 20px 28px; }
 
 /* ── bottom tab bar ─────────────────────────────────────────────── */
 .tabbar {

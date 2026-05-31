@@ -19,7 +19,6 @@ import {
   type ThemeMode,
 } from "./lib/theme";
 import { Icon } from "./lib/icons";
-import { StatusBar } from "./components/ui";
 import { Onboarding } from "./components/Onboarding";
 import { Home } from "./components/Home";
 import { Activity } from "./components/Activity";
@@ -158,8 +157,6 @@ function Shell() {
 
   return (
     <div className="phone" data-theme={theme} style={phoneStyle}>
-      <StatusBar />
-
       <BalanceProvider value={{ hidden: hideBalance, toggle: toggleHide }}>
         {!ready ? (
           boot?.status === "failed" ? (
