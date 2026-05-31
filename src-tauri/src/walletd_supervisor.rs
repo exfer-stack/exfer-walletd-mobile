@@ -17,8 +17,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use exfer_walletd::config::Config;
+use exfer_walletd::sse_client::WalletNudge;
 use exfer_walletd::{run_embedded, EmbeddedTokens, ServerHandle};
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -163,7 +165,21 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
 /// Boot walletd in-process. On success, mutates `inner` to `Ready`. On
 /// failure, mutates to `Failed`. Either way the call returns the
 /// resulting status so the caller can pass it back to the frontend.
+///
+/// `app` is optional: when present (production), we also spawn the
+/// Phase 2 push bridge that turns walletd SseClient nudges into Tauri
+/// events the frontend listens for (`wallet-nudge`). When `None`,
+/// walletd still runs; the frontend just won't get push and falls
+/// back to its existing polling.
 pub async fn start(ctx: &AppCtx, passphrase: &str) -> BootstrapStatus {
+    start_with_app(ctx, passphrase, None).await
+}
+
+pub async fn start_with_app(
+    ctx: &AppCtx,
+    passphrase: &str,
+    app: Option<AppHandle>,
+) -> BootstrapStatus {
     let mut inner = ctx.inner.lock().await;
     if matches!(inner.status, BootstrapStatus::Ready { .. }) {
         // Already running; let the caller see the existing state.
@@ -185,6 +201,57 @@ pub async fn start(ctx: &AppCtx, passphrase: &str) -> BootstrapStatus {
             return s;
         }
     };
+
+    // Phase 2 push bridge: subscribe to walletd's WalletEvents and emit
+    // a Tauri event the React frontend listens for. The bridge task
+    // ends when the SseClient task ends (shutdown cancels both).
+    if let Some(app) = app {
+        let mut rx = handle.events.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(WalletNudge::Script(script)) => {
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({
+                                "kind": "script",
+                                "script": hex::encode(script),
+                            }),
+                        );
+                    }
+                    Ok(WalletNudge::Tip(height)) => {
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({
+                                "kind": "tip",
+                                "height": height,
+                            }),
+                        );
+                    }
+                    Ok(WalletNudge::Resync) => {
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({ "kind": "resync" }),
+                        );
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            dropped = n,
+                            "wallet-nudge bridge: lagged; emitting resync"
+                        );
+                        let _ = app.emit(
+                            "wallet-nudge",
+                            serde_json::json!({ "kind": "resync" }),
+                        );
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("wallet-nudge bridge: walletd shut down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
 
     let fingerprint = handle
         .fingerprint

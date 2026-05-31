@@ -14,8 +14,8 @@ use serde_json::Value;
 use tauri::{Manager, State};
 
 use walletd_supervisor::{
-    read_desktop_config, restart, restore, start, stop, write_desktop_config, AppCtx,
-    BootstrapStatus, DesktopConfig, KEYRING_SERVICE,
+    read_desktop_config, restart, restore, start, start_with_app, stop, write_desktop_config,
+    AppCtx, BootstrapStatus, DesktopConfig, KEYRING_SERVICE,
 };
 
 #[tauri::command]
@@ -25,6 +25,7 @@ async fn bootstrap_status(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, Str
 
 #[tauri::command]
 async fn submit_password(
+    app: tauri::AppHandle,
     ctx: State<'_, AppCtx>,
     password: String,
 ) -> Result<BootstrapStatus, String> {
@@ -32,7 +33,7 @@ async fn submit_password(
         return Err("password must not be empty".into());
     }
     secrets::set_passphrase(KEYRING_SERVICE, &password).map_err(|e| e.to_string())?;
-    Ok(start(&ctx, &password).await)
+    Ok(start_with_app(&ctx, &password, Some(app)).await)
 }
 
 #[tauri::command]
@@ -271,10 +272,12 @@ pub fn run() {
             // frontend will see `NeedsPassword` on its first
             // bootstrap_status poll and show the prompt.
             let ctx_for_spawn = ctx.clone();
+            let app_for_spawn = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match secrets::get_passphrase(KEYRING_SERVICE) {
                     Ok(Some(passphrase)) => {
-                        let _ = start(&ctx_for_spawn, &passphrase).await;
+                        let _ = start_with_app(&ctx_for_spawn, &passphrase, Some(app_for_spawn))
+                            .await;
                     }
                     Ok(None) => {
                         // First launch — stay in NeedsPassword.

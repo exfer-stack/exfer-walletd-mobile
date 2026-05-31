@@ -220,6 +220,45 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Phase 2 SSE push: when the embedded walletd's SseClient gets a
+  // script_changed / tip / resync nudge from the upstream node, the
+  // Rust supervisor emits a "wallet-nudge" Tauri event. Listening
+  // here means the balance refreshes the instant the mempool sees an
+  // incoming tx, rather than waiting for the next poll tick.
+  //
+  // Falls back to polling silently when the node doesn't speak SSE
+  // (pre-1.12): the walletd SseClient never connects, no nudges arrive,
+  // and this listener is a no-op.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    let lastRefreshAt = 0;
+    const COALESCE_MS = 250;
+
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        if (cancelled) return;
+        unlisten = await listen("wallet-nudge", () => {
+          const now = Date.now();
+          if (now - lastRefreshAt < COALESCE_MS) return;
+          lastRefreshAt = now;
+          load(true).catch(() => {
+            /* transient; next poll covers it */
+          });
+        });
+      } catch {
+        // listen unavailable (e.g. vite dev outside Tauri); stay on poll.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <WalletCtx.Provider
       value={{ balance, loading, error, refresh, utxos, refreshUtxos }}
