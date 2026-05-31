@@ -58,11 +58,19 @@ only runs inside a Tauri build.
 Prereqs for the native targets (Xcode / Android SDK + NDK 26 + JDK 17):
 https://v2.tauri.app/start/prerequisites/
 
+## Install
+
+Android: grab the `.apk` from the
+[latest release](https://github.com/exfer-stack/exfer-walletd-mobile/releases/latest)
+and sideload it — step-by-step in [`docs/INSTALL.md`](docs/INSTALL.md). iOS
+ships via TestFlight/App Store once signing is provisioned.
+
 ## Release
 
-Tag-triggered CI builds a signed `.ipa` → TestFlight and a signed `.aab` →
-Google Play internal track. See [`docs/RELEASE.md`](docs/RELEASE.md) for the
-secrets to set and the cut-a-release steps.
+Tag-triggered CI (`git tag vX.Y.Z && git push origin vX.Y.Z`) builds the
+Android `.apk` (+ signed `.aab` → Play and `.ipa` → TestFlight once secrets
+are set) and publishes a GitHub Release with the APK attached. See
+[`docs/RELEASE.md`](docs/RELEASE.md) for the signing secrets.
 
 ## App identity
 
