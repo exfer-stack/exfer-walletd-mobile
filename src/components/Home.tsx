@@ -172,16 +172,18 @@ export function Home({
                   fontFamily: '"Geist Variable","Geist", sans-serif',
                   fontSize: 58,
                   fontWeight: 600,
-                  letterSpacing: "-.045em",
+                  // Proportional figures (no tnum) so the zeros don't spread,
+                  // with lighter tracking — tabular + heavy tracking is what
+                  // made "0.00002" read oddly spaced.
+                  letterSpacing: "-.02em",
                   lineHeight: 1,
-                  fontFeatureSettings: '"tnum" 1',
                 }}
               >
                 <Masked dots="••••">
                   <span>{whole}</span>
                   {frac && (
                     <span
-                      style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: "0.6em" }}
+                      style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: "0.72em" }}
                     >
                       .{frac}
                     </span>
