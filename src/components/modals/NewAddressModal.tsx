@@ -7,6 +7,7 @@ import { Modal, Field, Spinner } from "../ui";
 import { Icon } from "../../lib/icons";
 import { useToast } from "../../lib/toast";
 import { rpc } from "../../lib/rpc";
+import { humanizeError } from "../../lib/errors";
 import { setLabel, shortAddress } from "../../lib/labels";
 
 export function NewAddressModal({
@@ -37,7 +38,7 @@ export function NewAddressModal({
     } catch (e) {
       toast.error(
         "Could not create address",
-        String(e instanceof Error ? e.message : e),
+        humanizeError(e),
       );
       setBusy(false);
     }

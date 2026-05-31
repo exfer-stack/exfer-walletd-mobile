@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { BootstrapStatus } from "./lib/types";
 import { bootstrapStatus } from "./lib/rpc";
+import { humanizeError } from "./lib/errors";
 import { biometricStatus, biometricUnlock } from "./lib/biometric";
 import { biometricLockEnabled } from "./lib/biolock";
 import wordmark from "./assets/wordmark.png";
@@ -126,7 +127,7 @@ function Shell() {
         }
       } catch (e) {
         if (cancelled) return;
-        setBoot({ status: "failed", message: String(e instanceof Error ? e.message : e) });
+        setBoot({ status: "failed", message: humanizeError(e) });
       }
     };
     void tick();
@@ -142,7 +143,7 @@ function Shell() {
       const s = await bootstrapStatus();
       setBoot(s);
     } catch (e) {
-      setBoot({ status: "failed", message: String(e instanceof Error ? e.message : e) });
+      setBoot({ status: "failed", message: humanizeError(e) });
     }
   }, []);
 

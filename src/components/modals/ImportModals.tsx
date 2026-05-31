@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal, Field, Spinner } from "../ui";
 import { useToast } from "../../lib/toast";
 import { rpc, importWalletKey } from "../../lib/rpc";
+import { humanizeError } from "../../lib/errors";
 import { shortAddress } from "../../lib/labels";
 import { setLabel as saveLabel } from "../../lib/labels";
 
@@ -37,7 +38,7 @@ export function ImportPhraseModal({
       toast.success("Address imported", shortAddress(res.address));
       onClose();
     } catch (e) {
-      toast.error("Import failed", String(e instanceof Error ? e.message : e));
+      toast.error("Import failed", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -118,7 +119,7 @@ export function ImportKeyFileModal({
       toast.success("Address imported", shortAddress(address));
       onClose();
     } catch (e) {
-      toast.error("Import failed", String(e instanceof Error ? e.message : e));
+      toast.error("Import failed", humanizeError(e));
     } finally {
       setBusy(false);
     }

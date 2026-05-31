@@ -6,6 +6,7 @@ import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
 import { submitPassword, importVaultFile } from "../lib/rpc";
+import { humanizeError } from "../lib/errors";
 
 type Mode = "create" | "restore";
 
@@ -49,7 +50,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         );
         onReady();
       } catch (e) {
-        setErr(String(e instanceof Error ? e.message : e));
+        setErr(humanizeError(e));
       } finally {
         setBusy(false);
       }
@@ -64,7 +65,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       toast.success("Wallet ready", "Welcome to exfer.");
       onReady();
     } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
+      setErr(humanizeError(e));
     } finally {
       setBusy(false);
     }

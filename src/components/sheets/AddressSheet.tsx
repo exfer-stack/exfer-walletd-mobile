@@ -6,6 +6,7 @@ import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc, exportWalletKey, formatBalanceCompact } from "../../lib/rpc";
+import { humanizeError } from "../../lib/errors";
 import { shortAddress } from "../../lib/labels";
 import { isHidden, hide, unhide } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
@@ -263,7 +264,7 @@ function RecoveryPhraseModal({
       });
       setWords(res.mnemonic);
     } catch (e) {
-      toast.error("Could not reveal phrase", String(e instanceof Error ? e.message : e));
+      toast.error("Could not reveal phrase", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -407,7 +408,7 @@ function DeleteAddressModal({
       await onDeleted();
       onClose();
     } catch (e) {
-      toast.error("Delete failed", String(e instanceof Error ? e.message : e));
+      toast.error("Delete failed", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -505,7 +506,7 @@ function ExportKeyModal({
       toast.success("wallet.key exported", `Saved to ${location}. Import it on exfer.dev.`);
       onClose();
     } catch (e) {
-      toast.error("Export failed", String(e instanceof Error ? e.message : e));
+      toast.error("Export failed", humanizeError(e));
     } finally {
       setBusy(false);
     }

@@ -16,6 +16,7 @@ import {
   importVaultFile,
   formatExfer,
 } from "../lib/rpc";
+import { humanizeError } from "../lib/errors";
 import { listLabels } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { biometricStatus } from "../lib/biometric";
@@ -594,7 +595,7 @@ function ChangeNodeModal({
         setProbe({ ok: false });
       }
     } catch (e) {
-      toast.error("Could not update node", String(e instanceof Error ? e.message : e));
+      toast.error("Could not update node", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -679,7 +680,7 @@ function ChangeIndexerModal({
     } catch (e) {
       toast.error(
         "Could not update indexer",
-        String(e instanceof Error ? e.message : e),
+        humanizeError(e),
       );
     } finally {
       setBusy(false);
@@ -739,7 +740,7 @@ function VaultBackupModal({ onClose }: { onClose: () => void }) {
       toast.success("Backup saved", `Saved to ${location}. One encrypted file holds every address.`);
       onClose();
     } catch (e) {
-      toast.error("Backup failed", String(e instanceof Error ? e.message : e));
+      toast.error("Backup failed", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -811,7 +812,7 @@ function VaultRestoreModal({
       );
       onClose();
     } catch (e) {
-      toast.error("Restore failed", String(e instanceof Error ? e.message : e));
+      toast.error("Restore failed", humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -872,7 +873,7 @@ function ResetModal({
       onClose();
       onWiped();
     } catch (e) {
-      toast.error("Reset failed", String(e instanceof Error ? e.message : e));
+      toast.error("Reset failed", humanizeError(e));
       setBusy(false);
     }
   }

@@ -12,6 +12,7 @@ import {
   parseExferAmount,
 } from "../../lib/rpc";
 import type { TransferReceipt } from "../../lib/types";
+import { humanizeError } from "../../lib/errors";
 import { isHidden } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
@@ -288,7 +289,7 @@ export function SendSheet({
       await refresh();
       toast.success("Transfer broadcast", `Sent ${formatExfer(total)}.`);
     } catch (e) {
-      const msg = String(e instanceof Error ? e.message : e);
+      const msg = humanizeError(e);
       setErr(msg);
       toast.error("Transfer failed", msg);
     } finally {
