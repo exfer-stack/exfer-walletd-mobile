@@ -18,7 +18,8 @@ import { shortAddress } from "../../lib/labels";
 import { appendHistory, listRecentRecipients, rememberRecipient } from "../../lib/history";
 import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
 import { useCountUp } from "../../lib/anim";
-import { scanAddress, scanSupported } from "../../lib/scan";
+import { scanSupported } from "../../lib/scan";
+import { ScannerOverlay } from "../ScannerOverlay";
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 const FEE_RATE = 1;
@@ -49,6 +50,8 @@ export function SendSheet({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<TransferReceipt | null>(null);
+  // Which recipient row (index) is currently scanning a QR, or null.
+  const [scanRow, setScanRow] = useState<number | null>(null);
   // Live fee from simulate_transfer; null until a valid template simulates.
   const [simFee, setSimFee] = useState<number | null>(null);
 
@@ -535,14 +538,12 @@ export function SendSheet({
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ flex: 1 }}
-                    onClick={async () => {
+                    onClick={() => {
                       if (!scanSupported()) {
                         toast.info("Scan on device", "QR scanning uses the phone camera.");
                         return;
                       }
-                      const a = await scanAddress();
-                      if (a) setOut(i, { to: a });
-                      else toast.info("No address scanned", "Scan cancelled or unreadable.");
+                      setScanRow(i);
                     }}
                   >
                     <Icon name="qr" size={15} /> Scan QR
@@ -625,6 +626,16 @@ export function SendSheet({
             </span>
           </div>
           {err && <div className="banner banner-danger" style={{ marginTop: 14 }}>{err}</div>}
+          {scanRow !== null && (
+            <ScannerOverlay
+              onResult={(addr) => {
+                if (addr && scanRow !== null) setOut(scanRow, { to: addr });
+                else if (!addr)
+                  toast.info("No address scanned", "Scan cancelled or unreadable.");
+                setScanRow(null);
+              }}
+            />
+          )}
         </>
       )}
     </Sheet>

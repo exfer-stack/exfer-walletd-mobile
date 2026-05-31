@@ -395,6 +395,12 @@ body {
 
 .divider { height: 1px; background: var(--border-soft); border: 0; margin: 0; }
 
+/* Windowed QR scan: the native camera renders behind the webview, so make
+   the webview see-through (hide the app, clear html/body) and let the
+   ScannerOverlay (portaled to <body>) draw the frame on top. */
+html.scanning, html.scanning body { background: transparent !important; }
+html.scanning #root { visibility: hidden !important; }
+
 /* Respect reduced-motion: keep a faint opacity fade, drop transforms,
    loops, and the slide/blur choreography. */
 @media (prefers-reduced-motion: reduce) {
