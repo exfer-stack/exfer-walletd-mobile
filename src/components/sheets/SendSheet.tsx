@@ -58,17 +58,26 @@ function FieldNote({ kind, children }: { kind: NoteKind; children: ReactNode }) 
 export function SendSheet({
   onClose,
   onDone,
+  initialFrom,
 }: {
   onClose: () => void;
   onDone: (tab?: "wallet" | "activity" | "settings") => void;
+  /** Preselect the sending address — set when Send is opened from an
+   *  address's detail sheet so the user sends from the address they tapped. */
+  initialFrom?: string;
 }) {
-  const { balance, refresh } = useWallet();
+  const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
+
+  // Pause the background balance poll for the lifetime of the Send sheet so the
+  // upstream node's balance/utxo rate-limit budget is free for this flow's own
+  // simulate_transfer + transfer queries. Resumes on close.
+  useEffect(() => suspendPolling(), [suspendPolling]);
   const entries = balance?.entries ?? [];
   const sendable = entries.filter((a) => !isHidden(a.address) && a.balance > 0);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [from, setFrom] = useState<string>("");
+  const [from, setFrom] = useState<string>(initialFrom ?? "");
   // Effective sender: the user pick, else the first fundable address.
   // Derived (not frozen) so it is correct even if balance loads after mount.
   const fromAddr = from || sendable[0]?.address || "";

@@ -2,7 +2,6 @@
 // Mirrors onboarding.jsx copy; no 24-word phrase path (the design removed it).
 
 import { useState } from "react";
-import wordmark from "../assets/wordmark.png";
 import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
@@ -87,31 +86,9 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           display: "flex",
           flexDirection: "column",
           minHeight: "100%",
-          paddingTop: 18,
+          paddingTop: 32,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            padding: "10px 0 28px",
-          }}
-        >
-          <img
-            src={wordmark}
-            alt="EXFER"
-            className="pop"
-            style={{
-              width: "86%",
-              maxWidth: 340,
-              height: "auto",
-              filter: "var(--wordmark-filter, none)",
-            }}
-            draggable={false}
-          />
-        </div>
-
         <div
           style={{
             display: "flex",

@@ -23,9 +23,12 @@ import { LabelModal } from "../modals/LabelModal";
 export function AddressSheet({
   address,
   onClose,
+  onSend,
 }: {
   address: string;
   onClose: () => void;
+  /** Start a Send prefilled with this address as the sender. */
+  onSend: (address: string) => void;
 }) {
   const { balance, refresh, utxos, refreshUtxos } = useWallet();
   const toast = useToast();
@@ -128,6 +131,16 @@ export function AddressSheet({
         </code>
         <CopyButton text={address} label="Address copied" />
       </div>
+
+      <button
+        className="btn btn-block"
+        style={{ marginBottom: 10 }}
+        disabled={entry.balance <= 0}
+        onClick={() => onSend(address)}
+      >
+        <Icon name="send" size={18} />{" "}
+        {entry.balance > 0 ? "Send from this address" : "Nothing to send"}
+      </button>
 
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-secondary btn-block" onClick={() => setPhraseOpen(true)}>

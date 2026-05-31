@@ -32,6 +32,13 @@ interface WalletData {
   /** Fetch UTXO counts (one extra upstream scan per address). Pages that
    *  display counts call this on mount and after mutating actions. */
   refreshUtxos: () => Promise<void>;
+  /** Suspend the background balance poll (and SSE-triggered refreshes) and
+   *  return a function that resumes it. The Send flow calls this so its own
+   *  simulate/transfer queries get the full upstream rate-limit budget instead
+   *  of competing with the poll — the public node caps balance/utxo queries
+   *  per minute, and a poll running through a broadcast is what tips a normal
+   *  send over the edge. Ref-counted, so nested/overlapping suspends are safe. */
+  suspendPolling: () => () => void;
 }
 
 const WalletCtx = createContext<WalletData | null>(null);
@@ -47,15 +54,22 @@ export function useWallet(): WalletData {
 // addresses. With walletd's batched reads (v1.9.3+) the balances come
 // back in ONE node scan (get_balances) regardless of address count, so a
 // poll costs `1 + N` node scans (the +N is the per-address mempool, which
-// has no batch form yet). We pace one scan every ~2.2s so the cost stays
-// ~27/min, comfortably under the public node's 30/min — which lets a
-// single-address wallet refresh every ~4.4s (was 8s) and a 6-address
-// wallet every ~15s (was 30s). Deposits surface within one poll of
-// hitting the mempool, well ahead of confirmation. UTXO counts and
-// hidden-address balances are fetched on demand, not polled.
-const MS_PER_SCAN = 2_200;
-const MIN_POLL_MS = 4_000;
-const MAX_POLL_MS = 18_000;
+// has no batch form yet).
+//
+// The public node caps balance/utxo queries at 30/min, and the poll is NOT
+// the only consumer: a send fires simulate_transfer (a utxo scan) on each
+// edit plus the transfer itself, Activity rebuilds fan out a mempool scan
+// per address, and an address sheet fetches utxo counts. The old ~27/min
+// pacing left almost no headroom, so a normal send tipped the budget over
+// and failed with "Rate limit exceeded". We now pace one scan every ~4s,
+// holding the steady poll near ~15/min for a 1–2 address wallet and leaving
+// the rest of the budget for the actions the user actually takes. Deposits
+// still surface instantly via the SSE push (wallet-nudge); the poll is just
+// the fallback. The Send flow also fully suspends the poll while open (see
+// suspendPolling) so a broadcast never races it.
+const MS_PER_SCAN = 4_000;
+const MIN_POLL_MS = 6_000;
+const MAX_POLL_MS = 30_000;
 
 /** The current auto-refresh interval for `visibleCount` visible addresses.
  *  Exported so the UI can show the live rate and explain that more visible
@@ -150,6 +164,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // query just that address's mempool for the real crediting tx id.
   const prevByAddr = useRef<Map<string, number>>(new Map());
   const inFlight = useRef(false);
+  // Ref-counted poll suspension. >0 means the background poll + SSE-triggered
+  // refreshes are paused (e.g. while the Send sheet is open) so user-initiated
+  // queries get the upstream rate-limit budget to themselves.
+  const suspendCount = useRef(0);
   // All known entries (including hidden, kept at their last-seen balance).
   // Used to compute the visible poll set and to merge poll results without
   // dropping hidden rows. A ref so the stable poll loop sees current data.
@@ -260,6 +278,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => load(false, "manual"), [load]);
 
+  const suspendPolling = useCallback(() => {
+    suspendCount.current += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      suspendCount.current = Math.max(0, suspendCount.current - 1);
+    };
+  }, []);
+
   const refreshUtxos = useCallback(async () => {
     try {
       // Only the visible addresses — no point scanning hidden ones.
@@ -295,7 +323,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       timer = window.setTimeout(run, delay);
     };
     const run = async () => {
-      await load(true, "poll");
+      // Skip the scan while suspended (Send flow open), but keep the loop
+      // alive so it resumes on the next tick once the suspend is released.
+      if (!suspendCount.current) await load(true, "poll");
       if (!cancelled) schedule();
     };
     // Initial full load, then begin the paced poll loop.
@@ -333,6 +363,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           // last hop of node→walletd→Tauri→JS). Pair with walletd's
           // `sse_client` tracing to localize a broken push chain.
           console.debug("[sse] wallet-nudge", e.payload, new Date().toISOString());
+          // Suspended (Send flow open) → ignore the nudge; the post-send
+          // refresh + resumed poll will catch up.
+          if (suspendCount.current) return;
           const now = Date.now();
           if (now - lastRefreshAt < COALESCE_MS) return;
           lastRefreshAt = now;
@@ -356,7 +389,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   return (
     <WalletCtx.Provider
-      value={{ balance, loading, error, refresh, utxos, refreshUtxos }}
+      value={{ balance, loading, error, refresh, utxos, refreshUtxos, suspendPolling }}
     >
       {children}
     </WalletCtx.Provider>

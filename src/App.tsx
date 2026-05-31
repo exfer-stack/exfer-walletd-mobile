@@ -31,7 +31,7 @@ type Tab = "wallet" | "activity" | "settings";
 
 type Overlay =
   | { type: "receive" }
-  | { type: "send" }
+  | { type: "send"; from?: string }
   | { type: "address"; address: string }
   | null;
 
@@ -206,6 +206,7 @@ function Shell() {
             )}
             {overlay?.type === "send" && (
               <SendSheet
+                initialFrom={overlay.from}
                 onClose={() => setOverlay(null)}
                 onDone={(t) => {
                   if (t) setTab(t);
@@ -216,6 +217,7 @@ function Shell() {
               <AddressSheet
                 address={overlay.address}
                 onClose={() => setOverlay(null)}
+                onSend={(address) => setOverlay({ type: "send", from: address })}
               />
             )}
           </WalletProvider>

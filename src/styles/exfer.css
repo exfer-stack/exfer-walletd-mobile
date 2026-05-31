@@ -255,6 +255,10 @@ body {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: .01em;
+  /* Keep multi-word statuses ("in mempool") on a single line — without this
+     they wrap in the narrow right-hand column while one-word pills
+     ("confirmed") don't, so the two states render at different heights. */
+  white-space: nowrap;
 }
 .pill-accent  { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .pill-success { background: color-mix(in srgb, #34d399 16%, transparent); color: #34d399; }
