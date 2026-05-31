@@ -28,15 +28,14 @@ use crate::error::AppError;
 use crate::rpc_client::ConnectionInfo;
 
 pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
-// Public upstream node. Runs v1.11.3+, so it answers get_address_mempool
-// and the pending (incoming-before-confirmation) balance works out of the
-// box; the previous default (89.127.232.155) predates that method and
-// would silently show no pending. Single node for now: it is currently
-// the only public node upgraded past v1.11.3 — the other public nodes
-// still 404 get_address_mempool, and mixing them in would make pending
-// flicker on/off as walletd round-robins. Add a second upstream here once
-// another public node is upgraded.
-pub const DEFAULT_NODE_RPC: &str = "http://80.78.31.82:9334";
+// Public upstream node. Runs v1.12.0-phase2 — Tier-1 mempool RPCs
+// (get_address_mempool, get_balances, get_address_utxos_batch,
+// get_output_spent_by) AND Tier-2 SSE push at POST /sse so the wallet
+// observes incoming pending balance within ~RTT instead of the 2 s
+// poll interval. Hosted on Vultr Tokyo (vhp-2c-4gb-amd) — moved off
+// fly.io because fly's TCP edge mangles SSE GETs and rejects empty
+// POSTs, both of which a raw VPS does not.
+pub const DEFAULT_NODE_RPC: &str = "http://198.13.38.245:9334";
 pub const DESKTOP_CONFIG_FILE: &str = "desktop-config.json";
 
 #[derive(Debug, Clone, Serialize)]
