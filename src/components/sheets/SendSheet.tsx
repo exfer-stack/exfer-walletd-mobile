@@ -20,6 +20,7 @@ import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
 import { useCountUp } from "../../lib/anim";
 import { scanSupported } from "../../lib/scan";
 import { ScannerOverlay } from "../ScannerOverlay";
+import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 const FEE_RATE = 1;
@@ -156,6 +157,21 @@ export function SendSheet({
   }
 
   async function broadcast() {
+    // Per-send authentication: on a device with biometrics (or a device
+    // passcode, via allowDeviceCredential) require a confirm before moving
+    // funds — the embedded keystore is unlocked for the session, so without
+    // this anyone holding the unlocked phone could send. Devices with no
+    // secure lock can't be gated, so we proceed there (and in browser dev).
+    const bio = await biometricStatus();
+    if (bio.available) {
+      const ok = await biometricUnlock(
+        `Confirm sending ${formatExfer(total)}`,
+      );
+      if (!ok) {
+        toast.error("Send not confirmed", "Authentication was cancelled or failed.");
+        return;
+      }
+    }
     setBusy(true);
     try {
       const parsed = outputs.map((o) => ({

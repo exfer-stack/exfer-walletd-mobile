@@ -68,10 +68,12 @@ export function Home({
   onSend: () => void;
   onOpenAddress: (address: string) => void;
 }) {
-  const { balance, refresh } = useWallet();
-  // `balance` is null until the first successful load — show skeletons then,
-  // not a misleading "0 EXFER / No addresses yet" empty state.
-  const firstLoad = balance === null;
+  const { balance, error, refresh } = useWallet();
+  // `balance` is null until the first successful load. Show skeletons while
+  // it's loading, but if that first load FAILED show an error+retry instead
+  // of an infinite skeleton (and never a misleading "0 / No addresses").
+  const firstLoad = balance === null && !error;
+  const loadError = balance === null && !!error;
   const toast = useToast();
   const { toggle } = useBalanceMask();
   const [showHidden, setShowHidden] = useState(false);
@@ -125,6 +127,35 @@ export function Home({
   return (
     <div className="screen">
       <div className="screen-pad">
+        {loadError ? (
+          <div style={{ padding: "64px 18px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                margin: "0 auto 14px",
+                display: "grid",
+                placeItems: "center",
+                background: "var(--surface-2)",
+                color: "var(--text-faint)",
+              }}
+            >
+              <Icon name="node" size={26} />
+            </div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Can&apos;t reach the network</div>
+            <div
+              className="faint"
+              style={{ fontSize: 13, marginBottom: 16, lineHeight: 1.5, padding: "0 10px" }}
+            >
+              Couldn&apos;t load your balance. Check your connection and try again.
+            </div>
+            <button className="btn btn-sm" onClick={() => refresh()}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <>
         <button
           onClick={toggle}
           className="tap"
@@ -343,6 +374,8 @@ export function Home({
             You've reached the {MAX_ADDRESSES}-address limit. One address can take
             any number of deposits.
           </div>
+        )}
+          </>
         )}
       </div>
 
