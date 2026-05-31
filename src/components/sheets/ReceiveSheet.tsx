@@ -14,8 +14,12 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const { balance, refresh } = useWallet();
   const toast = useToast();
   const entries = (balance?.entries ?? []).filter((a) => !isHidden(a.address));
-  const [sel, setSel] = useState<string | null>(entries[0]?.address ?? null);
-  const entry = (balance?.entries ?? []).find((a) => a.address === sel);
+  // `sel` is the user's explicit pick; until they choose, default to the
+  // first address. Entries can arrive AFTER mount (async balance), so a
+  // frozen initial value would leave the QR blank — derive it each render.
+  const [sel, setSel] = useState<string | null>(null);
+  const selected = sel ?? entries[0]?.address ?? null;
+  const entry = (balance?.entries ?? []).find((a) => a.address === selected);
 
   async function newAddress() {
     try {
@@ -29,14 +33,14 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   }
 
   function share() {
-    if (!sel) return;
+    if (!selected) return;
     const nav = navigator as Navigator & {
       share?: (data: { title?: string; text?: string }) => Promise<void>;
     };
     if (nav.share) {
-      nav.share({ title: "My exfer address", text: sel }).catch(() => {});
+      nav.share({ title: "My exfer address", text: selected }).catch(() => {});
     } else {
-      navigator.clipboard?.writeText(sel);
+      navigator.clipboard?.writeText(selected);
       toast.success("Copied", "Address copied — share it anywhere.");
     }
   }
@@ -64,9 +68,9 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               cursor: "pointer",
               fontSize: 13.5,
               fontWeight: 600,
-              border: "1px solid " + (sel === a.address ? "transparent" : "var(--border)"),
-              background: sel === a.address ? "var(--accent)" : "var(--surface-2)",
-              color: sel === a.address ? "var(--accent-ink)" : "var(--text-dim)",
+              border: "1px solid " + (selected === a.address ? "transparent" : "var(--border)"),
+              background: selected === a.address ? "var(--accent)" : "var(--surface-2)",
+              color: selected === a.address ? "var(--accent-ink)" : "var(--text-dim)",
               whiteSpace: "nowrap",
             }}
           >
@@ -95,8 +99,8 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {entry && sel && (
-        <div className="fade-up" key={sel}>
+      {entry && selected && (
+        <div className="fade-up" key={selected}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
             <div
               style={{
@@ -106,7 +110,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
                 boxShadow: "var(--shadow)",
               }}
             >
-              <Qr value={sel} size={222} />
+              <Qr value={selected} size={222} />
             </div>
           </div>
 
@@ -137,9 +141,9 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
                 color: "var(--text-dim)",
               }}
             >
-              {sel}
+              {selected}
             </code>
-            <CopyButton text={sel} label="Address copied" />
+            <CopyButton text={selected} label="Address copied" />
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
@@ -147,7 +151,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               <Icon name="share" size={19} /> Share
             </button>
             <CopyButton
-              text={sel}
+              text={selected}
               className="btn btn-block"
               label="Address copied"
               size={19}

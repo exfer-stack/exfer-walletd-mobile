@@ -41,7 +41,10 @@ export function SendSheet({
   const sendable = entries.filter((a) => !isHidden(a.address) && a.balance > 0);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [from, setFrom] = useState<string>(sendable[0]?.address ?? "");
+  const [from, setFrom] = useState<string>("");
+  // Effective sender: the user pick, else the first fundable address.
+  // Derived (not frozen) so it is correct even if balance loads after mount.
+  const fromAddr = from || sendable[0]?.address || "";
   const [outputs, setOutputs] = useState<OutputDraft[]>([{ to: "", amount: "" }]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,7 +52,7 @@ export function SendSheet({
   // Live fee from simulate_transfer; null until a valid template simulates.
   const [simFee, setSimFee] = useState<number | null>(null);
 
-  const fromEntry = entries.find((a) => a.address === from);
+  const fromEntry = entries.find((a) => a.address === fromAddr);
   const total = useMemo(
     () =>
       outputs.reduce((s, o) => {
@@ -89,7 +92,7 @@ export function SendSheet({
         return;
       }
     }
-    if (!from) {
+    if (!fromAddr) {
       setSimFee(null);
       return;
     }
@@ -97,7 +100,7 @@ export function SendSheet({
     const id = window.setTimeout(async () => {
       try {
         const res = await rpc<{ fee: number }>("simulate_transfer", {
-          from,
+          from: fromAddr,
           outputs: parsed,
           fee_rate: FEE_RATE,
         });
@@ -110,7 +113,7 @@ export function SendSheet({
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [outputs, from, step]);
+  }, [outputs, fromAddr, step]);
 
   function setOut(i: number, patch: Partial<OutputDraft>) {
     setOutputs((p) => p.map((o, k) => (k === i ? { ...o, ...patch } : o)));
@@ -133,7 +136,7 @@ export function SendSheet({
         return `Recipient ${i + 1}: ${e instanceof Error ? e.message : String(e)}`;
       }
     }
-    if (!from) return "Pick a sending address.";
+    if (!fromAddr) return "Pick a sending address.";
     if (total + fee > (fromEntry?.balance ?? 0))
       return "Insufficient confirmed balance for amount + fee.";
     return null;
@@ -157,7 +160,7 @@ export function SendSheet({
         amount: parseExferAmount(o.amount),
       }));
       const r = await rpc<TransferReceipt>("transfer", {
-        from,
+        from: fromAddr,
         outputs: parsed,
         fee_rate: FEE_RATE,
       });
@@ -303,13 +306,13 @@ export function SendSheet({
             marginBottom: 18,
           }}
         >
-          <AddrAvatar address={from} size={38} />
+          <AddrAvatar address={fromAddr} size={38} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>
               {fromEntry ? addrName(fromEntry) : "—"}
             </div>
             <div className="mono faint" style={{ fontSize: 12 }}>
-              {shortAddress(from, 6, 6)}
+              {shortAddress(fromAddr, 6, 6)}
             </div>
           </div>
           <div className="mono dim" style={{ fontSize: 13.5 }}>
@@ -410,9 +413,9 @@ export function SendSheet({
                       textAlign: "left",
                       border:
                         "1px solid " +
-                        (from === a.address ? "var(--accent)" : "var(--border-soft)"),
+                        (fromAddr === a.address ? "var(--accent)" : "var(--border-soft)"),
                       background:
-                        from === a.address
+                        fromAddr === a.address
                           ? "color-mix(in srgb,var(--accent) 10%,transparent)"
                           : "var(--surface)",
                     }}
