@@ -125,18 +125,66 @@ jobs:
       - name: Generate Android project
         run: npm run tauri android init -- --skip-targets-install
 
-      # Write the upload keystore + signing config from secrets so the
-      # release build is signed. Skipped (unsigned) when no keystore secret.
+      # Write the upload keystore + wire the release signingConfig into the
+      # (regenerated) Gradle project so the build is actually signed. Skipped
+      # (unsigned) when no keystore secret is set.
       - name: Configure signing
         if: ${{ env.ANDROID_KEY_BASE64 != '' }}
         run: |
-          echo "$ANDROID_KEY_BASE64" | base64 --decode > src-tauri/gen/android/keystore.jks
+          set -e
+          KS="$GITHUB_WORKSPACE/exfer-upload.jks"
+          echo "$ANDROID_KEY_BASE64" | base64 --decode > "$KS"
           cat > src-tauri/gen/android/keystore.properties <<EOF
-          storeFile=keystore.jks
+          storeFile=$KS
           storePassword=$ANDROID_KEY_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
+          s = p.read_text()
+          if "signingConfigs" not in s:
+              header = (
+                  'import java.io.FileInputStream\n'
+                  'import java.util.Properties\n'
+                  'val keystorePropertiesFile = rootProject.file("keystore.properties")\n'
+                  'val keystoreProperties = Properties()\n'
+                  'if (keystorePropertiesFile.exists()) {\n'
+                  '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
+                  '}\n\n'
+              )
+              s = header + s
+              sign = (
+                  '\n    signingConfigs {\n'
+                  '        create("release") {\n'
+                  '            keyAlias = keystoreProperties["keyAlias"] as String\n'
+                  '            keyPassword = keystoreProperties["keyPassword"] as String\n'
+                  '            storeFile = file(keystoreProperties["storeFile"] as String)\n'
+                  '            storePassword = keystoreProperties["storePassword"] as String\n'
+                  '        }\n'
+                  '    }\n'
+              )
+              s = re.sub(r'(\n\s*android\s*\{)', r'\1' + sign, s, count=1)
+              if 'getByName("release")' in s:
+                  s = s.replace(
+                      'getByName("release") {',
+                      'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")',
+                      1,
+                  )
+              else:
+                  s = re.sub(
+                      r'(\n\s*android\s*\{)',
+                      r'\1\n    buildTypes {\n        getByName("release") {\n'
+                      r'            signingConfig = signingConfigs.getByName("release")\n'
+                      r'        }\n    }\n',
+                      s, count=1,
+                  )
+              p.write_text(s)
+              print("wired release signingConfig into build.gradle.kts")
+          else:
+              print("signingConfigs already present; left as-is")
+          PY
 
       # With a keystore: a signed release .aab (Play) + a signed universal
       # .apk people can sideload directly.
