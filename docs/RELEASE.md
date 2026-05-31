@@ -85,3 +85,19 @@ back to app-private file storage (`src-tauri/src/secrets.rs`); moving it to
 the hardware-backed Android Keystore (tauri-plugin-keystore, optionally
 biometric-gated) is a tracked hardening follow-up. The walletd seed itself
 is always sealed with the user's Argon2id passphrase regardless.
+
+## Camera (Send → Scan QR)
+
+Send uses `tauri-plugin-barcode-scanner` for the camera (mobile only;
+registered under `#[cfg(mobile)]`, permissions in
+`capabilities/mobile.json`). The platforms require a camera-usage
+declaration that lives in the generated native projects:
+
+- **iOS** — add `NSCameraUsageDescription` to
+  `src-tauri/gen/apple/<app>_iOS/Info.plist`, e.g. "Scan a QR code to fill
+  a recipient address." Without it the app is rejected / crashes on scan.
+- **Android** — the plugin contributes the `CAMERA` permission to the
+  manifest automatically.
+
+Because `gen/` is regenerated in CI, commit the `gen/` directory once you
+add the Info.plist string so it persists (see the `.gitignore` note).

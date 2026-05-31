@@ -326,9 +326,16 @@ pub fn run() {
         .with_writer(std::io::stderr)
         .init();
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+    // Camera QR scanner is a mobile-only plugin (no desktop backend).
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    }
+    builder
         .setup(|app| {
             // Resolve the per-platform app-data dir and stash it in the
             // managed AppCtx; everything else (datadir creation, token

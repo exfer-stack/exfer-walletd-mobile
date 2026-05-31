@@ -55,6 +55,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Android target intentionally omits it and `secrets.rs` falls back to
 # app-private storage (the Android per-app sandbox); hardware-backed
 # Android Keystore is a hardening follow-up via tauri-plugin-keystore.
+# QR scanner for recipient addresses — mobile only (camera).
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 

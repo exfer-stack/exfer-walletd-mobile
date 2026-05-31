@@ -18,6 +18,7 @@ import { shortAddress } from "../../lib/labels";
 import { appendHistory, listRecentRecipients, rememberRecipient } from "../../lib/history";
 import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
 import { useCountUp } from "../../lib/anim";
+import { scanAddress, scanSupported } from "../../lib/scan";
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 const FEE_RATE = 1;
@@ -506,16 +507,17 @@ export function SendSheet({
                     </button>
                   )}
                 </div>
-                <div style={{ display: "flex", gap: 9, alignItems: "center", marginBottom: 9 }}>
-                  <input
-                    className="field mono"
-                    style={{ flex: 1 }}
-                    placeholder="Paste address"
-                    value={o.to}
-                    onChange={(e) => setOut(i, { to: e.target.value })}
-                  />
+                <input
+                  className="field mono"
+                  style={{ marginBottom: 8 }}
+                  placeholder="Paste or scan address"
+                  value={o.to}
+                  onChange={(e) => setOut(i, { to: e.target.value })}
+                />
+                <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
                   <button
                     className="btn btn-secondary btn-sm"
+                    style={{ flex: 1 }}
                     onClick={async () => {
                       try {
                         const t = await navigator.clipboard.readText();
@@ -526,6 +528,21 @@ export function SendSheet({
                     }}
                   >
                     <Icon name="copy" size={15} /> Paste
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ flex: 1 }}
+                    onClick={async () => {
+                      if (!scanSupported()) {
+                        toast.info("Scan on device", "QR scanning uses the phone camera.");
+                        return;
+                      }
+                      const a = await scanAddress();
+                      if (a) setOut(i, { to: a });
+                      else toast.info("No address scanned", "Scan cancelled or unreadable.");
+                    }}
+                  >
+                    <Icon name="qr" size={15} /> Scan QR
                   </button>
                 </div>
                 <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
