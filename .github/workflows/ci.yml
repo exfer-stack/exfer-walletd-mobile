@@ -1,16 +1,16 @@
 name: CI
 
-# Fast feedback on every push/PR. The frontend job is the hard gate (it
-# runs everywhere with no native toolchain). The two native mobile jobs
-# compile the Rust + embedded walletd for iOS/Android; they are marked
-# continue-on-error until the mobile toolchain + signing are provisioned
-# (see docs/RELEASE.md), so a finicky first run never blocks a PR while
-# still surfacing build breakage.
+# On every push/PR only the frontend gate (tsc + vite build) runs — cheap
+# and fast. The native iOS/Android compile-checks are expensive (macOS is
+# billed 10x), so they don't run on push: real native builds happen on a
+# tag via release.yml, and these checks are available on demand from the
+# Actions tab (Run workflow / workflow_dispatch).
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   frontend:
@@ -28,6 +28,9 @@ jobs:
 
   android-build:
     name: Android build-check (debug APK)
+    # Native builds happen on tags (release.yml). On push/PR only the
+    # frontend gate runs; this compile-check is on demand only.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
     continue-on-error: true
     steps:
@@ -82,6 +85,9 @@ jobs:
 
   ios-build:
     name: iOS build-check (compile)
+    # macOS minutes are billed 10x; don't burn them on every push. Run this
+    # iOS compile check on demand only (Actions tab -> Run workflow).
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     continue-on-error: true
     steps:

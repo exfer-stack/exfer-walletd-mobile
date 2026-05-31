@@ -19,8 +19,21 @@ permissions:
   contents: write
 
 jobs:
+  # Decide whether to spend the (10x-billed) macOS minutes on iOS. We only
+  # build iOS when App Store Connect signing is configured — an unsigned
+  # .ipa can't be installed, so building it otherwise just burns minutes.
+  precheck:
+    runs-on: ubuntu-22.04
+    outputs:
+      ios: ${{ steps.c.outputs.ios }}
+    steps:
+      - id: c
+        run: echo "ios=${{ secrets.APPLE_API_ISSUER != '' }}" >> "$GITHUB_OUTPUT"
+
   ios:
     name: iOS to TestFlight
+    needs: precheck
+    if: ${{ needs.precheck.outputs.ios == 'true' }}
     runs-on: macos-latest
     # secrets can't be referenced in `if:` directly, so surface them as
     # env once at the job level and gate steps on env.* below.
