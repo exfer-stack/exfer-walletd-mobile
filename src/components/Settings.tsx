@@ -578,11 +578,16 @@ function VaultRestoreModal({
     setBusy(true);
     try {
       const n = await importVaultFile({ filePassword: pw });
+      // null = picker cancelled — say nothing happened, stay on the modal.
+      if (n === null) {
+        toast.info("Restore cancelled", "No .vault file was chosen.");
+        return;
+      }
       await onRestored();
       toast.success(
         "Backup restored",
         n === 0
-          ? "Every address was already in this wallet (or no file was chosen)."
+          ? "Every address in the backup was already in this wallet."
           : `${n} address${n === 1 ? "" : "es"} restored.`,
       );
       onClose();

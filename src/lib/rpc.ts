@@ -121,14 +121,18 @@ export async function exportVaultFile(args: {
 /// Restore keys from a vault file written by `exportVaultFile`. The file is
 /// picked + read here in JS, hex-encoded, and handed to walletd's
 /// `import_vault` RPC. `filePassword` is the password the backup was
-/// created with. Returns the count of addresses newly restored (0 if the
-/// picker was cancelled or every address was already present).
+/// created with.
+///
+/// Returns the count of addresses newly restored — which may legitimately be
+/// 0 when every address in the backup was already present. Returns `null`
+/// (distinct from 0) when the picker was cancelled / no file was chosen, so
+/// callers don't report a phantom "restored" on a cancel.
 export async function importVaultFile(args: {
   filePassword: string;
-}): Promise<number> {
+}): Promise<number | null> {
   if (devmock.isActive()) return devmock.import_vault_file(args);
   const bytes = await readPickedFile([{ name: "Vault", extensions: ["vault"] }]);
-  if (!bytes) return 0;
+  if (!bytes) return null;
   const r = await rpc<{ imported: string[] }>("import_vault", {
     vault_hex: bytesToHex(bytes),
     passphrase: args.filePassword,

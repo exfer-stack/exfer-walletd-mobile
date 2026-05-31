@@ -6,7 +6,6 @@ import { useWallet } from "../lib/wallet";
 import { useToast } from "../lib/toast";
 import { useBalanceMask, Masked } from "../lib/balance";
 import {
-  rpc,
   MAX_ADDRESSES,
   splitBalanceCompact,
 } from "../lib/rpc";
@@ -14,8 +13,9 @@ import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
-import { AddrAvatar, ActionMenu, PendingDot, Spinner } from "./ui";
+import { AddrAvatar, ActionMenu, PendingDot } from "./ui";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
+import { NewAddressModal } from "./modals/NewAddressModal";
 
 function PrimaryAction({
   icon,
@@ -77,10 +77,13 @@ export function Home({
   const toast = useToast();
   const { toggle } = useBalanceMask();
   const [showHidden, setShowHidden] = useState(false);
-  const [addMenu, setAddMenu] = useState(false);
+  // Create-address modal (the primary path: generate + name in one step).
+  const [createOpen, setCreateOpen] = useState(false);
+  // Import options menu — reached only via the modal's secondary link, so
+  // import no longer sits next to "create" as an equal first choice.
+  const [importMenu, setImportMenu] = useState(false);
   const [impPhrase, setImpPhrase] = useState(false);
   const [impKey, setImpKey] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const entries: WalletEntry[] = balance?.entries ?? [];
   const hiddenAddrs = entries.filter((a) => isHidden(a.address));
@@ -107,21 +110,7 @@ export function Home({
       );
       return;
     }
-    setAddMenu(true);
-  }
-
-  async function createAddress() {
-    setAddMenu(false);
-    setCreating(true);
-    try {
-      await rpc("generate_independent_address");
-      await refresh();
-      toast.success("Address created", "A new key is ready to receive.");
-    } catch (e) {
-      toast.error("Could not create address", String(e instanceof Error ? e.message : e));
-    } finally {
-      setCreating(false);
-    }
+    setCreateOpen(true);
   }
 
   return (
@@ -226,7 +215,7 @@ export function Home({
           <div className="eyebrow">Addresses</div>
           <button
             onClick={newAddress}
-            disabled={atCap || creating}
+            disabled={atCap}
             className="tap"
             style={{
               display: "flex",
@@ -243,7 +232,7 @@ export function Home({
               opacity: atCap ? 0.4 : 1,
             }}
           >
-            {creating ? <Spinner size={15} /> : <Icon name="plus" size={15} />} New address
+            <Icon name="plus" size={15} /> New address
           </button>
         </div>
 
@@ -379,17 +368,26 @@ export function Home({
         )}
       </div>
 
-      {addMenu && (
+      {createOpen && (
+        <NewAddressModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={refresh}
+          onImport={() => {
+            setCreateOpen(false);
+            setImportMenu(true);
+          }}
+        />
+      )}
+      {importMenu && (
         <ActionMenu
-          title="Add an address"
-          onClose={() => setAddMenu(false)}
+          title="Import an address"
+          onClose={() => setImportMenu(false)}
           items={[
-            { icon: "plus", label: "Create new address", onClick: createAddress },
             {
               icon: "key",
               label: "Import recovery phrase",
               onClick: () => {
-                setAddMenu(false);
+                setImportMenu(false);
                 setImpPhrase(true);
               },
             },
@@ -397,7 +395,7 @@ export function Home({
               icon: "download",
               label: "Import wallet.key file",
               onClick: () => {
-                setAddMenu(false);
+                setImportMenu(false);
                 setImpKey(true);
               },
             },

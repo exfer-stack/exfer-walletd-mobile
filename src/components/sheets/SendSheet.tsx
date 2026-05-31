@@ -1,7 +1,7 @@
 // Send — multi-recipient builder with live fee simulation, review, broadcast,
 // and a receipt screen. Wired to simulate_transfer / transfer.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
@@ -30,6 +30,31 @@ interface OutputDraft {
   amount: string;
 }
 
+type NoteKind = "err" | "warn" | "ok" | "info";
+
+const NOTE_COLOR: Record<NoteKind, string> = {
+  err: "#f87171",
+  warn: "#fbbf24",
+  ok: "#34d399",
+  info: "var(--text-faint)",
+};
+
+/** Small inline field-level hint shown under a recipient's address/amount. */
+function FieldNote({ kind, children }: { kind: NoteKind; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 11.5,
+        lineHeight: 1.4,
+        color: NOTE_COLOR[kind],
+        padding: "1px 2px",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function SendSheet({
   onClose,
   onDone,
@@ -55,8 +80,24 @@ export function SendSheet({
   const [scanRow, setScanRow] = useState<number | null>(null);
   // Live fee from simulate_transfer; null until a valid template simulates.
   const [simFee, setSimFee] = useState<number | null>(null);
+  // Which recipient row (if any) is pinned to "Max". Its amount auto-tracks
+  // (balance − fee − other rows) so it stays exact as the fee re-simulates
+  // and never trips the insufficient-funds guard. Cleared when that row's
+  // amount is edited by hand.
+  const [maxRow, setMaxRow] = useState<number | null>(null);
 
   const fromEntry = entries.find((a) => a.address === fromAddr);
+  // Own addresses + addresses we've sent to before — used to flag a brand-new
+  // recipient (the classic "one wrong character, funds gone" footgun) and to
+  // note when a recipient is actually one of the user's own addresses.
+  const ownSet = useMemo(
+    () => new Set(entries.map((a) => a.address.toLowerCase())),
+    [entries],
+  );
+  const recentSet = useMemo(
+    () => new Set(listRecentRecipients().map((a) => a.toLowerCase())),
+    [],
+  );
   const total = useMemo(
     () =>
       outputs.reduce((s, o) => {
@@ -119,6 +160,38 @@ export function SendSheet({
     };
   }, [outputs, fromAddr, step]);
 
+  // Sum of every row except the pinned "Max" row — what Max has to leave room
+  // for. Bad/empty amounts count as 0.
+  const othersTotal = useMemo(() => {
+    if (maxRow === null) return 0;
+    return outputs.reduce((s, o, k) => {
+      if (k === maxRow) return s;
+      try {
+        return s + parseExferAmount(o.amount);
+      } catch {
+        return s;
+      }
+    }, 0);
+  }, [outputs, maxRow]);
+
+  // Keep the Max row exact. Re-runs when the fee re-simulates (`simFee`) or the
+  // other rows change (`othersTotal`), so "send max" respects amounts already
+  // entered elsewhere and lands exactly on balance − fee — never over. Writing
+  // the Max row doesn't change `othersTotal` (it's excluded), so this can't
+  // loop; it converges once the simulated fee settles.
+  useEffect(() => {
+    if (maxRow === null) return;
+    const avail = Math.max(0, (fromEntry?.balance ?? 0) - fee - othersTotal);
+    const amt = formatExfer(avail).replace(" EXFER", "");
+    setOutputs((prev) => {
+      if (maxRow >= prev.length || prev[maxRow].amount === amt) return prev;
+      return prev.map((o, k) => (k === maxRow ? { ...o, amount: amt } : o));
+    });
+    // `fee` derives from `simFee` + outputs.length; both are covered via
+    // simFee/othersTotal, so they're intentionally omitted here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simFee, othersTotal, maxRow, fromEntry?.balance]);
+
   function setOut(i: number, patch: Partial<OutputDraft>) {
     setOutputs((p) => p.map((o, k) => (k === i ? { ...o, ...patch } : o)));
   }
@@ -127,6 +200,8 @@ export function SendSheet({
   }
   function rmRow(i: number) {
     setOutputs((p) => p.filter((_, k) => k !== i));
+    // Indices shift on removal — drop the Max pin rather than track it wrong.
+    setMaxRow(null);
   }
 
   function validate(): string | null {
@@ -145,6 +220,20 @@ export function SendSheet({
       return "Insufficient confirmed balance for amount + fee.";
     return null;
   }
+
+  // Every row has a syntactically-valid address + positive amount. Cross-row
+  // checks (sufficient balance) still run in validate() on Review, so the
+  // user gets the inline reasons first and only the funds check at the gate.
+  const formValid =
+    sendable.length > 0 &&
+    outputs.every((o) => {
+      if (!HEX64.test(o.to.trim())) return false;
+      try {
+        return parseExferAmount(o.amount) > 0;
+      } catch {
+        return false;
+      }
+    });
 
   function goReview() {
     const e = validate();
@@ -296,7 +385,7 @@ export function SendSheet({
   if (step === 2) {
     return (
       <Sheet
-        title="Review & send"
+        title="Confirm send"
         onBack={() => setStep(1)}
         onClose={onClose}
         height="90%"
@@ -343,26 +432,60 @@ export function SendSheet({
           To
         </div>
         <div className="card" style={{ overflow: "hidden", marginBottom: 18 }}>
-          {outputs.map((o, i) => (
+          {outputs.map((o, i) => {
+            const lower = o.to.trim().toLowerCase();
+            const tag: { kind: NoteKind; text: string } = ownSet.has(lower)
+              ? { kind: "info", text: "Your address" }
+              : recentSet.has(lower)
+                ? { kind: "ok", text: "Sent here before" }
+                : { kind: "warn", text: "New address" };
+            return (
             <div
               key={i}
               style={{
                 padding: "13px 14px",
                 borderBottom: i < outputs.length - 1 ? "1px solid var(--border-soft)" : "0",
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-start",
                 gap: 10,
               }}
             >
-              <AddrAvatar address={o.to.trim().toLowerCase()} size={34} />
-              <code className="mono" style={{ flex: 1, fontSize: 12.5, color: "var(--text-dim)" }}>
-                {shortAddress(o.to.trim(), 8, 8)}
-              </code>
-              <span className="mono" style={{ fontWeight: 600, fontSize: 14.5 }}>
+              <AddrAvatar address={lower} size={34} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Full address, wrapped, so the user can verify every
+                    character before broadcasting — short forms hide typos. */}
+                <code
+                  className="mono"
+                  style={{
+                    display: "block",
+                    fontSize: 11.5,
+                    lineHeight: 1.45,
+                    wordBreak: "break-all",
+                    color: "var(--text-dim)",
+                  }}
+                >
+                  {o.to.trim()}
+                </code>
+                <span
+                  style={{
+                    display: "inline-block",
+                    marginTop: 5,
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    letterSpacing: ".04em",
+                    textTransform: "uppercase",
+                    color: NOTE_COLOR[tag.kind],
+                  }}
+                >
+                  {tag.text}
+                </span>
+              </div>
+              <span className="mono" style={{ fontWeight: 600, fontSize: 14.5, whiteSpace: "nowrap" }}>
                 {o.amount}
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="card card-2" style={{ overflow: "hidden" }}>
@@ -398,10 +521,10 @@ export function SendSheet({
       footer={
         <button
           className="btn btn-block"
-          disabled={sendable.length === 0}
+          disabled={!formValid}
           onClick={goReview}
         >
-          Review
+          Send
         </button>
       }
     >
@@ -505,7 +628,41 @@ export function SendSheet({
             </button>
           </div>
           <div style={{ display: "grid", gap: 12 }}>
-            {outputs.map((o, i) => (
+            {outputs.map((o, i) => {
+              // Per-row, live validation + safety hints (#4 / #7). Nothing
+              // shows until the field is non-empty, so we don't nag mid-typing.
+              const to = o.to.trim();
+              const addrValid = HEX64.test(to);
+              const lower = to.toLowerCase();
+              const isOwn = addrValid && ownSet.has(lower);
+              const isKnown = addrValid && recentSet.has(lower);
+              const addrNote: { kind: NoteKind; text: string } | null =
+                to.length > 0 && !addrValid
+                  ? {
+                      kind: "err",
+                      text: `Address must be 64 hex characters (${to.length}/64).`,
+                    }
+                  : isOwn
+                    ? { kind: "info", text: "This is one of your own addresses." }
+                    : addrValid && !isKnown
+                      ? {
+                          kind: "warn",
+                          text: "New address — double-check every character. Transfers can't be reversed.",
+                        }
+                      : addrValid && isKnown
+                        ? { kind: "ok", text: "You've sent to this address before." }
+                        : null;
+              let amtNote: string | null = null;
+              const amtRaw = o.amount.trim();
+              if (amtRaw.length > 0) {
+                try {
+                  if (parseExferAmount(amtRaw) <= 0)
+                    amtNote = "Enter an amount greater than 0.";
+                } catch (e) {
+                  amtNote = e instanceof Error ? e.message : "Invalid amount.";
+                }
+              }
+              return (
               <div key={i} className="card card-2" style={{ padding: 13 }}>
                 <div className="h-row" style={{ marginBottom: 9 }}>
                   <span
@@ -531,12 +688,17 @@ export function SendSheet({
                 </div>
                 <input
                   className="field mono"
-                  style={{ marginBottom: 8 }}
+                  style={{
+                    marginBottom: addrNote ? 6 : 8,
+                    borderColor:
+                      addrNote?.kind === "err" ? "#f87171" : undefined,
+                  }}
                   placeholder="Paste or scan address"
                   value={o.to}
                   onChange={(e) => setOut(i, { to: e.target.value })}
                 />
-                <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
+                {addrNote && <FieldNote kind={addrNote.kind}>{addrNote.text}</FieldNote>}
+                <div style={{ display: "flex", gap: 8, margin: "8px 0 9px" }}>
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ flex: 1 }}
@@ -568,23 +730,29 @@ export function SendSheet({
                 <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
                   <input
                     className="field mono"
-                    style={{ flex: 1 }}
+                    style={{
+                      flex: 1,
+                      borderColor: amtNote ? "#f87171" : undefined,
+                    }}
                     inputMode="decimal"
                     placeholder="0.00"
                     value={o.amount}
-                    onChange={(e) => setOut(i, { amount: e.target.value })}
+                    onChange={(e) => {
+                      // A manual edit releases the Max pin on this row.
+                      if (maxRow === i) setMaxRow(null);
+                      setOut(i, { amount: e.target.value });
+                    }}
                   />
                   <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      if (!fromEntry) return;
-                      const max = Math.max(0, fromEntry.balance - fee);
-                      setOut(i, { amount: formatExfer(max).replace(" EXFER", "") });
-                    }}
+                    className={
+                      "btn btn-sm " + (maxRow === i ? "" : "btn-secondary")
+                    }
+                    onClick={() => setMaxRow(maxRow === i ? null : i)}
                   >
                     Max
                   </button>
                 </div>
+                {amtNote && <FieldNote kind="err">{amtNote}</FieldNote>}
                 {recents.length > 0 && i === 0 && !o.to && (
                   <div style={{ marginTop: 12 }}>
                     <div className="eyebrow" style={{ marginBottom: 8 }}>Recent</div>
@@ -618,7 +786,8 @@ export function SendSheet({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div

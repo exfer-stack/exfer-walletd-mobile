@@ -33,6 +33,15 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         // nothing new to restore or the picker was cancelled.
         await submitPassword(pw);
         const n = await importVaultFile({ filePassword: vaultPw });
+        // null = the file picker was cancelled. The local password is already
+        // set, but nothing was restored — don't claim success or drop the user
+        // into an empty wallet. Let them tap Restore again and pick the file.
+        if (n === null) {
+          setErr(
+            "No .vault file selected. Tap “Choose file & restore” and pick your backup.",
+          );
+          return;
+        }
         toast.success(
           "Wallet restored",
           n === 0

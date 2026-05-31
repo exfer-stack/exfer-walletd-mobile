@@ -4,14 +4,14 @@ import { useState } from "react";
 import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
-import { rpc, formatBalanceCompact } from "../../lib/rpc";
+import { formatBalanceCompact } from "../../lib/rpc";
 import { isHidden } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
 import { Sheet, CopyButton } from "../ui";
 import { Qr } from "../Qr";
 
 export function ReceiveSheet({ onClose }: { onClose: () => void }) {
-  const { balance, refresh } = useWallet();
+  const { balance } = useWallet();
   const toast = useToast();
   const entries = (balance?.entries ?? []).filter((a) => !isHidden(a.address));
   // `sel` is the user's explicit pick; until they choose, default to the
@@ -20,17 +20,6 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState<string | null>(null);
   const selected = sel ?? entries[0]?.address ?? null;
   const entry = (balance?.entries ?? []).find((a) => a.address === selected);
-
-  async function newAddress() {
-    try {
-      const res = await rpc<{ address: string }>("generate_independent_address");
-      await refresh();
-      setSel(res.address);
-      toast.success("Address created", "A fresh address is ready.");
-    } catch (e) {
-      toast.error("Could not create address", String(e instanceof Error ? e.message : e));
-    }
-  }
 
   function share() {
     if (!selected) return;
@@ -77,26 +66,6 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
             {addrName(a)}
           </button>
         ))}
-        <button
-          onClick={newAddress}
-          className="tap"
-          style={{
-            flex: "0 0 auto",
-            padding: "8px 12px",
-            borderRadius: 999,
-            cursor: "pointer",
-            border: "1px dashed var(--border)",
-            background: "none",
-            color: "var(--text-dim)",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 13.5,
-            fontWeight: 600,
-          }}
-        >
-          <Icon name="plus" size={15} /> New
-        </button>
       </div>
 
       {entry && selected && (
