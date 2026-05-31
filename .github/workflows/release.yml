@@ -145,16 +145,15 @@ jobs:
           p = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
           s = p.read_text()
           if "signingConfigs" not in s:
-              header = (
-                  'import java.io.FileInputStream\n'
-                  'import java.util.Properties\n'
-                  'val keystorePropertiesFile = rootProject.file("keystore.properties")\n'
-                  'val keystoreProperties = Properties()\n'
-                  'if (keystorePropertiesFile.exists()) {\n'
-                  '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
-                  '}\n\n'
+              # No `import` lines (they must precede every declaration in a
+              # .kts and Tauri's template already has top-level code). Load the
+              # properties with fully-qualified names just before `android {`.
+              loader = (
+                  '\nval keystoreProperties = java.util.Properties().apply {\n'
+                  '    val f = rootProject.file("keystore.properties")\n'
+                  '    if (f.exists()) f.inputStream().use { load(it) }\n'
+                  '}\n'
               )
-              s = header + s
               sign = (
                   '\n    signingConfigs {\n'
                   '        create("release") {\n'
@@ -165,7 +164,8 @@ jobs:
                   '        }\n'
                   '    }\n'
               )
-              s = re.sub(r'(\n\s*android\s*\{)', r'\1' + sign, s, count=1)
+              # loader before `android {`, signingConfigs right after it.
+              s = re.sub(r'(\nandroid\s*\{)', loader + r'\1' + sign, s, count=1)
               if 'getByName("release")' in s:
                   s = s.replace(
                       'getByName("release") {',
@@ -174,7 +174,7 @@ jobs:
                   )
               else:
                   s = re.sub(
-                      r'(\n\s*android\s*\{)',
+                      r'(\nandroid\s*\{)',
                       r'\1\n    buildTypes {\n        getByName("release") {\n'
                       r'            signingConfig = signingConfigs.getByName("release")\n'
                       r'        }\n    }\n',
