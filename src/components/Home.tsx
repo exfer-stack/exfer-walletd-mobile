@@ -1,7 +1,6 @@
 // Home — balance hero, Receive/Send, address list, New-address menu.
 
 import { useMemo, useState } from "react";
-import wordmark from "../assets/wordmark.png";
 import { Icon } from "../lib/icons";
 import { useWallet } from "../lib/wallet";
 import { useToast } from "../lib/toast";
@@ -123,15 +122,6 @@ export function Home({
   return (
     <div className="screen">
       <div className="screen-pad">
-        <div className="h-row" style={{ padding: "10px 0 14px" }}>
-          <img
-            src={wordmark}
-            alt="EXFER"
-            style={{ height: 42, width: "auto", filter: "var(--wordmark-filter, none)" }}
-            draggable={false}
-          />
-        </div>
-
         <button
           onClick={toggle}
           className="tap"
@@ -141,7 +131,7 @@ export function Home({
             width: "100%",
             textAlign: "left",
             cursor: "pointer",
-            padding: "14px 0 20px",
+            padding: "18px 0 20px",
           }}
         >
           <div className="eyebrow" style={{ marginBottom: 10, letterSpacing: ".12em" }}>

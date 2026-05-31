@@ -86,6 +86,18 @@ jobs:
       PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
+      # The .aab bundles all ABIs of the embedded-walletd native lib; free
+      # preinstalled tooling so the native-lib merge doesn't run the runner
+      # out of disk.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -95,8 +107,9 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-      - name: Install Android NDK + platform
-        run: sdkmanager "ndk;26.1.10909125" "platforms;android-34" "build-tools;34.0.0"
+      # Use the runner's preinstalled NDK (Tauri auto-detects it).
+      - name: Install Android platform + build-tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -107,8 +120,6 @@ jobs:
 
       - name: Generate Android project
         run: npm run tauri android init -- --skip-targets-install
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
 
       # Write the upload keystore + signing config from secrets so the
       # release build is signed. Skipped (unsigned) when no keystore secret.
@@ -125,8 +136,6 @@ jobs:
 
       - name: Build .aab
         run: npm run tauri android build -- --aab
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
 
       - name: Upload to Play internal track
         if: ${{ env.PLAY_SERVICE_ACCOUNT_JSON != '' }}
