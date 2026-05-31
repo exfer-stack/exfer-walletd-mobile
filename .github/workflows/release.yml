@@ -145,22 +145,22 @@ jobs:
           p = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
           s = p.read_text()
           if "signingConfigs" not in s:
-              # Tauri's build.gradle.kts starts with imports, so prepend ours
-              # contiguously at the very top (imports must precede all
-              # declarations). FQN java.util.Properties is shadowed by the
-              # Gradle `java` plugin accessor, so we import + use the bare name.
-              s = "import java.io.FileInputStream\nimport java.util.Properties\n" + s
-              # The loader is a declaration, so it goes BELOW the imports —
-              # just before `android {`.
-              loader = (
-                  '\nval keystoreProperties = Properties().apply {\n'
-                  '    val f = rootProject.file("keystore.properties")\n'
-                  '    if (f.exists()) FileInputStream(f).use { load(it) }\n'
-                  '}\n'
-              )
+              # Canonical Tauri-doc pattern: the template ALREADY imports
+              # java.util.Properties (adding it again is an ambiguous/duplicate
+              # import), so add each import only if missing — and the keystore
+              # loader lives INSIDE the signingConfig block (no top-level decl,
+              # no `java` plugin-accessor shadowing).
+              for imp in ("import java.io.FileInputStream", "import java.util.Properties"):
+                  if imp not in s:
+                      s = imp + "\n" + s
               sign = (
                   '\n    signingConfigs {\n'
                   '        create("release") {\n'
+                  '            val keystorePropertiesFile = rootProject.file("keystore.properties")\n'
+                  '            val keystoreProperties = Properties()\n'
+                  '            if (keystorePropertiesFile.exists()) {\n'
+                  '                keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
+                  '            }\n'
                   '            keyAlias = keystoreProperties["keyAlias"] as String\n'
                   '            keyPassword = keystoreProperties["keyPassword"] as String\n'
                   '            storeFile = file(keystoreProperties["storeFile"] as String)\n'
@@ -168,8 +168,8 @@ jobs:
                   '        }\n'
                   '    }\n'
               )
-              # loader before `android {`, signingConfigs right after it.
-              s = re.sub(r'(\nandroid\s*\{)', loader + r'\1' + sign, s, count=1)
+              # signingConfigs right after `android {`.
+              s = re.sub(r'(\nandroid\s*\{)', r'\1' + sign, s, count=1)
               if 'getByName("release")' in s:
                   s = s.replace(
                       'getByName("release") {',
