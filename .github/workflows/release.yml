@@ -58,7 +58,7 @@ jobs:
       - name: Generate iOS project
         run: npm run tauri ios init
       - name: Brand app icons
-        run: npm run tauri icon src-tauri/icons/icon.png
+        run: npm run tauri icon src-tauri/app-icon/icon.json
 
       # Automatic signing via an App Store Connect API key. Tauri picks
       # these up and signs the .ipa for App Store distribution.
@@ -140,7 +140,7 @@ jobs:
       - name: Generate Android project
         run: npm run tauri android init -- --skip-targets-install
       - name: Brand launcher icons
-        run: npm run tauri icon src-tauri/icons/icon.png
+        run: npm run tauri icon src-tauri/app-icon/icon.json
 
       # Write the upload keystore + wire the release signingConfig into the
       # (regenerated) Gradle project so the build is actually signed. Skipped

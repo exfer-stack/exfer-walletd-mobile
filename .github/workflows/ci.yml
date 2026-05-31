@@ -72,7 +72,7 @@ jobs:
       # `init` ships placeholder Tauri icons; regenerate the launcher icons
       # from the exfer brand mark.
       - name: Brand launcher icons
-        run: npm run tauri icon src-tauri/icons/icon.png
+        run: npm run tauri icon src-tauri/app-icon/icon.json
       # Single ABI (arm64) for the check — enough to prove it compiles +
       # links, and keeps the native-lib merge under the disk limit.
       - name: Build debug APK (arm64)
@@ -106,7 +106,7 @@ jobs:
       - name: Generate iOS project
         run: npm run tauri ios init
       - name: Brand app icons
-        run: npm run tauri icon src-tauri/icons/icon.png
+        run: npm run tauri icon src-tauri/app-icon/icon.json
       - name: Build (unsigned, simulator target)
         # No signing on PRs — just prove it compiles + links for iOS.
         run: npm run tauri ios build -- --target aarch64-sim --ci
