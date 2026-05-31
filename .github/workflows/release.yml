@@ -145,13 +145,17 @@ jobs:
           p = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
           s = p.read_text()
           if "signingConfigs" not in s:
-              # No `import` lines (they must precede every declaration in a
-              # .kts and Tauri's template already has top-level code). Load the
-              # properties with fully-qualified names just before `android {`.
+              # Tauri's build.gradle.kts starts with imports, so prepend ours
+              # contiguously at the very top (imports must precede all
+              # declarations). FQN java.util.Properties is shadowed by the
+              # Gradle `java` plugin accessor, so we import + use the bare name.
+              s = "import java.io.FileInputStream\nimport java.util.Properties\n" + s
+              # The loader is a declaration, so it goes BELOW the imports —
+              # just before `android {`.
               loader = (
-                  '\nval keystoreProperties = java.util.Properties().apply {\n'
+                  '\nval keystoreProperties = Properties().apply {\n'
                   '    val f = rootProject.file("keystore.properties")\n'
-                  '    if (f.exists()) f.inputStream().use { load(it) }\n'
+                  '    if (f.exists()) FileInputStream(f).use { load(it) }\n'
                   '}\n'
               )
               sign = (
@@ -169,7 +173,7 @@ jobs:
               if 'getByName("release")' in s:
                   s = s.replace(
                       'getByName("release") {',
-                      'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")',
+                      'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")\n',
                       1,
                   )
               else:
