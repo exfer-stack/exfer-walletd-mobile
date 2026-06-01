@@ -1,6 +1,6 @@
 // Home — balance hero, Receive/Send, address list, New-address menu.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type SVGProps } from "react";
 import { Icon } from "../lib/icons";
 import { useWallet } from "../lib/wallet";
 import { useToast } from "../lib/toast";
@@ -9,6 +9,7 @@ import {
   MAX_ADDRESSES,
   splitBalanceCompact,
 } from "../lib/rpc";
+import { usePrice, usdValue } from "../lib/market";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
@@ -16,6 +17,54 @@ import type { WalletEntry } from "../lib/types";
 import { AddrAvatar, ActionMenu, PendingDot } from "./ui";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
+
+// Faint brand watermark behind the balance hero — the EXFER X mark as a
+// large, low-opacity backdrop (echoes the app icon). Decorative only.
+function BrandWatermark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 120 120"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <line x1="31" y1="31" x2="89" y2="89" />
+      <line x1="89" y1="31" x2="31" y2="89" />
+      <rect x="18" y="18" width="26" height="26" rx="7" />
+      <rect x="76" y="18" width="26" height="26" rx="7" />
+      <rect x="18" y="76" width="26" height="26" rx="7" />
+      <rect x="76" y="76" width="26" height="26" rx="7" />
+      <rect
+        x="51" y="51" width="18" height="18" rx="4"
+        transform="rotate(45 60 60)"
+        fill="currentColor" stroke="none"
+      />
+    </svg>
+  );
+}
+
+/** 24h change pill — green ▲ for up, red ▼ for down, muted for flat. */
+function ChangePill({ pct }: { pct: number }) {
+  const up = pct > 0.05, down = pct < -0.05;
+  const color = up ? "#34d399" : down ? "#f87171" : "var(--text-faint)";
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 3,
+        fontSize: 12, fontWeight: 600, color,
+        background: `color-mix(in srgb, ${color} 14%, transparent)`,
+        padding: "2px 8px", borderRadius: 999,
+      }}
+    >
+      {up ? "▲" : down ? "▼" : "•"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
 
 function PrimaryAction({
   icon,
@@ -69,6 +118,7 @@ export function Home({
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, error, refresh } = useWallet();
+  const price = usePrice();
   // `balance` is null until the first successful load. Show skeletons while
   // it's loading, but if that first load FAILED show an error+retry instead
   // of an infinite skeleton (and never a misleading "0 / No addresses").
@@ -145,10 +195,26 @@ export function Home({
           </div>
         ) : (
           <>
+        <div style={{ position: "relative" }}>
+        <BrandWatermark
+          style={{
+            position: "absolute",
+            top: -24,
+            right: -36,
+            width: 190,
+            height: 190,
+            color: "var(--accent)",
+            opacity: 0.07,
+            pointerEvents: "none",
+            zIndex: 0,
+          }}
+        />
         <button
           onClick={toggle}
           className="tap"
           style={{
+            position: "relative",
+            zIndex: 1,
             background: "none",
             border: 0,
             width: "100%",
@@ -202,11 +268,20 @@ export function Home({
               </span>
             </div>
           )}
+          {!firstLoad && price && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+              <span className="mono" style={{ fontSize: 14, color: "var(--text-dim)" }}>
+                <Masked dots="••••">≈ {usdValue(projected, price.usd)}</Masked>
+              </span>
+              <ChangePill pct={price.change24h} />
+            </div>
+          )}
           {/* No "confirming" pill here: the hero already shows the projected
               total, so incoming funds read as arrived instantly. The
               still-confirming state lives only on the address row (a small
               dot) and in the address detail. */}
         </button>
+        </div>
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label="Receive" onClick={onReceive} variant="secondary" />
@@ -319,26 +394,40 @@ export function Home({
                     )}
                   </span>
                   <span
-                    className="mono"
                     style={{
-                      fontSize: 14.5,
-                      fontWeight: 500,
-                      color: bal === 0 ? "var(--text-faint)" : "var(--text)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 2,
                     }}
                   >
-                    <Masked dots="•••">
-                      {(() => {
-                        const s = splitBalanceCompact(bal);
-                        return (
-                          <>
-                            {s.whole}
-                            {s.frac && (
-                              <span style={{ color: "var(--text-faint)" }}>.{s.frac}</span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </Masked>
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: 14.5,
+                        fontWeight: 500,
+                        color: bal === 0 ? "var(--text-faint)" : "var(--text)",
+                      }}
+                    >
+                      <Masked dots="•••">
+                        {(() => {
+                          const s = splitBalanceCompact(bal);
+                          return (
+                            <>
+                              {s.whole}
+                              {s.frac && (
+                                <span style={{ color: "var(--text-faint)" }}>.{s.frac}</span>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </Masked>
+                    </span>
+                    {price && bal > 0 && (
+                      <span className="mono faint" style={{ fontSize: 11 }}>
+                        <Masked dots="•••">≈ {usdValue(bal, price.usd)}</Masked>
+                      </span>
+                    )}
                   </span>
                 </span>
               </button>

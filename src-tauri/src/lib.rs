@@ -278,6 +278,36 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
     Ok(BootstrapStatus::NeedsPassword)
 }
 
+/// Fetch the EXFER spot market (daily klines) from the public OTC market,
+/// server-side — so the webview never makes the call itself (same rule as
+/// walletd) and the remote's missing CORS headers don't apply. Uses a
+/// SEPARATE webpki-roots TLS client (the walletd client is fingerprint-pinned
+/// with no CA roots, so it can't talk to a public host). Returns the raw JSON
+/// body; the frontend parses the latest close + 24h change. Read-only, no
+/// secrets — a failure just means the UI hides the price.
+#[tauri::command]
+async fn get_market_price() -> Result<String, String> {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let client = reqwest::ClientBuilder::new()
+        .use_preconfigured_tls(tls)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("building http client: {e}"))?;
+    let resp = client
+        .get("https://archeotc.com/api/coins/klines?coinId=EXFER&interval=1d&limit=2")
+        .send()
+        .await
+        .map_err(|e| format!("price request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("price endpoint returned {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| format!("reading price body: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -348,6 +378,7 @@ pub fn run() {
             export_wallet_key,
             import_wallet_key,
             restore_from_mnemonic,
+            get_market_price,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

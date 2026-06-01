@@ -40,19 +40,32 @@ export default defineConfig(async ({ mode }) => {
         // 3. tell Vite to ignore watching `src-tauri`
         ignored: ["**/src-tauri/**"],
       },
-      // Proxy /__walletd → a real walletd daemon for dev-mode testing
-      // outside Tauri. Activated by setting VITE_WALLETD_PROXY_TARGET in
-      // .env.local; see lib/devmock.ts for the client-side switch. The
-      // proxy strips the /__walletd prefix so walletd sees `POST /`.
-      proxy: proxyTarget
-        ? {
-            "/__walletd": {
-              target: proxyTarget,
-              changeOrigin: true,
-              rewrite: (p: string) => p.replace(/^\/__walletd/, ""),
-            },
-          }
-        : undefined,
+      // Dev proxies (browser-mode only; a real Tauri build routes through
+      // Rust instead).
+      //   /__walletd → a real walletd daemon. Activated by
+      //     VITE_WALLETD_PROXY_TARGET in .env.local (strips the prefix so
+      //     walletd sees `POST /`); see lib/devmock.ts for the switch.
+      //   /__price   → the public EXFER OTC market API. archeotc sends no
+      //     CORS headers, so a direct browser fetch is blocked; the proxy
+      //     lets dev-mode read the price. Production uses the Rust
+      //     get_market_price command (see lib/market.ts).
+      proxy: {
+        "/__price": {
+          target: "https://archeotc.com",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p: string) => p.replace(/^\/__price/, ""),
+        },
+        ...(proxyTarget
+          ? {
+              "/__walletd": {
+                target: proxyTarget,
+                changeOrigin: true,
+                rewrite: (p: string) => p.replace(/^\/__walletd/, ""),
+              },
+            }
+          : {}),
+      },
     },
   };
 });
