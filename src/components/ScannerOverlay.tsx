@@ -46,6 +46,17 @@ export function ScannerOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Switch to photo mode: stop the live camera FIRST. The windowed
+  // scanner renders a native camera surface behind the (transparent)
+  // webview; once the OS photo picker interrupts it, that surface can
+  // re-attach ON TOP of the webview and swallow taps — leaving Cancel
+  // dead. Tearing it down before picking keeps the webview interactive.
+  function openPhotoPicker() {
+    setMsg(null);
+    void cancelScan();
+    fileRef.current?.click();
+  }
+
   async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
@@ -54,6 +65,13 @@ export function ScannerOverlay({
     const addr = await decodeQrFromImageFile(file);
     if (addr) finish(addr);
     else setMsg("No QR code found in that photo — try another.");
+  }
+
+  // Cancel must ALWAYS close, even if a result race already flipped the
+  // guard — close directly rather than through the guarded finish().
+  function cancel() {
+    doneRef.current = true;
+    onResult(null);
   }
 
   return createPortal(
@@ -133,7 +151,7 @@ export function ScannerOverlay({
         }}
       >
         <button
-          onClick={() => fileRef.current?.click()}
+          onClick={openPhotoPicker}
           className="tap"
           style={{
             padding: "13px 24px",
@@ -149,7 +167,7 @@ export function ScannerOverlay({
           Photo
         </button>
         <button
-          onClick={() => finish(null)}
+          onClick={cancel}
           className="tap"
           style={{
             padding: "13px 30px",
