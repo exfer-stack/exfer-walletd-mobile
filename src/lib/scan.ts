@@ -10,7 +10,38 @@ export function parseScannedAddress(content: string | null | undefined): string 
   let s = content.trim();
   s = s.replace(/^exfer:/i, "");
   s = s.split("?")[0].trim();
-  return s || null;
+  // Addresses are case-insensitive hex and the Receive QR encodes them
+  // uppercase (compact QR mode); normalise to lowercase so the recipient
+  // field matches how addresses appear everywhere else.
+  return s ? s.toLowerCase() : null;
+}
+
+/**
+ * Decode a QR from a still image (gallery photo / screenshot) and return the
+ * recipient address. Pure-JS (jsQR over a canvas) so it works in any webview,
+ * including a plain browser — and it's far more forgiving than a live camera
+ * scan of another screen (no glare/focus/motion). Resolves null if the image
+ * has no readable QR. Never throws.
+ */
+export async function decodeQrFromImageFile(file: File): Promise<string | null> {
+  try {
+    const jsQR = (await import("jsqr")).default;
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const res = jsQR(img.data, img.width, img.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return parseScannedAddress(res?.data);
+  } catch {
+    return null;
+  }
 }
 
 /**

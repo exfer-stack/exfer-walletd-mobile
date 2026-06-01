@@ -6,12 +6,18 @@ export function Qr({ value, size = 222 }: { value: string; size?: number }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    QRCode.toDataURL(value, {
-      // A quiet zone is mandatory: scanners locate the finder patterns by
-      // the white border around them. margin:0 left no quiet zone, so the
-      // code was hard/impossible to scan off a screen even when aligned.
-      // 4 modules is the spec minimum.
-      margin: 4,
+    // A 64-hex address encodes far more compactly in QR alphanumeric mode
+    // (uppercase A–F) than byte mode (lowercase) — ~31% fewer bits, so a
+    // lower version with bigger, easier-to-scan modules. Addresses are
+    // case-insensitive and the scanner lowercases on the way back in
+    // (parseScannedAddress), so this is display-neutral.
+    const encoded = /^[0-9a-fA-F]{64}$/.test(value) ? value.toUpperCase() : value;
+    QRCode.toDataURL(encoded, {
+      // A small quiet zone so scanners can still locate the finder patterns
+      // (margin:0 left none, which is why it wouldn't scan), but kept tight
+      // (2, not the spec's 4) since the QR already sits inside a white card —
+      // a big white border looks heavy.
+      margin: 2,
       width: size,
       color: { dark: "#0a0a0b", light: "#ffffff" },
     })

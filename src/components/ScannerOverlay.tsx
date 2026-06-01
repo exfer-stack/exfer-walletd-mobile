@@ -4,29 +4,57 @@
 // a label, and a Cancel button — matching the rest of the app instead of
 // the OS's bare fullscreen scanner.
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { startWindowedScan, cancelScan } from "../lib/scan";
+import {
+  startWindowedScan,
+  cancelScan,
+  decodeQrFromImageFile,
+} from "../lib/scan";
 
 export function ScannerOverlay({
   onResult,
 }: {
   onResult: (address: string | null) => void;
 }) {
+  // The live camera and the photo-import path race; only the first to find
+  // a QR should win.
+  const doneRef = useRef(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  function finish(addr: string | null) {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onResult(addr);
+  }
+
   useEffect(() => {
-    let done = false;
     const html = document.documentElement;
     html.classList.add("scanning");
     startWindowedScan().then((addr) => {
-      if (!done) onResult(addr);
+      // Only auto-finish on a real hit. A null means the camera scan
+      // ended / isn't available (e.g. plain browser) — keep the overlay
+      // open so the user can still import a photo instead.
+      if (addr) finish(addr);
     });
     return () => {
-      done = true;
+      doneRef.current = true;
       html.classList.remove("scanning");
       void cancelScan();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setMsg(null);
+    const addr = await decodeQrFromImageFile(file);
+    if (addr) finish(addr);
+    else setMsg("No QR code found in that photo — try another.");
+  }
 
   return createPortal(
     <div
@@ -65,29 +93,78 @@ export function ScannerOverlay({
           textShadow: "0 1px 4px rgba(0,0,0,.6)",
         }}
       >
-        Point at the sender&apos;s QR
+        Point at the sender&apos;s QR, or import a photo
       </div>
-      <button
-        onClick={() => onResult(null)}
-        className="tap"
+      {msg && (
+        <div
+          style={{
+            position: "absolute",
+            left: 24,
+            right: 24,
+            top: "calc(50% + 182px)",
+            textAlign: "center",
+            color: "#ffd5d5",
+            fontSize: 13,
+            fontWeight: 600,
+            textShadow: "0 1px 4px rgba(0,0,0,.6)",
+          }}
+        >
+          {msg}
+        </div>
+      )}
+      {/* Hidden picker: on mobile webviews this opens the native photo
+          gallery (or camera). Decoded with jsQR — see decodeQrFromImageFile. */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={onPickPhoto}
+        style={{ display: "none" }}
+      />
+      <div
         style={{
           position: "absolute",
           left: "50%",
           transform: "translateX(-50%)",
           bottom: "calc(40px + env(safe-area-inset-bottom))",
           pointerEvents: "auto",
-          padding: "13px 30px",
-          borderRadius: 999,
-          background: "var(--accent)",
-          color: "var(--accent-ink)",
-          fontWeight: 600,
-          fontSize: 15,
-          border: 0,
-          cursor: "pointer",
+          display: "flex",
+          gap: 12,
         }}
       >
-        Cancel
-      </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="tap"
+          style={{
+            padding: "13px 24px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,.14)",
+            color: "#fff",
+            fontWeight: 600,
+            fontSize: 15,
+            border: "1px solid rgba(255,255,255,.25)",
+            cursor: "pointer",
+          }}
+        >
+          Photo
+        </button>
+        <button
+          onClick={() => finish(null)}
+          className="tap"
+          style={{
+            padding: "13px 30px",
+            borderRadius: 999,
+            background: "var(--accent)",
+            color: "var(--accent-ink)",
+            fontWeight: 600,
+            fontSize: 15,
+            border: 0,
+            cursor: "pointer",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
     </div>,
     document.body,
   );
