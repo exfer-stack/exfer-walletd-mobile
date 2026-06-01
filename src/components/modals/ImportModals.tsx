@@ -5,6 +5,7 @@ import { Modal, Field, Spinner } from "../ui";
 import { useToast } from "../../lib/toast";
 import { rpc, importWalletKey } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
+import { useT } from "../../lib/i18n";
 import { shortAddress } from "../../lib/labels";
 import { setLabel as saveLabel } from "../../lib/labels";
 
@@ -16,6 +17,7 @@ export function ImportPhraseModal({
   onImported: () => void | Promise<void>;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [phrase, setPhrase] = useState("");
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,7 +26,7 @@ export function ImportPhraseModal({
 
   async function go() {
     if (!valid) {
-      toast.error("Recovery phrase must be 24 words", `You entered ${words.length}.`);
+      toast.error(t("imp.must24"), t("imp.must24Body", { n: words.length }));
       return;
     }
     setBusy(true);
@@ -35,10 +37,10 @@ export function ImportPhraseModal({
       });
       if (label.trim()) saveLabel(res.address, label.trim());
       await onImported();
-      toast.success("Address imported", shortAddress(res.address));
+      toast.success(t("imp.imported"), shortAddress(res.address));
       onClose();
     } catch (e) {
-      toast.error("Import failed", humanizeError(e));
+      toast.error(t("imp.importFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -46,7 +48,7 @@ export function ImportPhraseModal({
 
   return (
     <Modal
-      title="Import recovery phrase"
+      title={t("imp.phraseTitle")}
       onClose={onClose}
       footer={
         <>
@@ -55,36 +57,35 @@ export function ImportPhraseModal({
             onClick={onClose}
             disabled={busy}
           >
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button className="btn btn-block" disabled={!valid || busy} onClick={go}>
-            {busy ? <Spinner /> : "Import"}
+            {busy ? <Spinner /> : t("imp.import")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Imports one address from its 24-word recovery phrase. It joins your wallet
-        as an independent key.
+        {t("imp.phraseInfo")}
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label={`Recovery phrase (${words.length}/24 words)`}>
+        <Field label={t("imp.phraseLabel", { n: words.length })}>
           <textarea
             className="field mono"
             style={{ height: 88, resize: "none", fontSize: 13 }}
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            placeholder="word1 word2 word3 … word24"
+            placeholder={t("imp.phrasePlaceholder")}
             spellCheck={false}
             autoFocus
           />
         </Field>
-        <Field label="Label (optional)">
+        <Field label={t("imp.labelOptional")}>
           <input
             className="field"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. cold storage"
+            placeholder={t("imp.labelPlaceholder")}
           />
         </Field>
       </div>
@@ -100,6 +101,7 @@ export function ImportKeyFileModal({
   onImported: () => void | Promise<void>;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [pw, setPw] = useState("");
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -116,10 +118,10 @@ export function ImportKeyFileModal({
       });
       if (label.trim()) saveLabel(address, label.trim());
       await onImported();
-      toast.success("Address imported", shortAddress(address));
+      toast.success(t("imp.imported"), shortAddress(address));
       onClose();
     } catch (e) {
-      toast.error("Import failed", humanizeError(e));
+      toast.error(t("imp.importFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,7 @@ export function ImportKeyFileModal({
 
   return (
     <Modal
-      title="Import wallet.key"
+      title={t("imp.keyTitle")}
       onClose={onClose}
       footer={
         <>
@@ -136,25 +138,23 @@ export function ImportKeyFileModal({
             onClick={onClose}
             disabled={busy}
           >
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button
             className="btn btn-block"
             disabled={!pw || busy}
             onClick={go}
           >
-            {busy ? <Spinner /> : "Choose file & import"}
+            {busy ? <Spinner /> : t("imp.chooseImport")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Adds an externally-held address from an encrypted <b>.key</b> file (e.g.
-        exported from exfer.dev). Enter the file's password, then tap Import to
-        choose the <b>.key</b> file.
+        {t("imp.keyInfo")}
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label="File password">
+        <Field label={t("imp.filePassword")}>
           <input
             className="field"
             type="password"
@@ -162,12 +162,12 @@ export function ImportKeyFileModal({
             onChange={(e) => setPw(e.target.value)}
           />
         </Field>
-        <Field label="Label (optional)">
+        <Field label={t("imp.labelOptional")}>
           <input
             className="field"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. cold storage"
+            placeholder={t("imp.labelPlaceholder")}
           />
         </Field>
       </div>

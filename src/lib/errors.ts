@@ -7,6 +7,9 @@
 // Rate limit exceeded: ...". We never want to show the user a raw code dump,
 // so we match known cases by substring (robust to the wrapping) and fall back
 // to a generic line — keeping the raw text only in the console for debugging.
+// Messages are localized via tStatic (reads the persisted language).
+
+import { tStatic, type MsgKey } from "./i18n";
 
 /** Pull the most useful raw string out of whatever was thrown. */
 function rawText(e: unknown): string {
@@ -20,46 +23,44 @@ function rawText(e: unknown): string {
   return String(e);
 }
 
-// Ordered most-specific → most-general. First match wins.
-const PATTERNS: { test: RegExp; message: string }[] = [
+// Ordered most-specific → most-general. First match wins. `key` is resolved
+// through tStatic at call time so the message follows the chosen language.
+const PATTERNS: { test: RegExp; key: MsgKey }[] = [
   {
     test: /rate.?limit|too many requests|queries per minute|-32603/i,
-    message:
-      "The network is busy right now. Wait a few seconds and try again.",
+    key: "err.busy",
   },
   {
     test: /insufficient|not enough|exceeds? (the )?balance|can'?t cover|too small to cover/i,
-    message: "Not enough balance to cover the amount plus the network fee.",
+    key: "err.insufficient",
   },
   {
     test: /invalid address|bad address|malformed address|not a valid address|address.*invalid/i,
-    message: "That address isn't valid. Check every character and try again.",
+    key: "err.badAddr",
   },
   {
     test: /passphrase|password|decrypt|bad mac|wrong key|invalid mac|authentication failed|incorrect/i,
-    message: "Incorrect password. Check it and try again.",
+    key: "err.password",
   },
   {
     test: /method not found|-32601|not supported|unsupported|unknown method/i,
-    message:
-      "The connected node doesn't support this. Try another node in Settings.",
+    key: "err.oldNode",
   },
   {
     test: /timeout|timed out|connection refused|connection reset|unreachable|dns|failed to connect|error sending request|cannot reach|network error|transport:/i,
-    message:
-      "Can't reach the network right now. Check your connection and try again.",
+    key: "err.network",
   },
   {
     test: /already (known|in mempool|exists)|duplicate|nonce/i,
-    message: "This transfer was already submitted.",
+    key: "err.duplicate",
   },
   {
     test: /fee.*(too low|below)|min(imum)? fee/i,
-    message: "The network fee was too low. Try again.",
+    key: "err.feeLow",
   },
   {
     test: /no file selected|cancelled|canceled/i,
-    message: "Cancelled — nothing was changed.",
+    key: "err.cancelled",
   },
 ];
 
@@ -89,10 +90,10 @@ function looksRaw(s: string): boolean {
 export function humanizeError(e: unknown): string {
   const raw = rawText(e).trim();
   if (raw) console.warn("[error]", raw);
-  if (!raw) return "Something went wrong. Please try again.";
+  if (!raw) return tStatic("err.generic");
 
-  for (const { test, message } of PATTERNS) {
-    if (test.test(raw)) return message;
+  for (const { test, key } of PATTERNS) {
+    if (test.test(raw)) return tStatic(key);
   }
 
   // No known pattern. If the (de-wrapped) text reads like a plain message —
@@ -101,5 +102,5 @@ export function humanizeError(e: unknown): string {
   if (inner && inner.length <= 140 && !looksRaw(inner)) {
     return inner.charAt(0).toUpperCase() + inner.slice(1);
   }
-  return "Something went wrong. Please try again.";
+  return tStatic("err.generic");
 }

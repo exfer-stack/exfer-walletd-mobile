@@ -8,6 +8,7 @@ import { Icon } from "../../lib/icons";
 import { useToast } from "../../lib/toast";
 import { rpc } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
+import { useT } from "../../lib/i18n";
 import { setLabel, shortAddress } from "../../lib/labels";
 
 export function NewAddressModal({
@@ -20,6 +21,7 @@ export function NewAddressModal({
   onImport: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -31,22 +33,19 @@ export function NewAddressModal({
       if (label) setLabel(res.address, label);
       await onCreated();
       toast.success(
-        "Address created",
-        label ? `“${label}” is ready to receive.` : shortAddress(res.address),
+        t("na.created"),
+        label ? t("na.createdNamed", { name: label }) : shortAddress(res.address),
       );
       onClose();
     } catch (e) {
-      toast.error(
-        "Could not create address",
-        humanizeError(e),
-      );
+      toast.error(t("na.createFail"), humanizeError(e));
       setBusy(false);
     }
   }
 
   return (
     <Modal
-      title="New address"
+      title={t("na.title")}
       onClose={onClose}
       footer={
         <>
@@ -55,26 +54,25 @@ export function NewAddressModal({
             onClick={onClose}
             disabled={busy}
           >
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button className="btn btn-block" disabled={busy} onClick={create}>
-            {busy ? <Spinner /> : "Create"}
+            {busy ? <Spinner /> : t("na.create")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Generates a fresh key in your wallet. Give it a name so you can tell it
-        apart — a private nickname, stored only on this device.
+        {t("na.info")}
       </div>
-      <Field label="Name (optional)">
+      <Field label={t("na.nameOptional")}>
         <input
           className="field"
           autoFocus
           value={name}
           maxLength={28}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. deposits, savings…"
+          placeholder={t("na.namePlaceholder")}
           onKeyDown={(e) => e.key === "Enter" && !busy && create()}
         />
       </Field>
@@ -114,10 +112,10 @@ export function NewAddressModal({
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>
-            Import an existing key
+            {t("na.importExisting")}
           </div>
           <div className="faint" style={{ fontSize: 12 }}>
-            Recovery phrase or wallet.key
+            {t("na.importSub")}
           </div>
         </div>
         <Icon name="chevron" size={18} />

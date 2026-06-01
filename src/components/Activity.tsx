@@ -12,6 +12,7 @@ import { useWallet } from "../lib/wallet";
 import { formatExfer, formatBalanceCompact } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER } from "../lib/format";
+import { useT, tStatic } from "../lib/i18n";
 import {
   buildActivityFeed,
   loadFeedCache,
@@ -23,13 +24,13 @@ import { AppBar, Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "./ui";
 function relTime(iso: string): string {
   const ts = new Date(iso).getTime();
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return "just now";
+  if (s < 60) return tStatic("act.justNow");
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return tStatic("act.minAgo", { m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return tStatic("act.hAgo", { h });
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
+  if (d < 7) return tStatic("act.dAgo", { d });
   return new Date(ts).toLocaleDateString();
 }
 
@@ -39,21 +40,22 @@ function relTime(iso: string): string {
 // bug). The full "@ height" detail still shows in the TxSheet header.
 function statusPill(it: ActivityItem): { text: string; cls: string } {
   if (it.status === "confirmed") {
-    return { text: "confirmed", cls: "pill-success" };
+    return { text: tStatic("act.confirmed"), cls: "pill-success" };
   }
-  return { text: "in mempool", cls: "pill-accent" };
+  return { text: tStatic("act.inMempool"), cls: "pill-accent" };
 }
 
 // When a row has no local timestamp (a confirmed-only deposit the indexer
 // surfaced — e.g. it landed while the app was closed), fall back to the block.
 function whenLabel(it: ActivityItem): string {
   if (it.ts) return relTime(it.ts);
-  if (it.block_height) return `block ${it.block_height.toLocaleString()}`;
+  if (it.block_height) return tStatic("act.block", { n: it.block_height.toLocaleString() });
   return "";
 }
 
 export function Activity() {
   const { balance } = useWallet();
+  const { t } = useT();
   // Seed from the cached feed so reopening Activity paints instantly instead of
   // flashing a skeleton and cold-loading every time. `loading` is only true
   // when there's nothing cached to show.
@@ -129,10 +131,10 @@ export function Activity() {
       <div className="screen-pad">
         <AppBar
           large
-          title="Activity"
-          subtitle={`${items.length} ${
-            items.length === 1 ? "transfer" : "transfers"
-          }`}
+          title={t("act.title")}
+          subtitle={t(items.length === 1 ? "act.transfer1" : "act.transferN", {
+            n: items.length,
+          })}
           right={
             <button
               className="icon-btn"
@@ -149,8 +151,7 @@ export function Activity() {
             className="faint"
             style={{ fontSize: 11.5, margin: "0 2px 10px", lineHeight: 1.5 }}
           >
-            Showing the live + locally-recorded view — full on-chain history is
-            momentarily unavailable.
+            {t("act.degraded")}
           </div>
         )}
 
@@ -179,9 +180,9 @@ export function Activity() {
             >
               <Icon name="activity" size={26} />
             </div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>No activity yet</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("act.emptyTitle")}</div>
             <div className="faint" style={{ fontSize: 13 }}>
-              Sends and deposits land here.
+              {t("act.emptyBody")}
             </div>
           </div>
         ) : (
@@ -264,6 +265,7 @@ function ActivityRow({
   entries: Entry[];
   onOpen: () => void;
 }) {
+  const { t } = useT();
   const st = statusPill(item);
   const received = item.kind === "received";
 
@@ -277,13 +279,13 @@ function ActivityRow({
 
   const title = received
     ? item.is_coinbase
-      ? "Mining reward"
+      ? t("act.miningReward")
       : toEntry
-        ? `Received to ${addrName(toEntry)}`
-        : "Received"
+        ? t("act.receivedTo", { name: addrName(toEntry) })
+        : t("act.received")
     : fromEntry
-      ? `Sent from ${addrName(fromEntry)}`
-      : "Sent";
+      ? t("act.sentFrom", { name: addrName(fromEntry) })
+      : t("act.sent");
 
   return (
     <button
@@ -357,6 +359,7 @@ function TxSheet({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const st = statusPill(item);
   const received = item.kind === "received";
   const detail = item.detail;
@@ -372,20 +375,20 @@ function TxSheet({
       window.open(url, "_blank", "noopener");
     } catch {
       navigator.clipboard?.writeText(url);
-      toast.info("Explorer link copied", url);
+      toast.info(t("act.explorerCopied"), url);
     }
   }
 
   const subtitle = item.ts
     ? new Date(item.ts).toLocaleString()
     : item.block_height
-      ? `Block ${item.block_height.toLocaleString()}`
+      ? t("act.blockN", { n: item.block_height.toLocaleString() })
       : undefined;
 
   const txIdCard = (
     <div className="card card-2" style={{ padding: "12px 14px", marginBottom: 16 }}>
       <div className="eyebrow" style={{ marginBottom: 6 }}>
-        Transaction ID
+        {t("act.txId")}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <code
@@ -407,7 +410,7 @@ function TxSheet({
 
   const explorerBtn = (
     <button className="btn btn-secondary btn-block" onClick={openExplorer}>
-      <Icon name="share" size={18} /> View on Exfer Explorer
+      <Icon name="share" size={18} /> {t("act.viewExplorer")}
     </button>
   );
 
@@ -416,7 +419,7 @@ function TxSheet({
     const toAddr = item.toAddresses?.[0];
     const toEntry = toAddr ? entries.find((e) => e.address === toAddr) : null;
     return (
-      <Sheet title="Deposit" subtitle={subtitle} onClose={onClose} height="90%">
+      <Sheet title={t("act.deposit")} subtitle={subtitle} onClose={onClose} height="90%">
         <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
           <div
             className="mono"
@@ -436,7 +439,7 @@ function TxSheet({
         {senders && senders.length > 0 && (
           <>
             <div className="eyebrow" style={{ marginBottom: 9 }}>
-              From
+              {t("act.from")}
             </div>
             <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
               {senders.map((addr, i) => {
@@ -458,7 +461,7 @@ function TxSheet({
                     <AddrAvatar address={addr} size={32} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                        {e ? addrName(e) : "External address"}
+                        {e ? addrName(e) : t("act.externalAddr")}
                       </div>
                       <code className="mono faint" style={{ fontSize: 11.5 }}>
                         {shortAddress(addr, 8, 8)}
@@ -475,7 +478,7 @@ function TxSheet({
         {toAddr && (
           <>
             <div className="eyebrow" style={{ marginBottom: 9 }}>
-              To
+              {t("act.to")}
             </div>
             <div
               className="card"
@@ -490,7 +493,7 @@ function TxSheet({
               <AddrAvatar address={toAddr} size={32} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                  {toEntry ? addrName(toEntry) : "This wallet"}
+                  {toEntry ? addrName(toEntry) : t("act.thisWallet")}
                 </div>
                 <code className="mono faint" style={{ fontSize: 11.5 }}>
                   {shortAddress(toAddr, 8, 8)}
@@ -520,7 +523,7 @@ function TxSheet({
   );
 
   return (
-    <Sheet title="Transfer" subtitle={subtitle} onClose={onClose} height="90%">
+    <Sheet title={t("act.transfer")} subtitle={subtitle} onClose={onClose} height="90%">
       <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
         <div className="mono" style={{ fontSize: 30, fontWeight: 600 }}>
           −{formatExfer(item.amount).replace(" EXFER", "")}
@@ -537,7 +540,7 @@ function TxSheet({
       {fromAddr && (
         <>
           <div className="eyebrow" style={{ marginBottom: 9 }}>
-            From
+            {t("act.from")}
           </div>
           <div
             className="card"
@@ -552,7 +555,7 @@ function TxSheet({
             <AddrAvatar address={fromAddr} size={32} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                {fromEntry ? addrName(fromEntry) : "This wallet"}
+                {fromEntry ? addrName(fromEntry) : t("act.thisWallet")}
               </div>
               <code className="mono faint" style={{ fontSize: 11.5 }}>
                 {shortAddress(fromAddr, 8, 8)}
@@ -566,7 +569,7 @@ function TxSheet({
       {recips.length > 0 ? (
         <>
           <div className="eyebrow" style={{ marginBottom: 9 }}>
-            Sent to
+            {t("act.sentTo")}
           </div>
           <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
             {recips.map((o, i) => (
@@ -584,7 +587,7 @@ function TxSheet({
                 <AddrAvatar address={o.to} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                    External address
+                    {t("act.externalAddr")}
                   </div>
                   <code className="mono faint" style={{ fontSize: 11.5 }}>
                     {shortAddress(o.to, 8, 8)}
@@ -601,7 +604,7 @@ function TxSheet({
       ) : peerRecipients.length > 0 ? (
         <>
           <div className="eyebrow" style={{ marginBottom: 9 }}>
-            Sent to
+            {t("act.sentTo")}
           </div>
           <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
             {peerRecipients.map((addr, i) => (
@@ -621,7 +624,7 @@ function TxSheet({
                 <AddrAvatar address={addr} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                    External address
+                    {t("act.externalAddr")}
                   </div>
                   <code className="mono faint" style={{ fontSize: 11.5 }}>
                     {shortAddress(addr, 8, 8)}
@@ -638,9 +641,7 @@ function TxSheet({
           style={{ padding: "12px 14px", marginBottom: 16 }}
         >
           <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-            This transfer was broadcast from another device, so its recipient
-            breakdown isn't recorded here. The amount, status, and transaction
-            ID below are exact — open the explorer for the full output list.
+            {t("act.noRecipNote")}
           </div>
         </div>
       )}
@@ -648,18 +649,18 @@ function TxSheet({
       {detail && (
         <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
           <RvRow
-            label="Network fee"
+            label={t("act.networkFee")}
             value={formatExfer(detail.fee).replace(" EXFER", "") + " EXFER"}
             mono
           />
           <RvRow
-            label="Inputs / outputs"
-            value={`${detail.inputs.length} in · ${detail.outputs.length} out`}
+            label={t("act.inOutLabel")}
+            value={t("act.inOut", { in: detail.inputs.length, out: detail.outputs.length })}
             mono
           />
           {change && (
             <RvRow
-              label="Change returned"
+              label={t("act.changeReturned")}
               value={
                 formatBalanceCompact(change.amount).replace(" EXFER", "") +
                 " EXFER"
@@ -667,7 +668,7 @@ function TxSheet({
               mono
             />
           )}
-          <RvRow label="Size" value={`${detail.size} bytes`} mono last />
+          <RvRow label={t("act.size")} value={t("snd.sizeVal", { n: detail.size })} mono last />
         </div>
       )}
 

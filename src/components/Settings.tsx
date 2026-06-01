@@ -139,7 +139,7 @@ export function Settings({
       ]),
     ];
     download(rows.map((r) => r.join(",")).join("\n"), `exfer-addresses-${today()}.csv`, "text/csv");
-    toast.success("Exported", "addresses CSV downloaded");
+    toast.success(t("set.exported"), t("set.exportedCsv"));
   }
   function exportLabels() {
     const map = listLabels();
@@ -148,7 +148,7 @@ export function Settings({
       `exfer-labels-${today()}.json`,
       "application/json",
     );
-    toast.success("Exported", "labels JSON downloaded");
+    toast.success(t("set.exported"), t("set.exportedJson"));
   }
 
   return (
@@ -583,6 +583,7 @@ function ChangeNodeModal({
   onSaved: (url: string) => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [val, setVal] = useState(current);
   const [busy, setBusy] = useState(false);
   // After saving we probe the new endpoint so the user learns its
@@ -606,10 +607,10 @@ function ChangeNodeModal({
       }
       if (st?.upstream_ok) {
         toast.success(
-          "Node connected",
+          t("nd.connected"),
           st.tip?.height != null
-            ? `Reachable · block ${st.tip.height.toLocaleString()}`
-            : "Upstream node is responding.",
+            ? t("nd.connectedHeight", { n: st.tip.height.toLocaleString() })
+            : t("nd.connectedOk"),
         );
         onClose();
       } else {
@@ -617,39 +618,38 @@ function ChangeNodeModal({
         setProbe({ ok: false });
       }
     } catch (e) {
-      toast.error("Could not update node", humanizeError(e));
+      toast.error(t("nd.updateFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Upstream node"
+      title={t("set.upstreamNode")}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button
             className="btn btn-block"
             disabled={busy || val.trim() === current}
             onClick={save}
           >
-            {busy ? <Spinner /> : "Save"}
+            {busy ? <Spinner /> : t("lbl.save")}
           </button>
         </>
       }
     >
       {probe && !probe.ok && (
         <div className="banner banner-warn" style={{ marginBottom: 14 }}>
-          Saved, but this endpoint isn't responding yet. Double-check the host and
-          port — walletd will keep retrying in the background.
+          {t("nd.probeWarn")}
         </div>
       )}
       <Field
-        label="JSON-RPC endpoint"
-        help="walletd reconnects on save. Comma-separated for round-robin + failover."
+        label={t("nd.endpoint")}
+        help={t("nd.endpointHelp")}
       >
         <input
           className="field mono"
@@ -675,6 +675,7 @@ function ChangeIndexerModal({
   onSaved: (url: string) => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [url, setUrl] = useState(current);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -693,41 +694,35 @@ function ChangeIndexerModal({
       await setIndexerConfig(url.trim(), token.trim());
       onSaved(url.trim());
       toast.success(
-        "Indexer updated",
-        url.trim()
-          ? "walletd reconnected to the new indexer."
-          : "Reverted to the bundled default indexer.",
+        t("ix.updated"),
+        url.trim() ? t("ix.updatedNew") : t("ix.updatedDefault"),
       );
       onClose();
     } catch (e) {
-      toast.error(
-        "Could not update indexer",
-        humanizeError(e),
-      );
+      toast.error(t("ix.updateFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Indexer"
+      title={t("set.indexer")}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button className="btn btn-block" disabled={busy} onClick={save}>
-            {busy ? <Spinner /> : "Save"}
+            {busy ? <Spinner /> : t("lbl.save")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Resolves confirmed address history — the Activity feed and the From/To on
-        each transfer. Leave both blank to use the bundled default.
+        {t("ix.info")}
       </div>
-      <Field label="Indexer URL" help="walletd reconnects on save.">
+      <Field label={t("ix.urlLabel")} help={t("ix.urlHelp")}>
         <input
           className="field mono"
           value={url}
@@ -735,12 +730,12 @@ function ChangeIndexerModal({
           placeholder="http://198.13.38.245:9335"
         />
       </Field>
-      <Field label="Bearer token (optional)">
+      <Field label={t("ix.tokenLabel")}>
         <input
           className="field mono"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="Leave blank for default"
+          placeholder={t("ix.tokenPlaceholder")}
         />
       </Field>
     </Modal>
@@ -749,46 +744,46 @@ function ChangeIndexerModal({
 
 function VaultBackupModal({ onClose }: { onClose: () => void }) {
   const toast = useToast();
+  const { t } = useT();
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   async function go() {
     if (pw.length < 4) {
-      toast.error("Enter your wallet password");
+      toast.error(t("adr.rpEnterPw"));
       return;
     }
     setBusy(true);
     try {
       const location = await exportVaultFile({ walletPassword: pw });
-      toast.success("Backup saved", `Saved to ${location}. One encrypted file holds every address.`);
+      toast.success(t("vb.saved"), t("vb.savedBody", { loc: location }));
       onClose();
     } catch (e) {
-      toast.error("Backup failed", humanizeError(e));
+      toast.error(t("vb.fail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Back up wallet"
+      title={t("set.backupWallet")}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button className="btn btn-block" disabled={busy || pw.length < 4} onClick={go}>
-            {busy ? <Spinner /> : "Save backup"}
+            {busy ? <Spinner /> : t("vb.save")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Saves every address to one encrypted <b>.vault</b> file — no seed phrase to
-        copy. Encrypted with your wallet password; you'll need it to restore.
+        {t("vb.info")}
       </div>
       <Field
-        label="Wallet password"
-        help="New addresses created later aren't in an old backup — re-export after adding keys."
+        label={t("sheet.walletPassword")}
+        help={t("vb.pwHelp")}
       >
         <input
           className="field"
@@ -811,6 +806,7 @@ function VaultRestoreModal({
   onRestored: () => void | Promise<void>;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   // The .vault file is picked inside importVaultFile() (a document picker
@@ -822,49 +818,45 @@ function VaultRestoreModal({
       const n = await importVaultFile({ filePassword: pw });
       // null = picker cancelled — say nothing happened, stay on the modal.
       if (n === null) {
-        toast.info("Restore cancelled", "No .vault file was chosen.");
+        toast.info(t("vr.cancelled"), t("vr.cancelledBody"));
         return;
       }
       await onRestored();
       toast.success(
-        "Backup restored",
-        n === 0
-          ? "Every address in the backup was already in this wallet."
-          : `${n} address${n === 1 ? "" : "es"} restored.`,
+        t("vr.restored"),
+        n === 0 ? t("vr.restoredNone") : t("ob.toastRestoredN", { n }),
       );
       onClose();
     } catch (e) {
-      toast.error("Restore failed", humanizeError(e));
+      toast.error(t("vr.fail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Restore from backup"
+      title={t("set.restoreBackup")}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button
             className="btn btn-block"
             disabled={pw.length < 4 || busy}
             onClick={go}
           >
-            {busy ? <Spinner /> : "Choose file & restore"}
+            {busy ? <Spinner /> : t("ob.chooseRestore")}
           </button>
         </>
       }
     >
       <div className="banner banner-info" style={{ marginBottom: 14 }}>
-        Load addresses from a <b>.vault</b> file. Enter the backup password, then
-        tap Restore to choose the file. Addresses already in this wallet are
-        skipped.
+        {t("vr.info")}
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label="Backup password">
+        <Field label={t("ob.backupPassword")}>
           <input
             className="field"
             type="password"
@@ -885,52 +877,52 @@ function ResetModal({
   onWiped: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
   async function wipe() {
     setBusy(true);
     try {
       await resetWallet();
-      toast.info("Wallet reset");
+      toast.info(t("rs.done"));
       onClose();
       onWiped();
     } catch (e) {
-      toast.error("Reset failed", humanizeError(e));
+      toast.error(t("set.resetWallet"), humanizeError(e));
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Reset wallet"
+      title={t("set.resetWallet")}
       danger
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button
             className="btn btn-danger btn-block"
             disabled={val !== "WIPE" || busy}
             onClick={wipe}
           >
-            {busy ? <Spinner /> : "Reset"}
+            {busy ? <Spinner /> : t("rs.reset")}
           </button>
         </>
       }
     >
       <div className="banner banner-danger" style={{ marginBottom: 14 }}>
-        This permanently erases the wallet from this device. Export a backup first
-        if you might need it again.
+        {t("rs.warn")}
       </div>
       <Field
         label={
           <span>
-            Type{" "}
+            {t("rs.typeWipe1")}{" "}
             <span className="mono" style={{ color: "#f87171" }}>
               WIPE
             </span>{" "}
-            to confirm
+            {t("rs.typeWipe2")}
           </span>
         }
       >
