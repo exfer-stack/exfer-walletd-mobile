@@ -35,7 +35,7 @@ tokio              = { version = "1", features = ["rt-multi-thread", "macros", "
 tokio-util         = { version = "0.7", features = ["rt"] }
 
 # The embedded walletd. Same pin as the desktop app.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", tag = "v1.10.0" }
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", tag = "v1.11.0" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables
