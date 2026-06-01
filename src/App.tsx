@@ -8,6 +8,7 @@ import { bootstrapStatus } from "./lib/rpc";
 import { humanizeError } from "./lib/errors";
 import { biometricStatus, biometricUnlock } from "./lib/biometric";
 import { biometricLockEnabled } from "./lib/biolock";
+import { devmock } from "./lib/devmock";
 import wordmark from "./assets/wordmark.png";
 import { ToastProvider, ToastHost } from "./lib/toast";
 import { WalletProvider } from "./lib/wallet";
@@ -151,6 +152,24 @@ function Shell() {
       setBoot({ status: "failed", message: humanizeError(e) });
     }
   }, []);
+
+  // Ask for OS notification permission once the wallet is ready. On Android
+  // 13+ (API 33) POST_NOTIFICATIONS is a runtime grant — without it the native
+  // "Deposit received" notifications the walletd SSE bridge fires are silently
+  // dropped and the user never even sees a permission prompt. Nothing else
+  // requests it, so do it here. No-op in browser dev and if already granted.
+  const walletReady = boot?.status === "ready";
+  useEffect(() => {
+    if (!walletReady || devmock.isActive()) return;
+    void (async () => {
+      try {
+        const n = await import("@tauri-apps/plugin-notification");
+        if (!(await n.isPermissionGranted())) await n.requestPermission();
+      } catch {
+        /* plugin unavailable (e.g. browser dev) — ignore */
+      }
+    })();
+  }, [walletReady]);
 
   const ac = ACCENTS[accent];
   const phoneStyle: CSSProperties = {

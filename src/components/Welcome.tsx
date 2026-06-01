@@ -35,15 +35,37 @@ export function Welcome({ onStart }: { onStart: () => void }) {
       <div
         className="screen-pad"
         style={{
+          position: "relative",
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
           minHeight: "100%",
           paddingTop: 8,
         }}
       >
+        {/* Flat brand mark as a faint background backdrop — no glow. */}
+        <img
+          src={mark}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          style={{
+            position: "absolute",
+            top: 40,
+            right: -120,
+            width: 400,
+            height: 400,
+            opacity: 0.06,
+            pointerEvents: "none",
+            userSelect: "none",
+            zIndex: 0,
+          }}
+        />
         {/* Hero */}
         <div
           style={{
+            position: "relative",
+            zIndex: 1,
             flex: 1,
             display: "flex",
             flexDirection: "column",
@@ -51,25 +73,6 @@ export function Welcome({ onStart }: { onStart: () => void }) {
             paddingBottom: 8,
           }}
         >
-          <div style={{ position: "relative", width: 96, height: 96, marginBottom: 26 }}>
-            <span
-              style={{
-                position: "absolute",
-                inset: -24,
-                background:
-                  "radial-gradient(circle, color-mix(in srgb,var(--accent) 45%,transparent), transparent 70%)",
-                filter: "blur(14px)",
-              }}
-              aria-hidden="true"
-            />
-            <img
-              src={mark}
-              alt="exfer"
-              draggable={false}
-              style={{ position: "relative", width: 96, height: 96 }}
-            />
-          </div>
-
           <div className="eyebrow" style={{ letterSpacing: ".16em", marginBottom: 14 }}>
             exfer wallet
           </div>
@@ -97,7 +100,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
           <div style={{ display: "grid", gap: 18 }}>
             <Point
               title="Instant"
-              body="Incoming EXFER lands in your balance the second it hits the mempool."
+              body="Incoming EXFER shows up in your balance the moment it's sent — no waiting for it to confirm."
             />
             <Point
               title="Lightweight"
@@ -113,12 +116,15 @@ export function Welcome({ onStart }: { onStart: () => void }) {
         {/* CTA */}
         <button
           className="btn btn-block"
-          style={{ padding: "16px", marginTop: 22 }}
+          style={{ position: "relative", zIndex: 1, padding: "16px", marginTop: 22 }}
           onClick={onStart}
         >
           Get started
         </button>
-        <div className="faint" style={{ fontSize: 12.5, textAlign: "center", marginTop: 12 }}>
+        <div
+          className="faint"
+          style={{ position: "relative", zIndex: 1, fontSize: 12.5, textAlign: "center", marginTop: 12 }}
+        >
           Set a password next, or restore from a backup.
         </div>
       </div>

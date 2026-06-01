@@ -148,7 +148,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
             : "Restore every address from an encrypted .vault backup file and a new local password."}
         </p>
 
-        <div style={{ display: "grid", gap: 14, flex: 1 }}>
+        <div style={{ display: "grid", gap: 14 }}>
           {mode === "restore" && (
             <div className="banner banner-info" style={{ fontSize: 12.5 }}>
               Set a new local password and your backup's password below, then tap
@@ -210,17 +210,22 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           )}
 
           {err && <div className="banner banner-danger">{err}</div>}
+        </div>
 
-          <div className="banner banner-warn" style={{ fontSize: 12.5 }}>
-            <b>Back this up.</b> Your password unlocks and encrypts every key.
-            Forget it and there's no way back in — after setup, save an encrypted
-            backup from Settings → Back up wallet.
-          </div>
+        {/* Spacer: keep the fields grouped at the top with the caution + CTA
+            anchored to the bottom, instead of stretching the gaps between
+            fields to fill the screen. */}
+        <div style={{ flex: 1, minHeight: 24 }} />
+
+        <div className="banner banner-warn" style={{ fontSize: 12.5, marginBottom: 14 }}>
+          <b>Back this up.</b> Your password unlocks and encrypts every key.
+          Forget it and there's no way back in — after setup, save an encrypted
+          backup from Settings → Back up wallet.
         </div>
 
         <button
           className="btn btn-block"
-          style={{ marginTop: 18, padding: "16px" }}
+          style={{ padding: "16px" }}
           disabled={busy}
           onClick={submit}
         >

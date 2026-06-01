@@ -33,6 +33,23 @@ function parseKlines(raw: string): MarketPrice | null {
   }
 }
 
+const CACHE_KEY = "exfer-price-cache";
+
+/** Last good price, so the line paints instantly on the next launch instead of
+ *  blanking for the ~couple seconds the fetch takes (and survives a transient
+ *  fetch failure). */
+function readCachedPrice(): MarketPrice | null {
+  try {
+    const o = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    if (o && typeof o.usd === "number" && o.usd > 0) {
+      return { usd: o.usd, change24h: typeof o.change24h === "number" ? o.change24h : 0 };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export async function getMarketPrice(): Promise<MarketPrice | null> {
   try {
     let raw: string;
@@ -45,7 +62,15 @@ export async function getMarketPrice(): Promise<MarketPrice | null> {
     } else {
       raw = await invoke<string>("get_market_price");
     }
-    return parseKlines(raw);
+    const p = parseKlines(raw);
+    if (p) {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(p));
+      } catch {
+        /* ignore */
+      }
+    }
+    return p;
   } catch {
     return null;
   }
@@ -54,7 +79,8 @@ export async function getMarketPrice(): Promise<MarketPrice | null> {
 /** Live EXFER price. `null` until the first successful fetch (and stays at the
  *  last good value if a later refresh fails). Refreshes every 3 minutes. */
 export function usePrice(): MarketPrice | null {
-  const [price, setPrice] = useState<MarketPrice | null>(null);
+  // Seed from the cached price so the line shows immediately on launch.
+  const [price, setPrice] = useState<MarketPrice | null>(readCachedPrice);
   useEffect(() => {
     let alive = true;
     const tick = () =>

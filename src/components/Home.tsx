@@ -137,7 +137,7 @@ export function Home({
 
   return (
     <div className="screen">
-      <div className="screen-pad">
+      <div className="screen-pad" style={{ position: "relative", overflow: "hidden" }}>
         {loadError ? (
           <div style={{ padding: "64px 18px", textAlign: "center" }}>
             <div
@@ -167,8 +167,9 @@ export function Home({
           </div>
         ) : (
           <>
-        <div style={{ position: "relative" }}>
-        {/* Brand token logo as a faint backdrop behind the balance hero. */}
+        {/* Brand token mark as a large, flat backdrop bleeding off the
+            top-right corner — sits behind ALL content (opaque buttons/cards
+            cover it; it only shows through the empty negative space). */}
         <img
           src={tokenLogo}
           alt=""
@@ -176,22 +177,21 @@ export function Home({
           draggable={false}
           style={{
             position: "absolute",
-            top: -40,
-            right: -48,
-            width: 208,
-            height: 208,
-            opacity: 0.16,
+            top: -86,
+            right: -96,
+            width: 360,
+            height: 360,
+            opacity: 0.13,
             pointerEvents: "none",
             userSelect: "none",
             zIndex: 0,
           }}
         />
+        <div style={{ position: "relative", zIndex: 1 }}>
         <button
           onClick={toggle}
           className="tap"
           style={{
-            position: "relative",
-            zIndex: 1,
             background: "none",
             border: 0,
             width: "100%",
@@ -258,7 +258,6 @@ export function Home({
               still-confirming state lives only on the address row (a small
               dot) and in the address detail. */}
         </button>
-        </div>
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label="Receive" onClick={onReceive} variant="secondary" />
@@ -432,6 +431,7 @@ export function Home({
             any number of deposits.
           </div>
         )}
+        </div>
           </>
         )}
       </div>
