@@ -13,6 +13,7 @@ import {
 } from "../../lib/rpc";
 import type { TransferReceipt } from "../../lib/types";
 import { humanizeError } from "../../lib/errors";
+import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
@@ -69,6 +70,7 @@ export function SendSheet({
 }) {
   const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
+  const { t } = useT();
 
   // Pause the background balance poll for the lifetime of the Send sheet so the
   // upstream node's balance/utxo rate-limit budget is free for this flow's own
@@ -218,16 +220,16 @@ export function SendSheet({
     for (let i = 0; i < outputs.length; i++) {
       const o = outputs[i];
       if (!HEX64.test(o.to.trim()))
-        return `Recipient ${i + 1}: that doesn't look like a valid address.`;
+        return t("snd.errAddr", { n: i + 1 });
       try {
-        if (parseExferAmount(o.amount) <= 0) return `Recipient ${i + 1}: enter an amount.`;
+        if (parseExferAmount(o.amount) <= 0) return t("snd.errAmt", { n: i + 1 });
       } catch (e) {
-        return `Recipient ${i + 1}: ${e instanceof Error ? e.message : String(e)}`;
+        return `${t("snd.recipientN", { n: i + 1 })}: ${e instanceof Error ? e.message : String(e)}`;
       }
     }
-    if (!fromAddr) return "Pick a sending address.";
+    if (!fromAddr) return t("snd.errPickFrom");
     if (total + fee > (fromEntry?.balance ?? 0))
-      return "Insufficient confirmed balance for amount + fee.";
+      return t("snd.errInsufficient");
     return null;
   }
 
@@ -264,10 +266,10 @@ export function SendSheet({
     const bio = await biometricStatus();
     if (bio.available) {
       const ok = await biometricUnlock(
-        `Confirm sending ${formatExfer(total)}`,
+        t("snd.confirmSending", { amt: formatExfer(total) }),
       );
       if (!ok) {
-        toast.error("Send not confirmed", "Authentication was cancelled or failed.");
+        toast.error(t("snd.notConfirmedTitle"), t("snd.notConfirmedBody"));
         return;
       }
     }
@@ -287,11 +289,11 @@ export function SendSheet({
       setReceipt(r);
       setStep(3);
       await refresh();
-      toast.success("Transfer broadcast", `Sent ${formatExfer(total)}.`);
+      toast.success(t("snd.broadcastTitle"), t("snd.broadcastBody", { amt: formatExfer(total) }));
     } catch (e) {
       const msg = humanizeError(e);
       setErr(msg);
-      toast.error("Transfer failed", msg);
+      toast.error(t("snd.failedTitle"), msg);
     } finally {
       setBusy(false);
     }
@@ -301,7 +303,7 @@ export function SendSheet({
   if (step === 3 && receipt) {
     const recipientCount = receipt.outputs.filter((o) => !o.is_change).length;
     return (
-      <Sheet title="Sent" onClose={onClose} height="86%">
+      <Sheet title={t("snd.sentTitle")} onClose={onClose} height="86%">
         <div style={{ textAlign: "center", padding: "10px 0 22px" }}>
           <div style={{ position: "relative", width: 72, height: 72, margin: "0 auto 16px" }}>
             <span className="success-ring" />
@@ -339,15 +341,15 @@ export function SendSheet({
             </span>
           </div>
           <div className="dim" style={{ fontSize: 14, marginTop: 5 }}>
-            sent · in mempool
+            {t("snd.sentMempool")}
           </div>
         </div>
         <div className="card" style={{ overflow: "hidden", marginBottom: 14 }}>
-          <RvRow label="Recipients" value={`${recipientCount}`} />
-          <RvRow label="Network fee" value={formatExfer(receipt.fee)} mono />
-          <RvRow label="Size" value={`${receipt.size} bytes`} mono />
+          <RvRow label={t("snd.recipientsLabel")} value={`${recipientCount}`} />
+          <RvRow label={t("snd.networkFee")} value={formatExfer(receipt.fee)} mono />
+          <RvRow label={t("snd.size")} value={t("snd.sizeVal", { n: receipt.size })} mono />
           <RvRow
-            label="Built at height"
+            label={t("snd.builtAtHeight")}
             value={receipt.built_at_height.toLocaleString()}
             mono
             last
@@ -355,7 +357,7 @@ export function SendSheet({
         </div>
         <div className="card card-2" style={{ padding: "12px 14px", marginBottom: 16 }}>
           <div className="eyebrow" style={{ marginBottom: 6 }}>
-            Transaction ID
+            {t("snd.txId")}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <code
@@ -381,10 +383,10 @@ export function SendSheet({
               onClose();
             }}
           >
-            View in Activity
+            {t("snd.viewInActivity")}
           </button>
           <button className="btn btn-block" onClick={onClose}>
-            Done
+            {t("snd.done")}
           </button>
         </div>
       </Sheet>
@@ -395,7 +397,7 @@ export function SendSheet({
   if (step === 2) {
     return (
       <Sheet
-        title="Confirm send"
+        title={t("snd.confirmSend")}
         onBack={() => setStep(1)}
         onClose={onClose}
         height="90%"
@@ -403,16 +405,16 @@ export function SendSheet({
           <button className="btn btn-block" disabled={busy} onClick={broadcast}>
             {busy ? (
               <>
-                <Spinner /> Broadcasting…
+                <Spinner /> {t("snd.broadcasting")}
               </>
             ) : (
-              `Confirm — send ${formatExfer(total).replace(" EXFER", "")} EXFER`
+              t("snd.confirmCta", { amt: formatExfer(total).replace(" EXFER", "") })
             )}
           </button>
         }
       >
         <div className="eyebrow" style={{ margin: "2px 0 9px" }}>
-          From
+          {t("snd.from")}
         </div>
         <div
           className="card"
@@ -439,16 +441,16 @@ export function SendSheet({
         </div>
 
         <div className="eyebrow" style={{ marginBottom: 9 }}>
-          To
+          {t("snd.to")}
         </div>
         <div className="card" style={{ overflow: "hidden", marginBottom: 18 }}>
           {outputs.map((o, i) => {
             const lower = o.to.trim().toLowerCase();
             const tag: { kind: NoteKind; text: string } = ownSet.has(lower)
-              ? { kind: "info", text: "Your address" }
+              ? { kind: "info", text: t("snd.tagYour") }
               : recentSet.has(lower)
-                ? { kind: "ok", text: "Sent here before" }
-                : { kind: "warn", text: "New address" };
+                ? { kind: "ok", text: t("snd.tagSentBefore") }
+                : { kind: "warn", text: t("snd.tagNew") };
             return (
             <div
               key={i}
@@ -500,17 +502,17 @@ export function SendSheet({
 
         <div className="card card-2" style={{ overflow: "hidden" }}>
           <RvRow
-            label="Amount"
+            label={t("snd.amount")}
             value={`${formatExfer(total).replace(" EXFER", "")} EXFER`}
             mono
           />
           <RvRow
-            label="Network fee"
+            label={t("snd.networkFee")}
             value={`${formatExfer(fee).replace(" EXFER", "")} EXFER`}
             mono
           />
           <RvRow
-            label="Total debit"
+            label={t("snd.totalDebit")}
             value={`${formatExfer(total + fee).replace(" EXFER", "")} EXFER`}
             mono
             strong
@@ -525,7 +527,7 @@ export function SendSheet({
   /* step 1 — recipients */
   return (
     <Sheet
-      title="Send"
+      title={t("snd.title")}
       onClose={onClose}
       height="92%"
       footer={
@@ -534,20 +536,20 @@ export function SendSheet({
           disabled={!formValid}
           onClick={goReview}
         >
-          Send
+          {t("snd.send")}
         </button>
       }
     >
       {sendable.length === 0 ? (
         <div className="banner banner-warn">
-          No spendable balance. Receive some EXFER first.
+          {t("snd.noSpendable")}
         </div>
       ) : (
         <>
           {sendable.length > 1 ? (
             <>
               <div className="eyebrow" style={{ margin: "2px 0 9px" }}>
-                From
+                {t("snd.from")}
               </div>
               <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
                 {sendable.map((a) => (
@@ -603,7 +605,7 @@ export function SendSheet({
             >
               <AddrAvatar address={sendable[0].address} size={36} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="eyebrow" style={{ marginBottom: 2 }}>From</div>
+                <div className="eyebrow" style={{ marginBottom: 2 }}>{t("snd.from")}</div>
                 <div style={{ fontWeight: 600, fontSize: 14.5 }}>
                   {addrName(sendable[0])}
                 </div>
@@ -615,7 +617,7 @@ export function SendSheet({
           )}
 
           <div className="h-row" style={{ marginBottom: 9 }}>
-            <div className="eyebrow">Recipients ({outputs.length}/16)</div>
+            <div className="eyebrow">{t("snd.recipients", { n: outputs.length })}</div>
             <button
               className="tap"
               onClick={addRow}
@@ -634,7 +636,7 @@ export function SendSheet({
                 opacity: outputs.length >= 16 ? 0.4 : 1,
               }}
             >
-              <Icon name="plus" size={15} /> Add
+              <Icon name="plus" size={15} /> {t("snd.add")}
             </button>
           </div>
           <div style={{ display: "grid", gap: 12 }}>
@@ -648,26 +650,20 @@ export function SendSheet({
               const isKnown = addrValid && recentSet.has(lower);
               const addrNote: { kind: NoteKind; text: string } | null =
                 to.length > 0 && !addrValid
-                  ? {
-                      kind: "err",
-                      text: `Address must be 64 hex characters (${to.length}/64).`,
-                    }
+                  ? { kind: "err", text: t("snd.noteHex", { len: to.length }) }
                   : isOwn
-                    ? { kind: "info", text: "This is one of your own addresses." }
+                    ? { kind: "info", text: t("snd.noteOwn") }
                     : addrValid && !isKnown
-                      ? {
-                          kind: "warn",
-                          text: "New address — double-check every character. Transfers can't be reversed.",
-                        }
+                      ? { kind: "warn", text: t("snd.noteNew") }
                       : addrValid && isKnown
-                        ? { kind: "ok", text: "You've sent to this address before." }
+                        ? { kind: "ok", text: t("snd.noteKnown") }
                         : null;
               let amtNote: string | null = null;
               const amtRaw = o.amount.trim();
               if (amtRaw.length > 0) {
                 try {
                   if (parseExferAmount(amtRaw) <= 0)
-                    amtNote = "Enter an amount greater than 0.";
+                    amtNote = t("snd.amtGt0");
                 } catch (e) {
                   amtNote = e instanceof Error ? e.message : "Invalid amount.";
                 }
@@ -684,7 +680,7 @@ export function SendSheet({
                       textTransform: "uppercase",
                     }}
                   >
-                    Recipient {i + 1}
+                    {t("snd.recipientN", { n: i + 1 })}
                   </span>
                   {outputs.length > 1 && (
                     <button
@@ -703,7 +699,7 @@ export function SendSheet({
                     borderColor:
                       addrNote?.kind === "err" ? "#f87171" : undefined,
                   }}
-                  placeholder="Paste or scan address"
+                  placeholder={t("snd.pasteScan")}
                   value={o.to}
                   onChange={(e) => setOut(i, { to: e.target.value })}
                 />
@@ -721,20 +717,20 @@ export function SendSheet({
                       }
                     }}
                   >
-                    <Icon name="copy" size={15} /> Paste
+                    <Icon name="copy" size={15} /> {t("snd.paste")}
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ flex: 1 }}
                     onClick={() => {
                       if (!scanSupported()) {
-                        toast.info("Scan on device", "QR scanning uses the phone camera.");
+                        toast.info(t("snd.scanInfoTitle"), t("snd.scanInfoBody"));
                         return;
                       }
                       setScanRow(i);
                     }}
                   >
-                    <Icon name="qr" size={15} /> Scan QR
+                    <Icon name="qr" size={15} /> {t("snd.scanQr")}
                   </button>
                 </div>
                 <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
@@ -759,13 +755,13 @@ export function SendSheet({
                     }
                     onClick={() => setMaxRow(maxRow === i ? null : i)}
                   >
-                    Max
+                    {t("snd.max")}
                   </button>
                 </div>
                 {amtNote && <FieldNote kind="err">{amtNote}</FieldNote>}
                 {recents.length > 0 && i === 0 && !o.to && (
                   <div style={{ marginTop: 12 }}>
-                    <div className="eyebrow" style={{ marginBottom: 8 }}>Recent</div>
+                    <div className="eyebrow" style={{ marginBottom: 8 }}>{t("snd.recent")}</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {recents.map((r) => (
                         <button
@@ -811,7 +807,7 @@ export function SendSheet({
             }}
           >
             <span className="dim" style={{ fontSize: 14 }}>
-              Total to send
+              {t("snd.totalToSend")}
             </span>
             <span className="mono" style={{ fontSize: 19, fontWeight: 600 }}>
               {formatExfer(total).replace(" EXFER", "")}{" "}
@@ -826,7 +822,7 @@ export function SendSheet({
               onResult={(addr) => {
                 if (addr && scanRow !== null) setOut(scanRow, { to: addr });
                 else if (!addr)
-                  toast.info("No address scanned", "Scan cancelled or unreadable.");
+                  toast.info(t("snd.noScanTitle"), t("snd.noScanBody"));
                 setScanRow(null);
               }}
             />

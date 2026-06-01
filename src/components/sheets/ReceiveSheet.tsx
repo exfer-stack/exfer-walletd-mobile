@@ -7,12 +7,14 @@ import { useToast } from "../../lib/toast";
 import { formatBalanceCompact } from "../../lib/rpc";
 import { isHidden } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
+import { useT } from "../../lib/i18n";
 import { Sheet, CopyButton } from "../ui";
 import { Qr } from "../Qr";
 
 export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const { balance } = useWallet();
   const toast = useToast();
+  const { t } = useT();
   const entries = (balance?.entries ?? []).filter((a) => !isHidden(a.address));
   // `sel` is the user's explicit pick; until they choose, default to the
   // first address. Entries can arrive AFTER mount (async balance), so a
@@ -27,15 +29,15 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
       share?: (data: { title?: string; text?: string }) => Promise<void>;
     };
     if (nav.share) {
-      nav.share({ title: "My exfer address", text: selected }).catch(() => {});
+      nav.share({ title: t("rcv.shareTitle"), text: selected }).catch(() => {});
     } else {
       navigator.clipboard?.writeText(selected);
-      toast.success("Copied", "Address copied — share it anywhere.");
+      toast.success(t("sheet.copied"), t("rcv.shareToast"));
     }
   }
 
   return (
-    <Sheet title="Receive" onClose={onClose} height="92%">
+    <Sheet title={t("rcv.title")} onClose={onClose} height="92%">
       <div
         style={{
           display: "flex",
@@ -112,17 +114,17 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
             >
               {selected}
             </code>
-            <CopyButton text={selected} label="Address copied" />
+            <CopyButton text={selected} label={t("sheet.addrCopied")} />
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
             <button className="btn btn-secondary btn-block" onClick={share}>
-              <Icon name="share" size={19} /> Share
+              <Icon name="share" size={19} /> {t("rcv.share")}
             </button>
             <CopyButton
               text={selected}
               className="btn btn-block"
-              label="Address copied"
+              label={t("sheet.addrCopied")}
               size={19}
             />
           </div>

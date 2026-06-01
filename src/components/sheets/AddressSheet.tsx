@@ -10,6 +10,7 @@ import { humanizeError } from "../../lib/errors";
 import { shortAddress } from "../../lib/labels";
 import { isHidden, hide, unhide } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
+import { useT } from "../../lib/i18n";
 import {
   Sheet,
   Modal,
@@ -33,6 +34,7 @@ export function AddressSheet({
 }) {
   const { balance, refresh, utxos, refreshUtxos } = useWallet();
   const toast = useToast();
+  const { t } = useT();
   const entry = (balance?.entries ?? []).find((a) => a.address === address);
   // Force re-render after label/hidden mutations (both live in localStorage).
   const [, setTick] = useState(0);
@@ -57,11 +59,11 @@ export function AddressSheet({
     setMenu(false);
     if (hidden) {
       unhide(address);
-      toast.info("Address shown");
+      toast.info(t("adr.shown"));
       bump();
     } else {
       hide(address);
-      toast.info("Address hidden");
+      toast.info(t("adr.hidden"));
       onClose();
     }
   }
@@ -93,12 +95,9 @@ export function AddressSheet({
           className="eyebrow"
           style={{ marginTop: 5, letterSpacing: ".12em" }}
         >
-          {utxoCount} {utxoCount === 1 ? "UTXO" : "UTXOs"}
+          {t("adr.utxos", { n: utxoCount })}
           {(entry.pending_received ?? 0) > 0 &&
-            ` · ${formatBalanceCompact(entry.pending_received ?? 0).replace(
-              " EXFER",
-              "",
-            )} confirming`}
+            ` · ${t("adr.confirming", { amt: formatBalanceCompact(entry.pending_received ?? 0).replace(" EXFER", "") })}`}
         </div>
       </div>
 
@@ -140,15 +139,15 @@ export function AddressSheet({
         onClick={() => onSend(address)}
       >
         <Icon name="send" size={18} />{" "}
-        {entry.balance > 0 ? "Send from this address" : "Nothing to send"}
+        {entry.balance > 0 ? t("adr.sendFrom") : t("adr.nothingToSend")}
       </button>
 
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-secondary btn-block" onClick={() => setPhraseOpen(true)}>
-          <Icon name="key" size={18} /> Recovery phrase
+          <Icon name="key" size={18} /> {t("adr.recoveryPhrase")}
         </button>
         <button className="btn btn-secondary btn-block" onClick={() => setExportOpen(true)}>
-          <Icon name="export" size={18} /> Export key
+          <Icon name="export" size={18} /> {t("adr.exportKey")}
         </button>
       </div>
 
@@ -159,7 +158,7 @@ export function AddressSheet({
           items={[
             {
               icon: "key",
-              label: "Show recovery phrase…",
+              label: t("adr.menuShowPhrase"),
               onClick: () => {
                 setMenu(false);
                 setPhraseOpen(true);
@@ -167,7 +166,7 @@ export function AddressSheet({
             },
             {
               icon: "export",
-              label: "Export wallet.key…",
+              label: t("adr.menuExportKey"),
               onClick: () => {
                 setMenu(false);
                 setExportOpen(true);
@@ -175,7 +174,7 @@ export function AddressSheet({
             },
             {
               icon: "tag",
-              label: addrName(entry) ? "Rename label" : "Add label",
+              label: addrName(entry) ? t("adr.menuRename") : t("adr.menuAddLabel"),
               onClick: () => {
                 setMenu(false);
                 setLabelOpen(true);
@@ -183,21 +182,21 @@ export function AddressSheet({
             },
             {
               icon: "copy",
-              label: "Copy address",
+              label: t("adr.menuCopy"),
               onClick: () => {
                 navigator.clipboard?.writeText(address);
-                toast.success("Copied");
+                toast.success(t("sheet.copied"));
                 setMenu(false);
               },
             },
             {
               icon: hidden ? "eye" : "eye-slash-row",
-              label: hidden ? "Unhide address" : "Hide from list",
+              label: hidden ? t("adr.menuUnhide") : t("adr.menuHide"),
               onClick: doHide,
             },
             {
               icon: "trash",
-              label: "Delete address…",
+              label: t("adr.menuDelete"),
               danger: true,
               onClick: () => {
                 setMenu(false);
@@ -240,6 +239,7 @@ function RecoveryPhraseModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [pw, setPw] = useState("");
   const [words, setWords] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -253,7 +253,7 @@ function RecoveryPhraseModal({
 
   async function reveal() {
     if (pw.length < 4) {
-      toast.error("Enter your wallet password");
+      toast.error(t("adr.rpEnterPw"));
       return;
     }
     setBusy(true);
@@ -264,7 +264,7 @@ function RecoveryPhraseModal({
       });
       setWords(res.mnemonic);
     } catch (e) {
-      toast.error("Could not reveal phrase", humanizeError(e));
+      toast.error(t("adr.rpFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -272,21 +272,21 @@ function RecoveryPhraseModal({
 
   return (
     <Modal
-      title="Recovery phrase"
+      title={t("adr.recoveryPhrase")}
       danger
       onClose={onClose}
       footer={
         words ? (
           <button className="btn btn-block" onClick={onClose}>
-            Done
+            {t("sheet.done")}
           </button>
         ) : (
           <>
             <button className="btn btn-secondary btn-block" onClick={onClose}>
-              Cancel
+              {t("sheet.cancel")}
             </button>
             <button className="btn btn-danger btn-block" disabled={busy} onClick={reveal}>
-              {busy ? <Spinner /> : "Reveal"}
+              {busy ? <Spinner /> : t("adr.rpReveal")}
             </button>
           </>
         )
@@ -295,10 +295,9 @@ function RecoveryPhraseModal({
       {!words ? (
         <>
           <div className="banner banner-warn" style={{ marginBottom: 14 }}>
-            These 24 words restore <b>just this one address</b> — not the whole
-            wallet. Write them on paper; never paste them into a website.
+            {t("adr.rpWarn")}
           </div>
-          <Field label="Wallet password">
+          <Field label={t("sheet.walletPassword")}>
             <input
               className="field"
               type="password"
@@ -312,8 +311,7 @@ function RecoveryPhraseModal({
       ) : (
         <>
           <div className="banner banner-danger" style={{ marginBottom: 14 }}>
-            For <span className="mono">{shortAddress(address, 6, 6)}</span>. Do not
-            screenshot.
+            {t("adr.rpFor", { addr: shortAddress(address, 6, 6) })}
           </div>
           <div style={{ position: "relative" }}>
             <div
@@ -354,7 +352,7 @@ function RecoveryPhraseModal({
                   transform: "translate(-50%,-50%)",
                 }}
               >
-                Show again
+                {t("adr.rpShowAgain")}
               </button>
             )}
           </div>
@@ -363,14 +361,14 @@ function RecoveryPhraseModal({
               className="btn btn-secondary btn-sm"
               onClick={() => {
                 navigator.clipboard?.writeText(words.join(" "));
-                toast.success("Phrase copied");
+                toast.success(t("adr.rpCopied"));
               }}
             >
-              <Icon name="copy" size={15} /> Copy phrase
+              <Icon name="copy" size={15} /> {t("adr.rpCopyPhrase")}
             </button>
           </div>
           <p className="faint" style={{ fontSize: 11.5, marginTop: 10, lineHeight: 1.5 }}>
-            Auto-hides after 30 seconds. Closing this clears it from memory.
+            {t("adr.rpAutoHide")}
           </p>
         </>
       )}
@@ -391,6 +389,7 @@ function DeleteAddressModal({
   onDeleted: () => void | Promise<void>;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const funded = balance > 0;
   const [pw, setPw] = useState("");
   const [force, setForce] = useState(false);
@@ -398,17 +397,17 @@ function DeleteAddressModal({
 
   async function go() {
     if (pw.length < 4) {
-      toast.error("Enter your wallet password");
+      toast.error(t("adr.rpEnterPw"));
       return;
     }
     setBusy(true);
     try {
       await rpc("delete_address", { address, passphrase: pw, force: funded && force });
-      toast.success("Address deleted", `${shortAddress(address, 6, 6)} was removed.`);
+      toast.success(t("adr.delDone"), t("adr.delDoneBody", { addr: shortAddress(address, 6, 6) }));
       await onDeleted();
       onClose();
     } catch (e) {
-      toast.error("Delete failed", humanizeError(e));
+      toast.error(t("adr.delFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -416,27 +415,26 @@ function DeleteAddressModal({
 
   return (
     <Modal
-      title="Delete address"
+      title={t("adr.delTitle")}
       danger
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button
             className="btn btn-danger btn-block"
             disabled={busy || pw.length < 4 || (funded && !force)}
             onClick={go}
           >
-            {busy ? <Spinner /> : "Delete"}
+            {busy ? <Spinner /> : t("adr.delCta")}
           </button>
         </>
       }
     >
       <div className="banner banner-danger" style={{ marginBottom: 14 }}>
-        Permanently erases this key from the wallet. This <b>can't be undone</b>{" "}
-        unless you've backed it up (recovery phrase, private key, or vault).
+        {t("adr.delWarn")}
       </div>
       {funded && (
         <label
@@ -459,13 +457,13 @@ function DeleteAddressModal({
             style={{ marginTop: 2, width: 18, height: 18, accentColor: "#f87171" }}
           />
           <span style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.45 }}>
-            This address still holds{" "}
-            <b>{formatBalanceCompact(balance).replace(" EXFER", "")} EXFER</b>. I
-            understand the funds will be unrecoverable. Delete anyway.
+            {t("adr.delForce", {
+              amt: formatBalanceCompact(balance).replace(" EXFER", ""),
+            })}
           </span>
         </label>
       )}
-      <Field label="Wallet password">
+      <Field label={t("sheet.walletPassword")}>
         <input
           className="field"
           type="password"
@@ -488,6 +486,7 @@ function ExportKeyModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const [walletPw, setWalletPw] = useState("");
   const [exportPw, setExportPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -503,10 +502,10 @@ function ExportKeyModal({
         walletPassword: walletPw,
         exportPassword: exportPw,
       });
-      toast.success("wallet.key exported", `Saved to ${location}. Import it on exfer.dev.`);
+      toast.success(t("adr.exDone"), t("adr.exDoneBody", { loc: location }));
       onClose();
     } catch (e) {
-      toast.error("Export failed", humanizeError(e));
+      toast.error(t("adr.exFail"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -514,25 +513,24 @@ function ExportKeyModal({
 
   return (
     <Modal
-      title="Export wallet.key"
+      title={t("adr.exTitle")}
       onClose={onClose}
       footer={
         <>
           <button className="btn btn-secondary btn-block" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("sheet.cancel")}
           </button>
           <button className="btn btn-block" disabled={!valid || busy} onClick={doExport}>
-            {busy ? <Spinner /> : "Export"}
+            {busy ? <Spinner /> : t("adr.exCta")}
           </button>
         </>
       }
     >
       <div className="banner banner-warn" style={{ marginBottom: 14 }}>
-        Set a password to encrypt the exported key file. You'll need it to import
-        the address elsewhere.
+        {t("adr.exWarn")}
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label="Wallet password" help="Authorizes reading the key from the wallet.">
+        <Field label={t("sheet.walletPassword")} help={t("adr.exWalletPwHelp")}>
           <input
             className="field"
             type="password"
@@ -540,16 +538,16 @@ function ExportKeyModal({
             onChange={(e) => setWalletPw(e.target.value)}
           />
         </Field>
-        <Field label="Export password">
+        <Field label={t("adr.exExportPw")}>
           <input
             className="field"
             type="password"
             value={exportPw}
             onChange={(e) => setExportPw(e.target.value)}
-            placeholder="At least 6 characters"
+            placeholder={t("adr.exExportPwPh")}
           />
         </Field>
-        <Field label="Confirm export password">
+        <Field label={t("adr.exConfirmPw")}>
           <input
             className="field"
             type="password"
