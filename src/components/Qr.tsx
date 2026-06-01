@@ -7,7 +7,11 @@ export function Qr({ value, size = 222 }: { value: string; size?: number }) {
   useEffect(() => {
     let cancelled = false;
     QRCode.toDataURL(value, {
-      margin: 0,
+      // A quiet zone is mandatory: scanners locate the finder patterns by
+      // the white border around them. margin:0 left no quiet zone, so the
+      // code was hard/impossible to scan off a screen even when aligned.
+      // 4 modules is the spec minimum.
+      margin: 4,
       width: size,
       color: { dark: "#0a0a0b", light: "#ffffff" },
     })
