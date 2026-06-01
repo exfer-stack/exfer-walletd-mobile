@@ -51,10 +51,13 @@ export function ScannerOverlay({
     void cancelScan();
   }
 
+  // Close immediately, then release the camera in the unmount cleanup.
+  // Stopping a live camera track is synchronous and can block ~1s on
+  // Android, so doing it here (before onResult) made Cancel feel laggy.
+  // doneRef stops the scan loop right away; teardown() runs on unmount.
   function finish(addr: string | null) {
     if (doneRef.current) return;
     doneRef.current = true;
-    teardown();
     onResult(addr);
   }
 
@@ -66,10 +69,12 @@ export function ScannerOverlay({
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
+          // 720p: warms up faster than 1080p and is plenty for jsQR on a
+          // reasonably-framed QR. Lower res = quicker "Starting camera…".
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
           audio: false,
         });
@@ -153,10 +158,12 @@ export function ScannerOverlay({
     else setMsg("No QR code found in that photo — try another.");
   }
 
-  // Cancel always closes, even if a result race flipped the guard.
+  // Cancel: close the overlay this frame; the camera is released by the
+  // unmount cleanup (teardown), so the tap feels instant instead of waiting
+  // ~1s for the camera track to stop.
   function cancel() {
+    if (doneRef.current) return; // a result already fired onResult
     doneRef.current = true;
-    teardown();
     onResult(null);
   }
 
@@ -172,6 +179,22 @@ export function ScannerOverlay({
         justifyContent: "center",
       }}
     >
+      {/* Opaque backdrop for the getUserMedia path so the Send form never
+          shows through (during "starting" there's no video yet, and a dim
+          overlay alone left the form visible behind — looked broken). NOT
+          rendered in the native path, where the webview must stay transparent
+          for the OS camera to show behind it. */}
+      {mode !== "native" && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: -2,
+            background: "#0a0a0b",
+          }}
+        />
+      )}
+
       {/* Live camera preview (getUserMedia path). In the native-fallback
           path the webview is transparent and the OS camera shows behind, so
           no <video> is rendered. */}
