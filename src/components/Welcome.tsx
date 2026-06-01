@@ -34,11 +34,7 @@ function LangSwitch({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void 
   return (
     <div
       style={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        zIndex: 2,
-        display: "flex",
+        display: "inline-flex",
         gap: 2,
         padding: 3,
         borderRadius: 999,
@@ -56,7 +52,11 @@ function LangSwitch({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void 
             font: "inherit",
             fontSize: 12.5,
             fontWeight: 600,
-            padding: "5px 11px",
+            // Equal min-width so "EN" and "中文" read as a balanced pair
+            // rather than two different-sized chips.
+            minWidth: 42,
+            textAlign: "center",
+            padding: "5px 10px",
             borderRadius: 999,
             background: lang === l.key ? "var(--accent)" : "transparent",
             color: lang === l.key ? "var(--accent-ink)" : "var(--text-dim)",
@@ -92,7 +92,11 @@ export function Welcome({
           paddingTop: 8,
         }}
       >
-        <LangSwitch lang={lang} setLang={setLang} />
+        {/* Language toggle sits in normal flow, right-aligned within the
+            content gutter (not pinned to the screen edge). */}
+        <div style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "flex-end" }}>
+          <LangSwitch lang={lang} setLang={setLang} />
+        </div>
 
         {/* Flat brand mark as a faint background backdrop — no glow. */}
         <img

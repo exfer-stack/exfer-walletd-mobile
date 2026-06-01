@@ -413,13 +413,13 @@ const ZH: Record<MsgKey, string> = {
   "nav.settings": "设置",
 
   "welcome.h1a": "转账",
-  "welcome.h1b": "即刻到账。",
+  "welcome.h1b": "快如闪电。",
   "welcome.lede":
-    "极快、极轻的 Exfer 区块链钱包。钱一到立刻显示——不用等、不用服务器、不用注册账号。",
-  "welcome.instant.t": "即时到账",
-  "welcome.instant.b": "别人转来的 EXFER 一发出，余额里立刻就能看到，不用等确认。",
+    "极快、极轻的 Exfer 区块链钱包。资金一上链立刻显示，无需注册账号。",
+  "welcome.instant.t": "实时可见",
+  "welcome.instant.b": "对方一转出，你的余额立刻就能看到。",
   "welcome.light.t": "极致轻量",
-  "welcome.light.b": "钱包引擎就在手机里运行，无需额外安装，也不在后台常驻。",
+  "welcome.light.b": "钱包引擎就在手机里运行，无需额外安装。",
   "welcome.yours.t": "完全自持",
   "welcome.yours.b": "私钥在本机生成，永不离开你的设备。",
   "welcome.cta": "开始使用",
