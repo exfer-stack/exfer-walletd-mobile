@@ -275,11 +275,12 @@ jobs:
       # page links to its own `mobile-vX.Y.Z` release. GET_MIRROR_TOKEN is an
       # org token with contents:write on `get`; the step no-ops if it's unset.
       - name: Mirror APK/AAB to the downloads hub
-        if: ${{ secrets.GET_MIRROR_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.GET_MIRROR_TOKEN }}
         run: |
           set -eu
+          # The `secrets` context isn't allowed in a step `if:`, so gate here.
+          if [ -z "${GH_TOKEN:-}" ]; then echo "GET_MIRROR_TOKEN unset — skipping mirror"; exit 0; fi
           shopt -s globstar nullglob
           files=( src-tauri/gen/android/app/build/outputs/apk/**/*.apk \
                   src-tauri/gen/android/app/build/outputs/bundle/**/*.aab )
