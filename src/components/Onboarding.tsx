@@ -85,7 +85,10 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           display: "flex",
           flexDirection: "column",
           minHeight: "100%",
-          paddingTop: 32,
+          // Clear the status bar: include the safe-area inset (a flat
+          // paddingTop overrode .screen-pad's env() and crammed the
+          // segmented control under the clock/signal icons).
+          paddingTop: "calc(env(safe-area-inset-top) + 24px)",
         }}
       >
         <div
@@ -207,14 +210,10 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           {err && <div className="banner banner-danger">{err}</div>}
         </div>
 
-        {/* Spacer: keep the fields grouped at the top with the caution + CTA
-            anchored to the bottom, instead of stretching the gaps between
-            fields to fill the screen. */}
+        {/* Spacer: keep the fields grouped at the top with the CTA anchored
+            to the bottom, instead of stretching the gaps between fields to
+            fill the screen. */}
         <div style={{ flex: 1, minHeight: 24 }} />
-
-        <div className="banner banner-warn" style={{ fontSize: 12.5, marginBottom: 14 }}>
-          <b>{t("ob.warnTitle")}</b> {t("ob.warnBody")}
-        </div>
 
         <button
           className="btn btn-block"
