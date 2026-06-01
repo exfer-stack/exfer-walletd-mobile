@@ -1,8 +1,17 @@
-// Branded QR scan overlay. Uses the barcode-scanner plugin in windowed
-// mode: the live camera renders BEHIND the webview, so we hide the app
-// (the `scanning` class) and draw our own framing here — a cyan target,
-// a label, and a Cancel button — matching the rest of the app instead of
-// the OS's bare fullscreen scanner.
+// Branded QR scan overlay.
+//
+// Primary path: getUserMedia + jsQR. We pull the live camera into a <video>
+// element inside the webview and decode every ~150ms with jsQR — the SAME
+// decoder that reads gallery photos reliably. This sidesteps the native
+// barcode-scanner plugin's weaker live path (fixed 720p analysis + flaky
+// close-range autofocus) that couldn't read a QR off a screen.
+//
+// Fallback path: if the webview can't open the camera (some Android
+// WebViews block getUserMedia), we drop back to the native plugin in
+// windowed mode (camera renders BEHIND a transparent webview — the
+// `scanning` class) so behaviour is never worse than before.
+//
+// Either way: a Photo button (decode a gallery image) and Cancel.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,52 +19,129 @@ import {
   startWindowedScan,
   cancelScan,
   decodeQrFromImageFile,
+  parseScannedAddress,
 } from "../lib/scan";
+
+type Mode = "starting" | "live" | "native";
 
 export function ScannerOverlay({
   onResult,
 }: {
   onResult: (address: string | null) => void;
 }) {
-  // The live camera and the photo-import path race; only the first to find
-  // a QR should win.
+  // Every input path (live frames, native plugin, photo) races; only the
+  // first to find a QR wins.
   const doneRef = useRef(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastScanRef = useRef(0);
+  const [mode, setMode] = useState<Mode>("starting");
   const [msg, setMsg] = useState<string | null>(null);
+
+  function teardown() {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    document.documentElement.classList.remove("scanning");
+    void cancelScan();
+  }
 
   function finish(addr: string | null) {
     if (doneRef.current) return;
     doneRef.current = true;
+    teardown();
     onResult(addr);
   }
 
   useEffect(() => {
-    const html = document.documentElement;
-    html.classList.add("scanning");
-    startWindowedScan().then((addr) => {
-      // Only auto-finish on a real hit. A null means the camera scan
-      // ended / isn't available (e.g. plain browser) — keep the overlay
-      // open so the user can still import a photo instead.
-      if (addr) finish(addr);
-    });
+    let cancelled = false;
+
+    async function startLive(): Promise<boolean> {
+      if (!navigator.mediaDevices?.getUserMedia) return false;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+      } catch {
+        return false; // no permission / not supported → caller falls back
+      }
+      if (cancelled || doneRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return true;
+      }
+      streamRef.current = stream;
+      setMode("live");
+
+      const jsQR = (await import("jsqr")).default;
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      // The <video> mounts when mode flips to "live"; wait a tick for the ref.
+      await new Promise((r) => setTimeout(r, 0));
+      const video = videoRef.current;
+      if (!video || !ctx) return true;
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch {
+        /* autoplay is allowed (muted) — ignore transient errors */
+      }
+
+      const tick = () => {
+        if (doneRef.current) return;
+        const now = performance.now();
+        // ~6-7 scans/sec is plenty and keeps the phone cool.
+        if (now - lastScanRef.current >= 150 && video.videoWidth > 0) {
+          lastScanRef.current = now;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const r = jsQR(img.data, img.width, img.height, {
+            inversionAttempts: "attemptBoth",
+          });
+          const addr = parseScannedAddress(r?.data);
+          if (addr) {
+            finish(addr);
+            return;
+          }
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+      return true;
+    }
+
+    (async () => {
+      const live = await startLive();
+      if (cancelled || doneRef.current) return;
+      if (!live) {
+        // Fall back to the native plugin (camera behind a transparent webview).
+        setMode("native");
+        document.documentElement.classList.add("scanning");
+        startWindowedScan().then((addr) => {
+          if (addr) finish(addr);
+        });
+      }
+    })();
+
     return () => {
+      cancelled = true;
       doneRef.current = true;
-      html.classList.remove("scanning");
-      void cancelScan();
+      teardown();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Switch to photo mode: stop the live camera FIRST. The windowed
-  // scanner renders a native camera surface behind the (transparent)
-  // webview; once the OS photo picker interrupts it, that surface can
-  // re-attach ON TOP of the webview and swallow taps — leaving Cancel
-  // dead. Tearing it down before picking keeps the webview interactive.
-  function openPhotoPicker() {
-    setMsg(null);
-    void cancelScan();
-    fileRef.current?.click();
-  }
 
   async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -67,10 +153,10 @@ export function ScannerOverlay({
     else setMsg("No QR code found in that photo — try another.");
   }
 
-  // Cancel must ALWAYS close, even if a result race already flipped the
-  // guard — close directly rather than through the guarded finish().
+  // Cancel always closes, even if a result race flipped the guard.
   function cancel() {
     doneRef.current = true;
+    teardown();
     onResult(null);
   }
 
@@ -86,8 +172,28 @@ export function ScannerOverlay({
         justifyContent: "center",
       }}
     >
-      {/* Transparent target window; the huge box-shadow dims everything
-          around it so the camera reads through the clear square. */}
+      {/* Live camera preview (getUserMedia path). In the native-fallback
+          path the webview is transparent and the OS camera shows behind, so
+          no <video> is rendered. */}
+      {mode === "live" && (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            zIndex: -1,
+            background: "#000",
+          }}
+        />
+      )}
+
+      {/* Target window; the huge box-shadow dims everything around it. */}
       <div
         style={{
           width: 250,
@@ -111,7 +217,9 @@ export function ScannerOverlay({
           textShadow: "0 1px 4px rgba(0,0,0,.6)",
         }}
       >
-        Point at the sender&apos;s QR, or import a photo
+        {mode === "starting"
+          ? "Starting camera…"
+          : "Point at the QR, or import a photo"}
       </div>
       {msg && (
         <div
@@ -130,8 +238,7 @@ export function ScannerOverlay({
           {msg}
         </div>
       )}
-      {/* Hidden picker: on mobile webviews this opens the native photo
-          gallery (or camera). Decoded with jsQR — see decodeQrFromImageFile. */}
+      {/* Hidden picker: opens the native photo gallery. Decoded with jsQR. */}
       <input
         ref={fileRef}
         type="file"
@@ -151,7 +258,10 @@ export function ScannerOverlay({
         }}
       >
         <button
-          onClick={openPhotoPicker}
+          onClick={() => {
+            setMsg(null);
+            fileRef.current?.click();
+          }}
           className="tap"
           style={{
             padding: "13px 24px",
