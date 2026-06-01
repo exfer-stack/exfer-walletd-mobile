@@ -56,20 +56,23 @@ export function useWallet(): WalletData {
 // poll costs `1 + N` node scans (the +N is the per-address mempool, which
 // has no batch form yet).
 //
-// The public node caps balance/utxo queries at 30/min, and the poll is NOT
+// The public node caps balance/utxo queries at 30/min/IP, and the poll is NOT
 // the only consumer: a send fires simulate_transfer (a utxo scan) on each
 // edit plus the transfer itself, Activity rebuilds fan out a mempool scan
-// per address, and an address sheet fetches utxo counts. The old ~27/min
-// pacing left almost no headroom, so a normal send tipped the budget over
-// and failed with "Rate limit exceeded". We now pace one scan every ~4s,
-// holding the steady poll near ~15/min for a 1–2 address wallet and leaving
-// the rest of the budget for the actions the user actually takes. Deposits
-// still surface instantly via the SSE push (wallet-nudge); the poll is just
-// the fallback. The Send flow also fully suspends the poll while open (see
+// per address, an address sheet fetches utxo counts, and every SSE reconnect
+// (the upstream node currently drops the stream every ~30s) triggers a
+// refresh. At the old ~15/min steady pacing those stacked over the budget and
+// a normal send failed with "Rate limit exceeded: max 30 balance/utxo queries
+// per minute". We now pace one scan every ~10s, holding the steady poll near
+// ~6/min for a 1–2 address wallet — that leaves the bulk of the budget for the
+// actions the user actually takes (a send, opening Activity). The cost is a
+// slightly staler hero balance when SSE is down, which is acceptable: deposits
+// still surface instantly via the SSE push (wallet-nudge), a send does its own
+// manual refresh, and the Send flow fully suspends the poll while open (see
 // suspendPolling) so a broadcast never races it.
-const MS_PER_SCAN = 4_000;
-const MIN_POLL_MS = 6_000;
-const MAX_POLL_MS = 30_000;
+const MS_PER_SCAN = 10_000;
+const MIN_POLL_MS = 15_000;
+const MAX_POLL_MS = 60_000;
 
 /** The current auto-refresh interval for `visibleCount` visible addresses.
  *  Exported so the UI can show the live rate and explain that more visible
