@@ -32,10 +32,11 @@ use crate::rpc_client::ConnectionInfo;
 pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
 // Public upstream node. Runs v1.12.0-phase2 — Tier-1 mempool RPCs
 // (get_address_mempool, get_balances, get_address_utxos_batch,
-// get_output_spent_by) AND Tier-2 SSE push at POST /sse, so the
+// get_output_spent_by) AND Tier-2 SSE push at GET /sse, so the
 // wallet observes incoming pending balance within ~RTT instead of
-// the 2 s poll interval. Tokyo region.
-pub const DEFAULT_NODE_RPC: &str = "http://198.13.38.245:9334";
+// the 2 s poll interval. Seoul (icn) region — better mainland-China
+// reachability; gossips with the Tokyo node over the shared network.
+pub const DEFAULT_NODE_RPC: &str = "http://64.176.231.198:9334";
 // Upstream exfer-indexer, co-located with the default node on the same host
 // (systemd `exfer-indexer.service`, public on :9335). Lets walletd answer
 // `get_address_history` — the authoritative per-address confirmed credit/debit
@@ -43,7 +44,7 @@ pub const DEFAULT_NODE_RPC: &str = "http://198.13.38.245:9334";
 // was closed (which the local mempool/poll capture can never see). The indexer
 // is anonymous: it's read-only (holds no keys) and serves only public chain
 // data, so no bearer token is needed — matching the node's open posture.
-pub const DEFAULT_INDEXER_RPC: &str = "http://198.13.38.245:9335";
+pub const DEFAULT_INDEXER_RPC: &str = "http://64.176.231.198:9335";
 pub const DESKTOP_CONFIG_FILE: &str = "desktop-config.json";
 
 #[derive(Debug, Clone, Serialize)]
