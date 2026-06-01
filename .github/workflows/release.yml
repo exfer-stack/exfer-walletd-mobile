@@ -269,3 +269,28 @@ jobs:
             src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           fail_on_unmatched_files: false
+
+      # Mirror the Android build into the public downloads hub (exfer-stack/get)
+      # so people can grab the .apk even though THIS repo is private. The hub's
+      # page links to its own `mobile-vX.Y.Z` release. GET_MIRROR_TOKEN is an
+      # org token with contents:write on `get`; the step no-ops if it's unset.
+      - name: Mirror APK/AAB to the downloads hub
+        if: ${{ secrets.GET_MIRROR_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GET_MIRROR_TOKEN }}
+        run: |
+          set -eu
+          shopt -s globstar nullglob
+          files=( src-tauri/gen/android/app/build/outputs/apk/**/*.apk \
+                  src-tauri/gen/android/app/build/outputs/bundle/**/*.aab )
+          if [ ${#files[@]} -eq 0 ]; then echo "no artifacts to mirror"; exit 0; fi
+          TAG="mobile-${GITHUB_REF_NAME}"
+          if gh release view "$TAG" --repo exfer-stack/get >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --repo exfer-stack/get --clobber
+          else
+            gh release create "$TAG" "${files[@]}" --repo exfer-stack/get \
+              --title "Mobile Wallet ${GITHUB_REF_NAME}" \
+              --notes "Android build mirrored from the private exfer-walletd-mobile repo so it's publicly downloadable. \`.apk\` (sideload) + \`.aab\` (Play)."
+          fi
+          # Nudge the hub to refresh releases.json right away.
+          gh api repos/exfer-stack/get/dispatches -f event_type=refresh-releases
