@@ -1,7 +1,8 @@
 // Home — balance hero, Receive/Send, address list, New-address menu.
 
-import { useMemo, useState, type SVGProps } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "../lib/icons";
+import tokenLogo from "../assets/exfer-token.png";
 import { useWallet } from "../lib/wallet";
 import { useToast } from "../lib/toast";
 import { useBalanceMask, Masked } from "../lib/balance";
@@ -17,35 +18,6 @@ import type { WalletEntry } from "../lib/types";
 import { AddrAvatar, ActionMenu, PendingDot } from "./ui";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
-
-// Faint brand watermark behind the balance hero — the EXFER X mark as a
-// large, low-opacity backdrop (echoes the app icon). Decorative only.
-function BrandWatermark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 120 120"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    >
-      <line x1="31" y1="31" x2="89" y2="89" />
-      <line x1="89" y1="31" x2="31" y2="89" />
-      <rect x="18" y="18" width="26" height="26" rx="7" />
-      <rect x="76" y="18" width="26" height="26" rx="7" />
-      <rect x="18" y="76" width="26" height="26" rx="7" />
-      <rect x="76" y="76" width="26" height="26" rx="7" />
-      <rect
-        x="51" y="51" width="18" height="18" rx="4"
-        transform="rotate(45 60 60)"
-        fill="currentColor" stroke="none"
-      />
-    </svg>
-  );
-}
 
 /** 24h change pill — green ▲ for up, red ▼ for down, muted for flat. */
 function ChangePill({ pct }: { pct: number }) {
@@ -196,16 +168,21 @@ export function Home({
         ) : (
           <>
         <div style={{ position: "relative" }}>
-        <BrandWatermark
+        {/* Brand token logo as a faint backdrop behind the balance hero. */}
+        <img
+          src={tokenLogo}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
           style={{
             position: "absolute",
-            top: -24,
-            right: -36,
-            width: 190,
-            height: 190,
-            color: "var(--accent)",
-            opacity: 0.07,
+            top: -40,
+            right: -48,
+            width: 208,
+            height: 208,
+            opacity: 0.16,
             pointerEvents: "none",
+            userSelect: "none",
             zIndex: 0,
           }}
         />
