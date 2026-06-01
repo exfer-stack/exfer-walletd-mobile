@@ -37,13 +37,13 @@ const EN = {
   "welcome.h1a": "Transfers that",
   "welcome.h1b": "arrive instantly.",
   "welcome.lede":
-    "A fast, lightweight wallet for the Exfer blockchain. Funds show up the moment they hit the network — no waiting, no server, no account.",
+    "A fast, lightweight wallet for the Exfer blockchain. Funds show up the moment they hit the chain — no account signup.",
   "welcome.instant.t": "Instant",
   "welcome.instant.b":
-    "Incoming EXFER shows up in your balance the moment it's sent — no waiting for it to confirm.",
+    "Incoming EXFER shows up in your balance the moment someone sends it.",
   "welcome.light.t": "Lightweight",
   "welcome.light.b":
-    "The wallet engine runs on your phone. Nothing to install, nothing in the background.",
+    "The wallet engine runs on your phone. Nothing extra to install.",
   "welcome.yours.t": "Yours",
   "welcome.yours.b": "Keys are generated on the device and never leave it.",
   "welcome.cta": "Get started",
