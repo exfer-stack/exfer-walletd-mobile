@@ -92,12 +92,6 @@ export function Welcome({
           paddingTop: 8,
         }}
       >
-        {/* Language toggle sits in normal flow, right-aligned within the
-            content gutter (not pinned to the screen edge). */}
-        <div style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "flex-end" }}>
-          <LangSwitch lang={lang} setLang={setLang} />
-        </div>
-
         {/* Flat brand mark as a faint background backdrop — no glow. */}
         <img
           src={mark}
@@ -158,10 +152,16 @@ export function Welcome({
           </div>
         </div>
 
+        {/* Language toggle sits just above the CTA, centered — keeps it clear
+            of the device status bar / notch at the top. */}
+        <div style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "center", marginTop: 22 }}>
+          <LangSwitch lang={lang} setLang={setLang} />
+        </div>
+
         {/* CTA */}
         <button
           className="btn btn-block"
-          style={{ position: "relative", zIndex: 1, padding: "16px", marginTop: 22 }}
+          style={{ position: "relative", zIndex: 1, padding: "16px", marginTop: 14 }}
           onClick={onStart}
         >
           {t("welcome.cta")}

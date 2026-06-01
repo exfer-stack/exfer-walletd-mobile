@@ -139,9 +139,28 @@ export function Home({
 
   return (
     <div className="screen">
-      <div className="screen-pad" style={{ position: "relative", overflow: "hidden" }}>
+      <div
+        className="screen-pad"
+        style={
+          loadError
+            ? {
+                position: "relative",
+                overflow: "hidden",
+                // Fill the screen area (the tab bar is a sibling of .screen)
+                // and center the message vertically instead of pinning it to
+                // the top third.
+                minHeight: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+              }
+            : { position: "relative", overflow: "hidden" }
+        }
+      >
         {loadError ? (
-          <div style={{ padding: "64px 18px", textAlign: "center" }}>
+          <div style={{ maxWidth: 300, padding: "0 18px" }}>
             <div
               style={{
                 width: 52,
