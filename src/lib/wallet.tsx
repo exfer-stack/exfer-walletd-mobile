@@ -167,6 +167,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // query just that address's mempool for the real crediting tx id.
   const prevByAddr = useRef<Map<string, number>>(new Map());
   const inFlight = useRef(false);
+  // A full (manual/mount) load that arrived while another scan was in flight,
+  // deferred so it isn't lost. Without this, importing/generating an address
+  // right as a background poll fires drops the follow-up refresh, and since
+  // polls scan only the already-known (filtered) set, the new address never
+  // appears until the next full reload. Re-run once the slot frees.
+  const pendingFull = useRef(false);
   // Ref-counted poll suspension. >0 means the background poll + SSE-triggered
   // refreshes are paused (e.g. while the Send sheet is open) so user-initiated
   // queries get the upstream rate-limit budget to themselves.
@@ -188,7 +194,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(
     async (isPoll: boolean, source: LoadSource) => {
-      if (inFlight.current) return;
+      if (inFlight.current) {
+        // Don't drop a manual/mount refresh behind an in-flight scan — defer
+        // it so the new address set is picked up the moment the slot frees.
+        if (!isPoll) pendingFull.current = true;
+        return;
+      }
       inFlight.current = true;
       if (!isPoll) setLoading(true);
       try {
@@ -274,10 +285,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } finally {
         if (!isPoll) setLoading(false);
         inFlight.current = false;
+        // A full refresh queued up while we were busy — run it now that the
+        // slot is free, so e.g. a freshly imported address shows immediately.
+        if (pendingFull.current) {
+          pendingFull.current = false;
+          void loadRef.current?.(false, "manual");
+        }
       }
     },
     [toast, visibleAddrs],
   );
+
+  // Stable indirection so `load`'s finally can re-invoke the latest `load`
+  // without listing itself as a dependency.
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   const refresh = useCallback(() => load(false, "manual"), [load]);
 
