@@ -260,7 +260,7 @@ export function Settings({
           <SettingRow
             icon="node"
             label={t("set.upstreamNode")}
-            sub={nodeUrl}
+            sub={status?.upstream_nodes?.join(", ") || nodeUrl}
             onClick={() => setNodeOpen(true)}
             right={
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -308,16 +308,16 @@ export function Settings({
           />
         </div>
 
-        {/* Daemon */}
+        {/* Daemon — runtime facts only. Node reachability + the upstream URL
+            live in the NETWORK section above (as the row's pill + subtitle),
+            so they're intentionally not repeated here. */}
         <Section label={t("set.secDaemon")} />
         <div className="card" style={{ overflow: "hidden", marginBottom: 10 }}>
           <DRow label={t("set.dVersion")} value={status?.version ?? "—"} />
-          <DRow label={t("set.dNode")} plain value={<StatusPill ok={nodeOk} online={t("set.dReachable")} />} />
           <DRow
             label={t("set.dBlockHeight")}
             value={status?.tip?.height != null ? status.tip.height.toLocaleString() : "—"}
           />
-          <DRow label={t("set.dUpstream")} value={status?.upstream_nodes?.join(", ") ?? nodeUrl} copy />
           <DRow label={t("set.dWallets")} value={String(status?.wallet_count ?? entries.length)} />
           <DRow
             label={t("set.dInflight")}
@@ -726,21 +726,17 @@ function ChangeIndexerModal({
   const toast = useToast();
   const { t } = useT();
   const [url, setUrl] = useState(current);
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-  // Prefill both fields from the stored config (blank = using the default).
+  // Prefill from the stored config (blank = using the default).
   useEffect(() => {
     getIndexerConfig()
-      .then((c) => {
-        setUrl(c.rpc);
-        setToken(c.token);
-      })
+      .then((c) => setUrl(c.rpc))
       .catch(() => {});
   }, []);
   async function save() {
     setBusy(true);
     try {
-      await setIndexerConfig(url.trim(), token.trim());
+      await setIndexerConfig(url.trim());
       onSaved(url.trim());
       toast.success(
         t("ix.updated"),
@@ -777,14 +773,6 @@ function ChangeIndexerModal({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="http://198.13.38.245:9335"
-        />
-      </Field>
-      <Field label={t("ix.tokenLabel")}>
-        <input
-          className="field mono"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder={t("ix.tokenPlaceholder")}
         />
       </Field>
     </Modal>

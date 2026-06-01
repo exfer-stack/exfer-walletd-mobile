@@ -263,16 +263,13 @@ export const devmock = {
     return s.bootstrap as BootstrapStatus;
   },
 
-  async get_indexer_config(): Promise<{ rpc: string; token: string }> {
+  async get_indexer_config(): Promise<{ rpc: string }> {
     // Dev mode talks to walletd over the proxy; the indexer endpoint is the
-    // daemon's own config, not the webapp's. Report blanks (= "use default").
-    return { rpc: "", token: "" };
+    // daemon's own config, not the webapp's. Report blank (= "use default").
+    return { rpc: "" };
   },
 
-  async set_indexer_config(
-    _rpc: string,
-    _token: string,
-  ): Promise<BootstrapStatus> {
+  async set_indexer_config(_rpc: string): Promise<BootstrapStatus> {
     if (useRealWalletd()) {
       throw new Error(
         "Changing the indexer requires restarting the daemon in real-walletd dev mode.",

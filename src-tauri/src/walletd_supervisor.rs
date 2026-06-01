@@ -37,16 +37,13 @@ pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
 // the 2 s poll interval. Tokyo region.
 pub const DEFAULT_NODE_RPC: &str = "http://198.13.38.245:9334";
 // Upstream exfer-indexer, co-located with the default node on the same host
-// (systemd `exfer-indexer.service`, public on :9335, token-gated). Lets walletd
-// answer `get_address_history` — the authoritative per-address confirmed
-// credit/debit timeline that powers Activity, including deposits that landed
-// while the app was closed (which the local mempool/poll capture can never
-// see). The token is a public bind-gate, not a secret: the indexer is
-// read-only (holds no keys), and matching the node's open posture, anyone can
-// query it — the token only keeps drive-by scanners off and satisfies the
-// indexer's refuse-to-bind-publicly-without-auth safety rule.
+// (systemd `exfer-indexer.service`, public on :9335). Lets walletd answer
+// `get_address_history` — the authoritative per-address confirmed credit/debit
+// timeline that powers Activity, including deposits that landed while the app
+// was closed (which the local mempool/poll capture can never see). The indexer
+// is anonymous: it's read-only (holds no keys) and serves only public chain
+// data, so no bearer token is needed — matching the node's open posture.
 pub const DEFAULT_INDEXER_RPC: &str = "http://198.13.38.245:9335";
-pub const DEFAULT_INDEXER_TOKEN: &str = "c5a0e5aca096d97d015e08d76f218674fd29f69aaf1c5505";
 pub const DESKTOP_CONFIG_FILE: &str = "desktop-config.json";
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,9 +71,6 @@ pub struct DesktopConfig {
     /// parse (they just fall back to the default).
     #[serde(default)]
     pub indexer_rpc: Option<String>,
-    /// Bearer token for the indexer. `None`/empty ⇒ [`DEFAULT_INDEXER_TOKEN`].
-    #[serde(default)]
-    pub indexer_token: Option<String>,
 }
 
 impl Default for DesktopConfig {
@@ -84,7 +78,6 @@ impl Default for DesktopConfig {
         Self {
             node_rpc: DEFAULT_NODE_RPC.to_string(),
             indexer_rpc: None,
-            indexer_token: None,
         }
     }
 }
@@ -96,14 +89,6 @@ impl DesktopConfig {
         match self.indexer_rpc.as_deref() {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
             _ => DEFAULT_INDEXER_RPC.to_string(),
-        }
-    }
-
-    /// Effective indexer bearer token (configured, or built-in default).
-    pub fn effective_indexer_token(&self) -> String {
-        match self.indexer_token.as_deref() {
-            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => DEFAULT_INDEXER_TOKEN.to_string(),
         }
     }
 }
@@ -198,7 +183,8 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
         // that confirmed while the app was closed. Without it these methods
         // return -32007 IndexerNotConfigured.
         indexer_rpc: Some(desktop_cfg.effective_indexer_rpc()),
-        indexer_token: Some(desktop_cfg.effective_indexer_token()),
+        // The indexer is anonymous (public read-only chain data); no token.
+        indexer_token: None,
         indexer_timeout_secs: Some(15),
     }
 }
