@@ -21,6 +21,7 @@ import {
 } from "./lib/theme";
 import { Icon } from "./lib/icons";
 import { Onboarding } from "./components/Onboarding";
+import { Welcome } from "./components/Welcome";
 import { Home } from "./components/Home";
 import { Activity } from "./components/Activity";
 import { Settings } from "./components/Settings";
@@ -70,6 +71,10 @@ function Shell() {
   const [boot, setBoot] = useState<BootstrapStatus | null>(null);
   const [tab, setTab] = useState<Tab>("wallet");
   const [overlay, setOverlay] = useState<Overlay>(null);
+  // Fresh-install intro: show the Welcome pitch before the onboarding form.
+  // Only relevant pre-wallet (onboarding is the only place it gates); once a
+  // wallet exists the app boots straight past it.
+  const [started, setStarted] = useState(false);
 
   // Biometric app lock. `locked === null` means we haven't yet decided
   // whether a lock is needed (avoids a flash of the wallet on launch).
@@ -164,8 +169,10 @@ function Shell() {
             <BootFailed message={boot.message} />
           ) : boot === null ? (
             <BootLoading />
-          ) : (
+          ) : started ? (
             <Onboarding onReady={reboot} />
+          ) : (
+            <Welcome onStart={() => setStarted(true)} />
           )
         ) : locked !== false ? (
           // Hold behind the biometric lock until unlocked (or until we've
