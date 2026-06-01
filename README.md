@@ -26,23 +26,51 @@ bloat), a pure-black canvas with a single cyan accent, and Geist / Geist Mono.
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/wallet.png" width="160" alt="Wallet — balance and addresses" /></td>
+    <td align="center"><img src="docs/screenshots/activity.png" width="160" alt="Activity — From/To, on-chain history" /></td>
     <td align="center"><img src="docs/screenshots/send.png" width="160" alt="Send — multiple recipients" /></td>
     <td align="center"><img src="docs/screenshots/receive.png" width="160" alt="Receive — QR and address" /></td>
-    <td align="center"><img src="docs/screenshots/activity.png" width="160" alt="Activity — transaction history" /></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="160" alt="Settings — appearance, node, backup" /></td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="160" alt="Settings — node, indexer, backup" /></td>
   </tr>
   <tr>
     <td align="center"><b>Wallet</b><br/>balance + addresses</td>
+    <td align="center"><b>Activity</b><br/>From / To · on-chain</td>
     <td align="center"><b>Send</b><br/>up to 16 recipients</td>
     <td align="center"><b>Receive</b><br/>QR + copy</td>
-    <td align="center"><b>Activity</b><br/>on-chain history</td>
-    <td align="center"><b>Settings</b><br/>theme · node · backup</td>
+    <td align="center"><b>Settings</b><br/>node · indexer · backup</td>
   </tr>
 </table>
 
 A bottom tab bar — **Wallet** / **Activity** / **Settings**. Receive, Send, and
 each address's detail open as full-screen sheets. First launch creates a
 password-encrypted wallet or restores one from a `.vault` backup.
+
+**Activity** is backed by the [exfer-indexer](https://github.com/exfer-stack/exfer-indexer):
+a complete per-address on-chain timeline with real tx ids and native **From / To**
+counterparties — including deposits that landed while the app was closed. The
+indexer endpoint is configurable in Settings (it serves public read-only chain
+data, so no token is needed).
+
+### Bilingual — English / 简体中文
+
+The whole UI switches live between English and Chinese (tap **EN / 中文** in
+Settings → Appearance). Same screens, fully localized:
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/wallet-zh.png" width="160" alt="钱包" /></td>
+    <td align="center"><img src="docs/screenshots/activity-zh.png" width="160" alt="动态" /></td>
+    <td align="center"><img src="docs/screenshots/send-zh.png" width="160" alt="发送" /></td>
+    <td align="center"><img src="docs/screenshots/receive-zh.png" width="160" alt="收款" /></td>
+    <td align="center"><img src="docs/screenshots/settings-zh.png" width="160" alt="设置" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>钱包</b><br/>余额 + 地址</td>
+    <td align="center"><b>动态</b><br/>来自 / 至 · 链上</td>
+    <td align="center"><b>发送</b><br/>最多 16 个收款人</td>
+    <td align="center"><b>收款</b><br/>二维码 + 复制</td>
+    <td align="center"><b>设置</b><br/>节点 · 索引器 · 备份</td>
+  </tr>
+</table>
 
 ## What you can do
 

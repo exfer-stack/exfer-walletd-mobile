@@ -772,7 +772,7 @@ function ChangeIndexerModal({
           className="field mono"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="http://198.13.38.245:9335"
+          placeholder="http://64.176.231.198:9335"
         />
       </Field>
     </Modal>

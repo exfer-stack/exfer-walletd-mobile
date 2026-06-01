@@ -558,13 +558,63 @@ export const devmock = {
 
       case "get_status":
         return {
-          version: "dev-mock",
+          version: "1.10.0",
           uptime_secs: 0,
           wallet_count: s.addresses.length,
           in_flight_transfers: 0,
           in_flight_utxos: 0,
+          // New field shape (upstream_ok / upstream_nodes / tip) the Settings
+          // screen reads. A healthy, synced dev daemon.
+          upstream_ok: true,
+          upstream_nodes: [s.nodeRpc],
+          tip: { height: 690_414, block_id: fakeHex("tip", 64) },
+          // Legacy nested shape kept for any older caller.
           upstream: { url: s.nodeRpc, mode: "dev-mock" },
         };
+
+      case "get_address_history": {
+        // Curated confirmed history for the FIRST address so the Activity feed
+        // renders a realistic received/sent mix with From/To counterparties in
+        // dev mode (the real indexer isn't reachable here). Other addresses
+        // return empty so the aggregate isn't double-counted.
+        const p = params as { address: string };
+        const first = s.addresses[0]?.address;
+        if (!first || p.address !== first) return { history: [] };
+        const peer = (seed: string) => fakeHex(`peer-${seed}`, 64);
+        const tx = (seed: string) => fakeHex(`tx-${seed}`, 64);
+        const amt = (exfer: number) => Math.round(exfer * EXFER_UNIT);
+        return {
+          history: [
+            { block_height: 690_201, tx_id: tx("a"), amount: amt(0.45), direction: "output", is_coinbase: false, counterparties: [peer("alice")] },
+            { block_height: 689_998, tx_id: tx("b"), amount: amt(0.12), direction: "input", is_coinbase: false, counterparties: [peer("bob")] },
+            { block_height: 689_540, tx_id: tx("c"), amount: amt(1.80), direction: "output", is_coinbase: false, counterparties: [peer("carol"), peer("dave")] },
+            { block_height: 688_870, tx_id: tx("d"), amount: amt(0.30), direction: "input", is_coinbase: false, counterparties: [peer("erin")] },
+            { block_height: 687_233, tx_id: tx("e"), amount: amt(2.50), direction: "output", is_coinbase: false, counterparties: [peer("frank")] },
+          ],
+        };
+      }
+
+      case "get_address_mempool": {
+        // One live incoming pending tx on the first address — exercises the
+        // "in mempool" pill in the feed.
+        const p = params as { address: string };
+        const first = s.addresses[0]?.address;
+        const base = { address: p.address, tip_height: 690_414 };
+        if (!first || p.address !== first) return { ...base, mempool: [] };
+        return {
+          ...base,
+          mempool: [
+            { tx_id: fakeHex("tx-pending", 64), received: [{ output_index: 0, value: Math.round(0.2 * EXFER_UNIT) }] },
+          ],
+        };
+      }
+
+      case "get_transaction": {
+        // The pending tx reads as in-mempool; every other tx as confirmed.
+        const p = params as { tx_id: string };
+        if (p.tx_id === fakeHex("tx-pending", 64)) return { in_mempool: true };
+        return { in_mempool: false, block_height: 690_000 };
+      }
 
       case "get_balance": {
         const p = params as { address: string };
