@@ -209,7 +209,13 @@ pub async fn start_with_app(
     app: Option<AppHandle>,
 ) -> BootstrapStatus {
     let mut inner = ctx.inner.lock().await;
-    if matches!(inner.status, BootstrapStatus::Ready { .. }) {
+    // Guard on the live handle, not `status`: `stop()` tears down the handle
+    // but leaves `status` at its last value, so keying off `status == Ready`
+    // made a restart (stop → start, e.g. after switching the upstream node)
+    // see the stale Ready and early-return WITHOUT booting a new walletd —
+    // leaving the app talking to a dead loopback ("offline"). The handle is
+    // the only honest "is walletd actually running?" signal.
+    if inner.handle.is_some() {
         // Already running; let the caller see the existing state.
         return inner.status.clone();
     }
