@@ -11,6 +11,7 @@ import {
   splitBalanceCompact,
 } from "../lib/rpc";
 import { usePrice, usdValue } from "../lib/market";
+import { useT } from "../lib/i18n";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
@@ -91,6 +92,7 @@ export function Home({
 }) {
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
+  const { t } = useT();
   // `balance` is null until the first successful load. Show skeletons while
   // it's loading, but if that first load FAILED show an error+retry instead
   // of an infinite skeleton (and never a misleading "0 / No addresses").
@@ -127,8 +129,8 @@ export function Home({
   function newAddress() {
     if (atCap) {
       toast.error(
-        "Address limit reached",
-        `This wallet is capped at ${MAX_ADDRESSES} addresses.`,
+        t("home.capToastTitle"),
+        t("home.capToastBody", { max: MAX_ADDRESSES }),
       );
       return;
     }
@@ -154,15 +156,15 @@ export function Home({
             >
               <Icon name="node" size={26} />
             </div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Can&apos;t reach the network</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("home.netErrTitle")}</div>
             <div
               className="faint"
               style={{ fontSize: 13, marginBottom: 16, lineHeight: 1.5, padding: "0 10px" }}
             >
-              Couldn&apos;t load your balance. Check your connection and try again.
+              {t("home.netErrBody")}
             </div>
             <button className="btn btn-sm" onClick={() => refresh()}>
-              Retry
+              {t("home.retry")}
             </button>
           </div>
         ) : (
@@ -201,7 +203,7 @@ export function Home({
           }}
         >
           <div className="eyebrow" style={{ marginBottom: 10, letterSpacing: ".12em" }}>
-            Total balance
+            {t("home.totalBalance")}
           </div>
           {firstLoad ? (
             <span
@@ -260,12 +262,12 @@ export function Home({
         </button>
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
-          <PrimaryAction icon="receive" label="Receive" onClick={onReceive} variant="secondary" />
-          <PrimaryAction icon="send" label="Send" onClick={onSend} variant="primary" />
+          <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />
+          <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
 
         <div className="h-row" style={{ marginBottom: 11 }}>
-          <div className="eyebrow">Addresses</div>
+          <div className="eyebrow">{t("home.addresses")}</div>
           <button
             onClick={newAddress}
             disabled={atCap}
@@ -285,7 +287,7 @@ export function Home({
               opacity: atCap ? 0.4 : 1,
             }}
           >
-            <Icon name="plus" size={15} /> New address
+            <Icon name="plus" size={15} /> {t("home.newAddress")}
           </button>
         </div>
 
@@ -310,12 +312,12 @@ export function Home({
             ))}
           {!firstLoad && list.length === 0 && (
             <div style={{ padding: "30px 18px", textAlign: "center" }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>No addresses yet</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("home.noAddrTitle")}</div>
               <div className="faint" style={{ fontSize: 13, marginBottom: 14 }}>
-                Mint your first address to receive EXFER.
+                {t("home.noAddrBody")}
               </div>
               <button className="btn btn-sm" onClick={newAddress}>
-                + Generate address
+                + {t("home.genAddr")}
               </button>
             </div>
           )}
@@ -417,8 +419,9 @@ export function Home({
             onClick={() => setShowHidden((v) => !v)}
             style={{ marginTop: 12, color: "var(--text-dim)" }}
           >
-            {showHidden ? "Hide" : "Show"} {hiddenAddrs.length} hidden{" "}
-            {hiddenAddrs.length === 1 ? "address" : "addresses"}
+            {showHidden
+              ? t("home.hideHidden", { n: hiddenAddrs.length })
+              : t("home.showHidden", { n: hiddenAddrs.length })}
           </button>
         )}
 
@@ -427,8 +430,7 @@ export function Home({
             className="faint"
             style={{ fontSize: 12, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}
           >
-            You've reached the {MAX_ADDRESSES}-address limit. One address can take
-            any number of deposits.
+            {t("home.capNote", { max: MAX_ADDRESSES })}
           </div>
         )}
         </div>

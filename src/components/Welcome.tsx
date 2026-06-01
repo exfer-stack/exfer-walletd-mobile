@@ -1,13 +1,14 @@
 // Welcome — the first screen on a fresh install, shown before onboarding
 // (set password / restore). Pitches the product in one breath: instant,
-// lightweight, yours. "Get started" hands off to <Onboarding>.
+// lightweight, yours. "Get started" hands off to <Onboarding>. Also the first
+// place the user can pick a language (default English).
 
 import mark from "../assets/exfer-mark.png";
+import { useT, LANGS, type Lang } from "../lib/i18n";
 
 function Point({ title, body }: { title: string; body: string }) {
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-      {/* small brand-cyan node, echoing the logo's squares */}
       <span
         style={{
           flex: "0 0 auto",
@@ -29,7 +30,55 @@ function Point({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function Welcome({ onStart }: { onStart: () => void }) {
+function LangSwitch({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        zIndex: 2,
+        display: "flex",
+        gap: 2,
+        padding: 3,
+        borderRadius: 999,
+        background: "var(--surface-2)",
+        border: "1px solid var(--border-soft)",
+      }}
+    >
+      {LANGS.map((l) => (
+        <button
+          key={l.key}
+          onClick={() => setLang(l.key)}
+          style={{
+            border: 0,
+            cursor: "pointer",
+            font: "inherit",
+            fontSize: 12.5,
+            fontWeight: 600,
+            padding: "5px 11px",
+            borderRadius: 999,
+            background: lang === l.key ? "var(--accent)" : "transparent",
+            color: lang === l.key ? "var(--accent-ink)" : "var(--text-dim)",
+          }}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Welcome({
+  onStart,
+  lang,
+  setLang,
+}: {
+  onStart: () => void;
+  lang: Lang;
+  setLang: (l: Lang) => void;
+}) {
+  const { t } = useT();
   return (
     <div className="screen">
       <div
@@ -43,6 +92,8 @@ export function Welcome({ onStart }: { onStart: () => void }) {
           paddingTop: 8,
         }}
       >
+        <LangSwitch lang={lang} setLang={setLang} />
+
         {/* Flat brand mark as a faint background backdrop — no glow. */}
         <img
           src={mark}
@@ -85,31 +136,21 @@ export function Welcome({ onStart }: { onStart: () => void }) {
               margin: "0 0 16px",
             }}
           >
-            Transfers that
+            {t("welcome.h1a")}
             <br />
-            <span style={{ color: "var(--accent)" }}>arrive instantly.</span>
+            <span style={{ color: "var(--accent)" }}>{t("welcome.h1b")}</span>
           </h1>
           <p
             className="dim"
             style={{ fontSize: 15.5, lineHeight: 1.6, margin: "0 0 30px", maxWidth: "30em" }}
           >
-            A fast, lightweight wallet for the Exfer blockchain. Funds show up the
-            moment they hit the network — no waiting, no server, no account.
+            {t("welcome.lede")}
           </p>
 
           <div style={{ display: "grid", gap: 18 }}>
-            <Point
-              title="Instant"
-              body="Incoming EXFER shows up in your balance the moment it's sent — no waiting for it to confirm."
-            />
-            <Point
-              title="Lightweight"
-              body="The wallet engine runs on your phone. Nothing to install, nothing in the background."
-            />
-            <Point
-              title="Yours"
-              body="Keys are generated on the device and never leave it."
-            />
+            <Point title={t("welcome.instant.t")} body={t("welcome.instant.b")} />
+            <Point title={t("welcome.light.t")} body={t("welcome.light.b")} />
+            <Point title={t("welcome.yours.t")} body={t("welcome.yours.b")} />
           </div>
         </div>
 
@@ -119,13 +160,13 @@ export function Welcome({ onStart }: { onStart: () => void }) {
           style={{ position: "relative", zIndex: 1, padding: "16px", marginTop: 22 }}
           onClick={onStart}
         >
-          Get started
+          {t("welcome.cta")}
         </button>
         <div
           className="faint"
           style={{ position: "relative", zIndex: 1, fontSize: 12.5, textAlign: "center", marginTop: 12 }}
         >
-          Set a password next, or restore from a backup.
+          {t("welcome.hint")}
         </div>
       </div>
     </div>

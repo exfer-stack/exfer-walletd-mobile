@@ -13,6 +13,7 @@ import wordmark from "./assets/wordmark.png";
 import { ToastProvider, ToastHost } from "./lib/toast";
 import { WalletProvider } from "./lib/wallet";
 import { BalanceProvider } from "./lib/balance";
+import { I18nProvider, useT, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
 import {
   ACCENTS,
   isAccentKey,
@@ -68,6 +69,7 @@ function Shell() {
   const [theme, setThemeState] = useState<ThemeMode>(readTheme);
   const [accent, setAccentState] = useState<AccentKey>(readAccent);
   const [hideBalance, setHideState] = useState<boolean>(readHide);
+  const [lang, setLangState] = useState<Lang>(readLang);
 
   const [boot, setBoot] = useState<BootstrapStatus | null>(null);
   const [tab, setTab] = useState<Tab>("wallet");
@@ -108,6 +110,10 @@ function Shell() {
   const setHideBalance = useCallback((v: boolean) => {
     setHideState(v);
     localStorage.setItem(LS.hideBalance, String(v));
+  }, []);
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    persistLang(l);
   }, []);
   const toggleHide = useCallback(() => {
     setHideState((prev) => {
@@ -182,6 +188,7 @@ function Shell() {
 
   return (
     <div className="phone" data-theme={theme} style={phoneStyle}>
+     <I18nProvider lang={lang}>
       <BalanceProvider value={{ hidden: hideBalance, toggle: toggleHide }}>
         {!ready ? (
           boot?.status === "failed" ? (
@@ -191,7 +198,7 @@ function Shell() {
           ) : started ? (
             <Onboarding onReady={reboot} />
           ) : (
-            <Welcome onStart={() => setStarted(true)} />
+            <Welcome onStart={() => setStarted(true)} lang={lang} setLang={setLang} />
           )
         ) : locked !== false ? (
           // Hold behind the biometric lock until unlocked (or until we've
@@ -218,14 +225,16 @@ function Shell() {
                 setAccent={setAccent}
                 hideBalance={hideBalance}
                 setHideBalance={setHideBalance}
+                lang={lang}
+                setLang={setLang}
                 onWiped={reboot}
               />
             )}
 
             <nav className="tabbar">
-              <TabButton id="wallet" icon="wallet" label="Wallet" active={tab} onClick={setTab} />
-              <TabButton id="activity" icon="activity" label="Activity" active={tab} onClick={setTab} />
-              <TabButton id="settings" icon="settings" label="Settings" active={tab} onClick={setTab} />
+              <TabButton id="wallet" icon="wallet" labelKey="nav.wallet" active={tab} onClick={setTab} />
+              <TabButton id="activity" icon="activity" labelKey="nav.activity" active={tab} onClick={setTab} />
+              <TabButton id="settings" icon="settings" labelKey="nav.settings" active={tab} onClick={setTab} />
             </nav>
 
             {overlay?.type === "receive" && (
@@ -252,6 +261,7 @@ function Shell() {
 
         <ToastHost />
       </BalanceProvider>
+     </I18nProvider>
     </div>
   );
 }
@@ -259,23 +269,24 @@ function Shell() {
 function TabButton({
   id,
   icon,
-  label,
+  labelKey,
   active,
   onClick,
 }: {
   id: Tab;
   icon: string;
-  label: string;
+  labelKey: MsgKey;
   active: Tab;
   onClick: (t: Tab) => void;
 }) {
+  const { t } = useT();
   return (
     <button
       className={"tab" + (active === id ? " active" : "")}
       onClick={() => onClick(id)}
     >
       <Icon name={icon} size={24} stroke={active === id ? 2.2 : 1.9} />
-      {label}
+      {t(labelKey)}
     </button>
   );
 }

@@ -7,11 +7,13 @@ import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
 import { submitPassword, importVaultFile } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
+import { useT } from "../lib/i18n";
 
 type Mode = "create" | "restore";
 
 export function Onboarding({ onReady }: { onReady: () => void }) {
   const toast = useToast();
+  const { t } = useT();
   const [mode, setMode] = useState<Mode>("create");
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -23,9 +25,9 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   async function submit() {
     setErr(null);
     if (mode === "restore") {
-      if (pw.length < 8) return setErr("Password must be at least 8 characters.");
-      if (pw !== confirm) return setErr("Passwords do not match.");
-      if (vaultPw.length < 4) return setErr("Enter the backup password.");
+      if (pw.length < 8) return setErr(t("ob.errMin"));
+      if (pw !== confirm) return setErr(t("ob.errMismatch"));
+      if (vaultPw.length < 4) return setErr(t("ob.errBackupPw"));
       setBusy(true);
       try {
         // The .vault file is chosen via the document picker inside
@@ -37,16 +39,12 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         // set, but nothing was restored — don't claim success or drop the user
         // into an empty wallet. Let them tap Restore again and pick the file.
         if (n === null) {
-          setErr(
-            "No .vault file selected. Tap “Choose file & restore” and pick your backup.",
-          );
+          setErr(t("ob.errNoFile"));
           return;
         }
         toast.success(
-          "Wallet restored",
-          n === 0
-            ? "Backup restored — welcome back."
-            : `${n} address${n === 1 ? "" : "es"} restored.`,
+          t("ob.toastRestored"),
+          n === 0 ? t("ob.toastRestoredBack") : t("ob.toastRestoredN", { n }),
         );
         onReady();
       } catch (e) {
@@ -57,12 +55,12 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       return;
     }
     // create
-    if (pw.length < 8) return setErr("Password must be at least 8 characters.");
-    if (pw !== confirm) return setErr("Passwords do not match.");
+    if (pw.length < 8) return setErr(t("ob.errMin"));
+    if (pw !== confirm) return setErr(t("ob.errMismatch"));
     setBusy(true);
     try {
       await submitPassword(pw);
-      toast.success("Wallet ready", "Welcome to exfer.");
+      toast.success(t("ob.toastReady"), t("ob.toastReadyBody"));
       onReady();
     } catch (e) {
       setErr(humanizeError(e));
@@ -73,11 +71,11 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
 
   const cta = busy
     ? mode === "create"
-      ? "Creating…"
-      : "Restoring…"
+      ? t("ob.creating")
+      : t("ob.restoring")
     : mode === "create"
-      ? "Create wallet"
-      : "Choose file & restore";
+      ? t("ob.create")
+      : t("ob.chooseRestore");
 
   return (
     <div className="screen">
@@ -102,8 +100,8 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         >
           {(
             [
-              ["create", "New wallet"],
-              ["restore", "Restore"],
+              ["create", t("ob.new")],
+              ["restore", t("ob.restore")],
             ] as [Mode, string][]
           ).map(([m, label]) => (
             <button
@@ -132,7 +130,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         </div>
 
         <div className="title-xl" style={{ textAlign: "center", marginBottom: 8 }}>
-          {mode === "create" ? "Set up your wallet" : "Restore your wallet"}
+          {mode === "create" ? t("ob.createTitle") : t("ob.restoreTitle")}
         </div>
         <p
           className="dim"
@@ -143,22 +141,19 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
             margin: "0 6px 20px",
           }}
         >
-          {mode === "create"
-            ? "Choose a password to encrypt your keys at rest. It's saved in your device keychain — you enter it once."
-            : "Restore every address from an encrypted .vault backup file and a new local password."}
+          {mode === "create" ? t("ob.createSub") : t("ob.restoreSub")}
         </p>
 
         <div style={{ display: "grid", gap: 14 }}>
           {mode === "restore" && (
             <div className="banner banner-info" style={{ fontSize: 12.5 }}>
-              Set a new local password and your backup's password below, then tap
-              Restore to choose your <b>.vault</b> file.
+              {t("ob.restoreBanner")}
             </div>
           )}
 
           <Field
-            label={mode === "create" ? "Password" : "New local password"}
-            help="At least 8 characters. Mix letters, numbers & symbols."
+            label={mode === "create" ? t("ob.password") : t("ob.newLocalPassword")}
+            help={t("ob.passwordHelp")}
           >
             <div style={{ position: "relative" }}>
               <input
@@ -184,7 +179,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
               </button>
             </div>
           </Field>
-          <Field label="Confirm password">
+          <Field label={t("ob.confirm")}>
             <input
               className="field"
               type={show ? "text" : "password"}
@@ -196,8 +191,8 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
 
           {mode === "restore" && (
             <Field
-              label="Backup password"
-              help="The password the .vault backup was created with."
+              label={t("ob.backupPassword")}
+              help={t("ob.backupPasswordHelp")}
             >
               <input
                 className="field"
@@ -218,9 +213,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         <div style={{ flex: 1, minHeight: 24 }} />
 
         <div className="banner banner-warn" style={{ fontSize: 12.5, marginBottom: 14 }}>
-          <b>Back this up.</b> Your password unlocks and encrypts every key.
-          Forget it and there's no way back in — after setup, save an encrypted
-          backup from Settings → Back up wallet.
+          <b>{t("ob.warnTitle")}</b> {t("ob.warnBody")}
         </div>
 
         <button

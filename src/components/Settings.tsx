@@ -17,6 +17,7 @@ import {
   formatExfer,
 } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
+import { useT, LANGS, type Lang } from "../lib/i18n";
 import { listLabels } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { biometricStatus } from "../lib/biometric";
@@ -46,6 +47,8 @@ export function Settings({
   setAccent,
   hideBalance,
   setHideBalance,
+  lang,
+  setLang,
   onWiped,
 }: {
   theme: ThemeMode;
@@ -54,9 +57,12 @@ export function Settings({
   setAccent: (a: AccentKey) => void;
   hideBalance: boolean;
   setHideBalance: (v: boolean) => void;
+  lang: Lang;
+  setLang: (l: Lang) => void;
   onWiped: () => void;
 }) {
   const toast = useToast();
+  const { t } = useT();
   const { balance, refresh } = useWallet();
   const entries = balance?.entries ?? [];
 
@@ -148,21 +154,32 @@ export function Settings({
   return (
     <div className="screen">
       <div className="screen-pad">
-        <AppBar large title="Settings" subtitle="Node, backup & local data" />
+        <AppBar large title={t("set.title")} subtitle={t("set.subtitle")} />
 
         {/* Appearance */}
-        <Section label="Appearance" />
+        <Section label={t("set.secAppearance")} />
         <div className="list" style={{ marginBottom: 10 }}>
+          <div className="list-row" style={{ cursor: "default" }}>
+            <span style={iconBox}>
+              <Icon name="globe" size={20} />
+            </span>
+            <span style={{ flex: 1, fontSize: 15.5, fontWeight: 500 }}>{t("set.language")}</span>
+            <Segmented
+              value={lang}
+              options={LANGS.map((l) => [l.key, l.label] as [string, string])}
+              onChange={(v) => setLang(v as Lang)}
+            />
+          </div>
           <div className="list-row" style={{ cursor: "default" }}>
             <span style={iconBox}>
               <Icon name="spark" size={20} />
             </span>
-            <span style={{ flex: 1, fontSize: 15.5, fontWeight: 500 }}>Theme</span>
+            <span style={{ flex: 1, fontSize: 15.5, fontWeight: 500 }}>{t("set.theme")}</span>
             <Segmented
               value={theme}
               options={[
-                ["dark", "Dark"],
-                ["light", "Light"],
+                ["dark", t("set.dark")],
+                ["light", t("set.light")],
               ]}
               onChange={(v) => setTheme(v as ThemeMode)}
             />
@@ -171,7 +188,7 @@ export function Settings({
             <span style={iconBox}>
               <Icon name="spark" size={20} />
             </span>
-            <span style={{ flex: 1, fontSize: 15.5, fontWeight: 500 }}>Accent</span>
+            <span style={{ flex: 1, fontSize: 15.5, fontWeight: 500 }}>{t("set.accent")}</span>
             <div style={{ display: "flex", gap: 8 }}>
               {(Object.keys(ACCENTS) as AccentKey[]).map((k) => (
                 <button
@@ -200,10 +217,10 @@ export function Settings({
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 15.5, fontWeight: 500 }}>
-                Hide balances
+                {t("set.hideBalances")}
               </span>
               <span className="faint" style={{ fontSize: 12.5 }}>
-                Mask amounts with ••••
+                {t("set.hideBalancesSub")}
               </span>
             </span>
             <Toggle value={hideBalance} onChange={setHideBalance} />
@@ -213,7 +230,7 @@ export function Settings({
         {/* Security — only where the device exposes biometrics. */}
         {bioAvailable && (
           <>
-            <Section label="Security" />
+            <Section label={t("set.secSecurity")} />
             <div className="list" style={{ marginBottom: 10 }}>
               <div className="list-row" style={{ cursor: "default" }}>
                 <span style={iconBox}>
@@ -223,10 +240,10 @@ export function Settings({
                   <span
                     style={{ display: "block", fontSize: 15.5, fontWeight: 500 }}
                   >
-                    Unlock with Face ID / fingerprint
+                    {t("set.bioUnlock")}
                   </span>
                   <span className="faint" style={{ fontSize: 12.5 }}>
-                    Require biometrics each time the app opens
+                    {t("set.bioUnlockSub")}
                   </span>
                 </span>
                 <Toggle value={bioLock} onChange={toggleBioLock} />
@@ -236,11 +253,11 @@ export function Settings({
         )}
 
         {/* Network */}
-        <Section label="Network" />
+        <Section label={t("set.secNetwork")} />
         <div className="list" style={{ marginBottom: 10 }}>
           <SettingRow
             icon="node"
-            label="Upstream node"
+            label={t("set.upstreamNode")}
             sub={nodeUrl}
             onClick={() => setNodeOpen(true)}
             right={
@@ -252,63 +269,63 @@ export function Settings({
           />
           <SettingRow
             icon="activity"
-            label="Indexer"
-            sub={indexerUrl || "Default (bundled)"}
+            label={t("set.indexer")}
+            sub={indexerUrl || t("set.indexerDefault")}
             onClick={() => setIndexerOpen(true)}
             right={<Icon name="chevron" size={18} stroke={2} />}
           />
         </div>
 
         {/* Back up & restore */}
-        <Section label="Back up & restore" />
+        <Section label={t("set.secBackup")} />
         <div className="list" style={{ marginBottom: 10 }}>
           <SettingRow
             icon="shield"
-            label="Back up wallet"
-            sub="Save all keys to one encrypted .vault"
+            label={t("set.backupWallet")}
+            sub={t("set.backupWalletSub")}
             onClick={() => setBackupOpen(true)}
           />
           <SettingRow
             icon="download"
-            label="Restore from backup"
-            sub="Load addresses from a .vault file"
+            label={t("set.restoreBackup")}
+            sub={t("set.restoreBackupSub")}
             onClick={() => setRestoreOpen(true)}
           />
         </div>
 
         {/* Export & import data */}
-        <Section label="Export & import data" />
+        <Section label={t("set.secData")} />
         <div className="list" style={{ marginBottom: 10 }}>
-          <SettingRow icon="download" label="Export addresses (CSV)" onClick={exportCsv} />
-          <SettingRow icon="download" label="Export labels (JSON)" onClick={exportLabels} />
+          <SettingRow icon="download" label={t("set.exportCsv")} onClick={exportCsv} />
+          <SettingRow icon="download" label={t("set.exportLabels")} onClick={exportLabels} />
           <SettingRow
             icon="key"
-            label="Import wallet.key…"
-            sub="Add an externally-held address"
+            label={t("set.importKey")}
+            sub={t("set.importKeySub")}
             onClick={() => setImpOpen(true)}
           />
         </div>
 
         {/* Daemon */}
-        <Section label="Daemon status" />
+        <Section label={t("set.secDaemon")} />
         <div className="card" style={{ overflow: "hidden", marginBottom: 10 }}>
-          <DRow label="Version" value={status?.version ?? "—"} />
-          <DRow label="Node" plain value={<StatusPill ok={nodeOk} online="Reachable" />} />
+          <DRow label={t("set.dVersion")} value={status?.version ?? "—"} />
+          <DRow label={t("set.dNode")} plain value={<StatusPill ok={nodeOk} online={t("set.dReachable")} />} />
           <DRow
-            label="Block height"
+            label={t("set.dBlockHeight")}
             value={status?.tip?.height != null ? status.tip.height.toLocaleString() : "—"}
           />
-          <DRow label="Upstream" value={status?.upstream_nodes?.join(", ") ?? nodeUrl} copy />
-          <DRow label="Wallets" value={String(status?.wallet_count ?? entries.length)} />
+          <DRow label={t("set.dUpstream")} value={status?.upstream_nodes?.join(", ") ?? nodeUrl} copy />
+          <DRow label={t("set.dWallets")} value={String(status?.wallet_count ?? entries.length)} />
           <DRow
-            label="In-flight transfers"
+            label={t("set.dInflight")}
             value={String(status?.in_flight_transfers ?? 0)}
             last
           />
         </div>
 
         {/* Danger */}
-        <Section label="Danger zone" />
+        <Section label={t("set.secDanger")} />
         <div
           className="card"
           style={{
@@ -319,19 +336,18 @@ export function Settings({
           }}
         >
           <div style={{ fontWeight: 600, color: "#f87171", marginBottom: 5 }}>
-            Reset wallet
+            {t("set.resetWallet")}
           </div>
           <div className="dim" style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 13 }}>
-            Erases this wallet from this device. Coins stay on-chain, but without a
-            backup you can't get back in.
+            {t("set.resetWalletBody")}
           </div>
           <button className="btn btn-danger btn-block" onClick={() => setResetOpen(true)}>
-            Reset wallet…
+            {t("set.resetWalletCta")}
           </button>
         </div>
 
         <div className="faint" style={{ textAlign: "center", fontSize: 11.5, padding: "18px 0 4px" }}>
-          exfer wallet · mobile
+          {t("set.footer")}
         </div>
       </div>
 
@@ -450,15 +466,21 @@ function DRow({
 // or colour introduced. `ok` undefined = unknown/checking.
 function StatusPill({
   ok,
-  online = "Online",
-  offline = "Offline",
+  online,
+  offline,
 }: {
   ok?: boolean;
   online?: string;
   offline?: string;
 }) {
+  const { t } = useT();
   const cls = ok === undefined ? "pill-muted" : ok ? "pill-success" : "pill-danger";
-  const text = ok === undefined ? "Checking…" : ok ? online : offline;
+  const text =
+    ok === undefined
+      ? t("set.checking")
+      : ok
+        ? (online ?? t("set.online"))
+        : (offline ?? t("set.offline"));
   return (
     <span className={"pill " + cls}>
       <span
