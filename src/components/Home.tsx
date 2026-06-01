@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "../lib/icons";
-import tokenLogo from "../assets/exfer-token.png";
+import tokenLogo from "../assets/exfer-mark.png";
 import { useWallet } from "../lib/wallet";
 import { useToast } from "../lib/toast";
 import { useBalanceMask, Masked } from "../lib/balance";
