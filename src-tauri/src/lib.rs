@@ -278,26 +278,31 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
     Ok(BootstrapStatus::NeedsPassword)
 }
 
-/// Fetch the EXFER spot market (daily klines) from the public OTC market,
-/// server-side — so the webview never makes the call itself (same rule as
-/// walletd) and the remote's missing CORS headers don't apply. Uses a
-/// SEPARATE webpki-roots TLS client (the walletd client is fingerprint-pinned
-/// with no CA roots, so it can't talk to a public host). Returns the raw JSON
-/// body; the frontend parses the latest close + 24h change. Read-only, no
-/// secrets — a failure just means the UI hides the price.
-#[tauri::command]
-async fn get_market_price() -> Result<String, String> {
+/// A reqwest client trusting the standard webpki CA roots, for the few
+/// outbound calls to PUBLIC hosts (price API, GitHub releases). Kept separate
+/// from the walletd client, which is fingerprint-pinned and has no CA roots so
+/// it can't talk to a public host. These calls run server-side (Rust) so the
+/// webview never makes them itself (same rule as walletd) and remote CORS
+/// headers don't apply.
+fn public_https_client() -> Result<reqwest::Client, String> {
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls = rustls::ClientConfig::builder()
         .with_root_certificates(roots)
         .with_no_client_auth();
-    let client = reqwest::ClientBuilder::new()
+    reqwest::ClientBuilder::new()
         .use_preconfigured_tls(tls)
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| format!("building http client: {e}"))?;
-    let resp = client
+        .map_err(|e| format!("building http client: {e}"))
+}
+
+/// Fetch the EXFER spot market (daily klines) from the public OTC market.
+/// Returns the raw JSON body; the frontend parses the latest close + 24h
+/// change. Read-only, no secrets — a failure just means the UI hides the price.
+#[tauri::command]
+async fn get_market_price() -> Result<String, String> {
+    let resp = public_https_client()?
         .get("https://archeotc.com/api/coins/klines?coinId=EXFER&interval=1d&limit=2")
         .send()
         .await
@@ -306,6 +311,25 @@ async fn get_market_price() -> Result<String, String> {
         return Err(format!("price endpoint returned {}", resp.status()));
     }
     resp.text().await.map_err(|e| format!("reading price body: {e}"))
+}
+
+/// Fetch the latest published GitHub release for the mobile wallet. Returns the
+/// raw JSON; the frontend reads `tag_name` + the `.apk` asset and compares it
+/// to the running version. GitHub's REST API requires a User-Agent header.
+/// Read-only — a failure just means the update check is skipped.
+#[tauri::command]
+async fn check_latest_release() -> Result<String, String> {
+    let resp = public_https_client()?
+        .get("https://api.github.com/repos/exfer-stack/exfer-walletd-mobile/releases/latest")
+        .header("User-Agent", "exfer-wallet")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("release request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("release endpoint returned {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| format!("reading release body: {e}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -379,6 +403,7 @@ pub fn run() {
             import_wallet_key,
             restore_from_mnemonic,
             get_market_price,
+            check_latest_release,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

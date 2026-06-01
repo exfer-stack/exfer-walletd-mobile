@@ -394,6 +394,20 @@ const EN = {
   "set.exported": "Exported",
   "set.exportedCsv": "addresses CSV downloaded",
   "set.exportedJson": "labels JSON downloaded",
+
+  // update checker
+  "set.secAbout": "About",
+  "upd.appVersion": "App version",
+  "upd.checking": "Checking for updates…",
+  "upd.upToDate": "You're on the latest version",
+  "upd.available": "Update available · v{v}",
+  "upd.availableSub": "Tap to download the latest version",
+  "upd.download": "Download update",
+  "upd.checkNow": "Check for updates",
+  "upd.error": "Couldn't check for updates",
+  "upd.toastTitle": "Update available",
+  "upd.toastBody": "v{v} is out — open Settings to update.",
+  "upd.linkCopied": "Download link copied",
 } as const;
 
 export type MsgKey = keyof typeof EN;
@@ -735,6 +749,19 @@ const ZH: Record<MsgKey, string> = {
   "set.exported": "已导出",
   "set.exportedCsv": "地址 CSV 已下载",
   "set.exportedJson": "标签 JSON 已下载",
+
+  "set.secAbout": "关于",
+  "upd.appVersion": "应用版本",
+  "upd.checking": "正在检查更新…",
+  "upd.upToDate": "已是最新版本",
+  "upd.available": "有新版本 · v{v}",
+  "upd.availableSub": "点击下载最新版本",
+  "upd.download": "下载更新",
+  "upd.checkNow": "检查更新",
+  "upd.error": "检查更新失败",
+  "upd.toastTitle": "发现新版本",
+  "upd.toastBody": "v{v} 已发布——到设置里更新。",
+  "upd.linkCopied": "下载链接已复制",
 };
 
 const DICT: Record<Lang, Record<MsgKey, string>> = { en: EN, zh: ZH };

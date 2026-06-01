@@ -18,6 +18,7 @@ import {
 } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
 import { useT, LANGS, type Lang } from "../lib/i18n";
+import { useUpdateCheck, openDownload, APP_VERSION } from "../lib/update";
 import { listLabels } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { biometricStatus } from "../lib/biometric";
@@ -63,6 +64,7 @@ export function Settings({
 }) {
   const toast = useToast();
   const { t } = useT();
+  const update = useUpdateCheck();
   const { balance, refresh } = useWallet();
   const entries = balance?.entries ?? [];
 
@@ -344,6 +346,53 @@ export function Settings({
           <button className="btn btn-danger btn-block" onClick={() => setResetOpen(true)}>
             {t("set.resetWalletCta")}
           </button>
+        </div>
+
+        {/* About / update */}
+        <Section label={t("set.secAbout")} />
+        <div className="list" style={{ marginBottom: 10 }}>
+          <div className="list-row" style={{ cursor: "default" }}>
+            <span style={iconBox}>
+              <Icon name="spark" size={20} />
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 15.5, fontWeight: 500 }}>
+                {t("upd.appVersion")}
+              </span>
+              <span
+                className="faint mono"
+                style={{ fontSize: 12.5 }}
+              >
+                v{APP_VERSION}
+                {update.state.status === "checking" && ` · ${t("upd.checking")}`}
+                {update.state.status === "current" && ` · ${t("upd.upToDate")}`}
+                {update.state.status === "error" && ` · ${t("upd.error")}`}
+                {update.state.status === "available" &&
+                  ` · ${t("upd.available", { v: update.state.release.version })}`}
+              </span>
+            </span>
+            {update.state.status === "available" ? (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  const r = update.state.status === "available" ? update.state.release : null;
+                  if (r && openDownload(r)) {
+                    toast.info(t("upd.linkCopied"), r.apkUrl || r.releaseUrl);
+                  }
+                }}
+              >
+                {t("upd.download")}
+              </button>
+            ) : (
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={update.state.status === "checking"}
+                onClick={update.recheck}
+              >
+                {update.state.status === "checking" ? <Spinner /> : t("upd.checkNow")}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="faint" style={{ textAlign: "center", fontSize: 11.5, padding: "18px 0 4px" }}>

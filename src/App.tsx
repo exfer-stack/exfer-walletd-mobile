@@ -2,7 +2,7 @@
 // full-screen sheet overlay router. Wraps the booted app in WalletProvider,
 // everything in ToastProvider.
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BootstrapStatus } from "./lib/types";
 import { bootstrapStatus } from "./lib/rpc";
 import { humanizeError } from "./lib/errors";
@@ -10,10 +10,11 @@ import { biometricStatus, biometricUnlock } from "./lib/biometric";
 import { biometricLockEnabled } from "./lib/biolock";
 import { devmock } from "./lib/devmock";
 import wordmark from "./assets/wordmark.png";
-import { ToastProvider, ToastHost } from "./lib/toast";
+import { ToastProvider, ToastHost, useToast } from "./lib/toast";
+import { checkForUpdate } from "./lib/update";
 import { WalletProvider } from "./lib/wallet";
 import { BalanceProvider } from "./lib/balance";
-import { I18nProvider, useT, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
+import { I18nProvider, useT, tStatic, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
 import {
   ACCENTS,
   isAccentKey,
@@ -66,6 +67,8 @@ export default function App() {
 }
 
 function Shell() {
+  const toast = useToast();
+  const updateNotified = useRef(false);
   const [theme, setThemeState] = useState<ThemeMode>(readTheme);
   const [accent, setAccentState] = useState<AccentKey>(readAccent);
   const [hideBalance, setHideState] = useState<boolean>(readHide);
@@ -176,6 +179,22 @@ function Shell() {
       }
     })();
   }, [walletReady]);
+
+  // Auto-check for a newer release once the wallet is ready, and nudge the
+  // user once per session if one's out (the full prompt + download lives in
+  // Settings → About). Cached for an hour, so this rarely hits the network.
+  useEffect(() => {
+    if (!walletReady || updateNotified.current) return;
+    void checkForUpdate(false).then((u) => {
+      if (u.status === "available" && !updateNotified.current) {
+        updateNotified.current = true;
+        toast.info(
+          tStatic("upd.toastTitle"),
+          tStatic("upd.toastBody", { v: u.release.version }),
+        );
+      }
+    });
+  }, [walletReady, toast]);
 
   const ac = ACCENTS[accent];
   const phoneStyle: CSSProperties = {
