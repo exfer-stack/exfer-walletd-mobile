@@ -6,6 +6,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
 </p>
 
+<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文（新手下载安装指南）</a></p>
+
 iOS and Android, one codebase. No account, no server to run, no browser
 extension. Set a password and you're in.
 
@@ -95,14 +97,14 @@ typed-confirmation wipe.
 Each release attaches an installable `.apk`.
 
 1. On your phone, open the **[latest release](https://github.com/exfer-stack/exfer-walletd-mobile/releases/latest)**.
-2. Download the `.apk` asset (e.g. `exfer-wallet_<version>_arm64.apk`).
+2. Download the `.apk` asset (e.g. `exfer-wallet_<version>_universal.apk`).
 3. Tap the file. Android will ask to allow installs from this source — enable it (**Settings → Apps → your browser → Install unknown apps**), then tap **Install**.
 4. Open **exfer wallet**, set a password, and you're in.
 
 Notes:
 
 - Early test builds are **debug-signed** so they install without a Play account. Android may warn it's from an unknown developer — expected for a sideloaded build. A Play Store listing follows once a release signing key is provisioned.
-- Builds target **arm64 (arm64-v8a)** — every phone since ~2017. Very old 32-bit devices aren't supported by the test APK.
+- The `.apk` is a **universal** build (bundles the common phone architectures), so it installs on essentially any modern Android device.
 - Minimum **Android 9 (API 28)**.
 
 ### iOS
