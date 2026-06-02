@@ -80,6 +80,16 @@ export function ImportPhraseModal({
   }, [phrase, valid]);
 
   const chosenAddress = preview ? preview[scheme].address : null;
+  // Exactly one candidate funded → no choice to make: show "found your wallet"
+  // and import it. null (both funded, both empty, or chain unreachable) → keep
+  // the picker so the user decides.
+  const fundedScheme: MnemonicScheme | null = preview
+    ? ((preview.standard.balance ?? 0) > 0) !== ((preview.legacy.balance ?? 0) > 0)
+      ? (preview.standard.balance ?? 0) > 0
+        ? "standard"
+        : "legacy"
+      : null
+    : null;
 
   async function go() {
     if (!valid) {
@@ -144,10 +154,12 @@ export function ImportPhraseModal({
         </Field>
 
         {valid && (previewing || preview || previewErr) && (
-          <Field label={t("imp.schemeTitle")}>
-            <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8 }}>
-              {t("imp.schemeHint")}
-            </div>
+          <Field label={preview && fundedScheme ? t("imp.foundTitle") : t("imp.schemeTitle")}>
+            {!fundedScheme && (
+              <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8 }}>
+                {t("imp.schemeHint")}
+              </div>
+            )}
             {previewing && (
               <div className="dim" style={{ fontSize: 13 }}>
                 <Spinner /> {t("imp.previewing")}
@@ -158,7 +170,26 @@ export function ImportPhraseModal({
                 {t("imp.previewFail")}
               </div>
             )}
-            {preview && (
+            {preview && fundedScheme && (
+              <div
+                style={{
+                  padding: "13px 14px",
+                  borderRadius: 12,
+                  border: "1px solid var(--accent)",
+                  background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                  display: "grid",
+                  gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 17, fontWeight: 700 }}>
+                  {formatBalanceCompact(preview[fundedScheme].balance ?? 0)}
+                </span>
+                <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                  {shortAddress(preview[fundedScheme].address)}
+                </span>
+              </div>
+            )}
+            {preview && !fundedScheme && (
               <div style={{ display: "grid", gap: 8 }}>
                 {(
                   [
@@ -217,7 +248,7 @@ export function ImportPhraseModal({
           />
         </Field>
 
-        {chosenAddress && (
+        {chosenAddress && !fundedScheme && (
           <div className="dim" style={{ fontSize: 12.5 }}>
             {t("imp.willImport")}{" "}
             <span className="mono">{shortAddress(chosenAddress)}</span>
