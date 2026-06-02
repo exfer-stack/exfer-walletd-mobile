@@ -50,8 +50,7 @@ export function MnemonicHelp({ size = 20 }: { size?: number }) {
           <div style={{ display: "grid", gap: 11, fontSize: 13.5, lineHeight: 1.65 }}>
             <p style={{ margin: 0 }}>{t("mn.help1")}</p>
             <p style={{ margin: 0 }}>{t("mn.help2")}</p>
-            <p style={{ margin: 0 }}>{t("mn.help3")}</p>
-            <p style={{ margin: 0 }}>{t("mn.help4")}</p>
+            <p style={{ margin: 0, fontWeight: 600, color: "var(--text)" }}>{t("mn.help3")}</p>
             <div className="banner banner-info" style={{ fontSize: 13, fontWeight: 600 }}>
               {t("mn.helpSafe")}
             </div>
