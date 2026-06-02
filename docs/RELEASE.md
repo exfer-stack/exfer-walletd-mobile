@@ -78,7 +78,9 @@ relevant testers. Publish the draft GitHub Release when ready.
 
 - App id (both platforms): `com.exfer.wallet`
 - Product name: `exfer-wallet`
-- iOS min: 14.0 · Android min: API 28 (Android 9)
+- iOS min: 13.0 · Android min: API 24 (Android 7.0) — the toolchain floor
+  (Tauri 2 + the biometric/scanner/notification/dialog plugins all bottom
+  out at iOS 13 / Android API 24)
 
 Note: on Android the keystore "remember passphrase" path currently falls
 back to app-private file storage (`src-tauri/src/secrets.rs`); moving it to

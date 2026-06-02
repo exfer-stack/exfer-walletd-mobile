@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  iOS Info.plist additions. Tauri 2 merges this file into the generated
+  gen/apple Info.plist on `tauri ios build`, so these survive the project
+  being regenerated in CI (gen/apple is gitignored).
+
+  Both keys are MANDATORY: iOS hard-crashes the app the moment it touches
+  the camera (QR scanner) or Face ID (biometric unlock) without a usage
+  string, and App Review rejects a build that lacks them.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>Scan a QR code to fill in a recipient address.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Unlock your wallet with Face ID.</string>
+</dict>
+</plist>
