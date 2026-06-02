@@ -1466,6 +1466,7 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
+ "bip39",
  "exfer-walletd",
  "hex",
  "keyring",

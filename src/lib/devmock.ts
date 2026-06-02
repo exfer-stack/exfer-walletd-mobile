@@ -239,6 +239,22 @@ export const devmock = {
     return s.bootstrap;
   },
 
+  // The standard/legacy mnemonic derivation lives in the Rust command
+  // (BIP39 + SHA-256 + ed25519); there's no Rust in browser dev, so these
+  // are device-only. The UI degrades to a note when preview throws.
+  async preview_mnemonic_import(
+    _phrase: string,
+  ): Promise<{ standard: string; legacy: string }> {
+    throw new Error("mnemonic preview is only available in the installed app");
+  },
+  async import_mnemonic_scheme(
+    _phrase: string,
+    _scheme: "standard" | "legacy",
+    _label?: string,
+  ): Promise<{ address: string }> {
+    throw new Error("mnemonic import is only available in the installed app");
+  },
+
   async get_node_rpc(): Promise<string> {
     if (useRealWalletd()) {
       const st = (await realRpc("get_status", {})) as {

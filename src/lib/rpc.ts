@@ -41,6 +41,28 @@ export function restoreFromMnemonic(
   return invoke<BootstrapStatus>("restore_from_mnemonic", { phrase, password });
 }
 
+export type MnemonicScheme = "standard" | "legacy";
+
+/** The two addresses a 24-word phrase maps to: `standard` (BIP39, matches
+ *  exfer.dev / the Flutter wallet) and `legacy` (raw-key words). Pure
+ *  derivation — imports nothing. */
+export function previewMnemonicImport(
+  phrase: string,
+): Promise<{ standard: string; legacy: string }> {
+  if (devmock.isActive()) return devmock.preview_mnemonic_import(phrase);
+  return invoke("preview_mnemonic_import", { phrase });
+}
+
+/** Import a 24-word phrase under the chosen scheme. Returns the address. */
+export function importMnemonicScheme(
+  phrase: string,
+  scheme: MnemonicScheme,
+  label?: string,
+): Promise<{ address: string }> {
+  if (devmock.isActive()) return devmock.import_mnemonic_scheme(phrase, scheme, label);
+  return invoke("import_mnemonic_scheme", { phrase, scheme, label: label ?? null });
+}
+
 export function getNodeRpc(): Promise<string> {
   if (devmock.isActive()) return devmock.get_node_rpc();
   return invoke<string>("get_node_rpc");

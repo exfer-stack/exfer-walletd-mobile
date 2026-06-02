@@ -6,6 +6,7 @@
 
 mod error;
 mod export_key;
+mod mnemonic;
 mod rpc_client;
 mod secrets;
 mod walletd_supervisor;
@@ -81,6 +82,45 @@ async fn rpc(
     };
     let params = params.unwrap_or(Value::Object(Default::default()));
     rpc_client::forward_rpc(&client, &conn, &method, params)
+        .await
+        .map_err(|e| e.to_user_string())
+}
+
+/// Preview the two addresses a 24-word phrase would import to: the standard
+/// BIP39 scheme (exfer.dev / Flutter wallet) and the legacy raw-key scheme.
+/// Pure derivation — touches no wallet state, mints no key. Lets the UI show
+/// "this phrase maps to <addr>" for each scheme before the user commits.
+#[tauri::command]
+async fn preview_mnemonic_import(phrase: String) -> Result<Value, String> {
+    let (standard, legacy) = mnemonic::preview(&phrase)?;
+    Ok(serde_json::json!({ "standard": standard, "legacy": legacy }))
+}
+
+/// Import a 24-word phrase under the chosen scheme (`"standard"` | `"legacy"`).
+/// We derive the raw ed25519 secret on the Rust side and hand it to walletd's
+/// `import_private_key`, so the standard BIP39 wallets (exfer.dev / Flutter)
+/// land on the SAME address here — something `import_mnemonic` (legacy-only)
+/// could never do. Returns walletd's response (`{ address, imported }`).
+#[tauri::command]
+async fn import_mnemonic_scheme(
+    ctx: State<'_, AppCtx>,
+    phrase: String,
+    scheme: String,
+    label: Option<String>,
+) -> Result<Value, String> {
+    let scheme = mnemonic::Scheme::parse(&scheme)?;
+    let secret = mnemonic::derive_secret(&phrase, scheme)?;
+    let secret_hex = hex::encode(secret);
+
+    let (client, conn) = {
+        let inner = ctx.inner.lock().await;
+        match (inner.client.clone(), inner.conn.clone()) {
+            (Some(c), Some(k)) => (c, k),
+            _ => return Err("walletd not ready".into()),
+        }
+    };
+    let params = serde_json::json!({ "secret_hex": secret_hex, "label": label });
+    rpc_client::forward_rpc(&client, &conn, "import_private_key", params)
         .await
         .map_err(|e| e.to_user_string())
 }
@@ -415,6 +455,8 @@ pub fn run() {
             bootstrap_status,
             submit_password,
             rpc,
+            preview_mnemonic_import,
+            import_mnemonic_scheme,
             get_node_rpc,
             set_node_rpc,
             get_indexer_config,
