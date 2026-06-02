@@ -344,6 +344,12 @@ body {
 .sheet-grip { width: 38px; height: 4px; border-radius: 999px; background: var(--border); margin: 10px auto 2px; flex: 0 0 auto; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 12px; flex: 0 0 auto; }
 .sheet-body { overflow-y: auto; scrollbar-width: none; padding: 0 20px 26px; }
+/* When the body is the last child (no .sheet-foot), its own buttons sit at
+   the bottom edge — clear the system nav bar so they aren't covered (e.g. the
+   address sheet's 助记词 / 导出私钥 buttons). On gesture-nav phones the inset
+   is 0, so this stays exactly 26px — no extra gap. Footer sheets already clear
+   it via .sheet-foot, so this is scoped to the no-footer case only. */
+.sheet-body:last-child { padding-bottom: calc(26px + env(safe-area-inset-bottom)); }
 .sheet-body::-webkit-scrollbar { width: 0; }
 .sheet-foot { flex: 0 0 auto; padding: 14px 20px calc(20px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--bg); }
 
