@@ -538,7 +538,11 @@ pub async fn restore(
     // Persist the password + boot walletd against the restored seed.
     // Boot WITH the app handle (when present) so the SSE push bridge spawns
     // for the restored wallet, not just on the next launch.
-    crate::secrets::set_passphrase(KEYRING_SERVICE, password).map_err(AppError::Other)?;
+    // Best-effort: the keychain only powers silent unlock — a write failure
+    // (some Huawei/HarmonyOS ROMs) must not abort an otherwise-good restore.
+    if let Err(e) = crate::secrets::set_passphrase(KEYRING_SERVICE, &datadir, password) {
+        tracing::warn!(error = %e, "could not persist passphrase; silent unlock disabled");
+    }
     let status = start_with_app(ctx, password, app).await;
     if !matches!(status, BootstrapStatus::Ready { .. }) {
         return Ok(status);
@@ -568,7 +572,8 @@ pub async fn restore(
 /// passphrase is fetched from the keychain (no UI re-prompt) since the
 /// user already authenticated this session.
 pub async fn restart(ctx: &AppCtx) -> Result<BootstrapStatus, AppError> {
-    let passphrase = crate::secrets::get_passphrase(KEYRING_SERVICE)?
+    let datadir = { ctx.inner.lock().await.datadir.clone() };
+    let passphrase = crate::secrets::get_passphrase(KEYRING_SERVICE, &datadir)?
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("no passphrase in keychain")))?;
     stop(ctx).await;
     Ok(start(ctx, &passphrase).await)

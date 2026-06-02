@@ -22,12 +22,13 @@ mod imp {
     use super::ACCOUNT;
     use anyhow::Context;
     use keyring::Entry;
+    use std::path::Path;
 
     fn entry(service: &str) -> anyhow::Result<Entry> {
         Entry::new(service, ACCOUNT).context("opening keyring entry")
     }
 
-    pub fn get_passphrase(service: &str) -> anyhow::Result<Option<String>> {
+    pub fn get_passphrase(service: &str, _data_dir: &Path) -> anyhow::Result<Option<String>> {
         match entry(service)?.get_password() {
             Ok(p) => Ok(Some(p)),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -35,13 +36,13 @@ mod imp {
         }
     }
 
-    pub fn set_passphrase(service: &str, value: &str) -> anyhow::Result<()> {
+    pub fn set_passphrase(service: &str, _data_dir: &Path, value: &str) -> anyhow::Result<()> {
         entry(service)?
             .set_password(value)
             .context("writing keyring entry")
     }
 
-    pub fn delete_passphrase(service: &str) -> anyhow::Result<()> {
+    pub fn delete_passphrase(service: &str, _data_dir: &Path) -> anyhow::Result<()> {
         match entry(service)?.delete_credential() {
             Ok(()) => Ok(()),
             Err(keyring::Error::NoEntry) => Ok(()),
@@ -54,22 +55,19 @@ mod imp {
 mod imp {
     //! Android fallback: a 0600 file inside the app-private data dir.
     //! `service` is ignored (the dir is already per-install). The path is
-    //! resolved relative to the process data dir Tauri hands walletd.
+    //! resolved from the data dir Tauri hands the app — NOT from `$HOME`,
+    //! which is unset or non-writable on some OEM ROMs (Huawei EMUI /
+    //! HarmonyOS), where the old `$HOME`-based path made `set_passphrase`
+    //! fail and blocked wallet creation entirely.
     use anyhow::Context;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    fn path() -> PathBuf {
-        // App-private files dir; Tauri/Android guarantee this is the
-        // app sandbox. Falls back to a temp path only if HOME is unset
-        // (never in practice on Android).
-        let base = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
-        base.join(".exfer-keystore-passphrase")
+    fn path(data_dir: &Path) -> PathBuf {
+        data_dir.join(".exfer-keystore-passphrase")
     }
 
-    pub fn get_passphrase(_service: &str) -> anyhow::Result<Option<String>> {
-        let p = path();
+    pub fn get_passphrase(_service: &str, data_dir: &Path) -> anyhow::Result<Option<String>> {
+        let p = path(data_dir);
         match std::fs::read_to_string(&p) {
             Ok(s) => Ok(Some(s)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -77,8 +75,12 @@ mod imp {
         }
     }
 
-    pub fn set_passphrase(_service: &str, value: &str) -> anyhow::Result<()> {
-        let p = path();
+    pub fn set_passphrase(_service: &str, data_dir: &Path, value: &str) -> anyhow::Result<()> {
+        // The data dir is created at startup, but be defensive: a missing
+        // parent here would otherwise surface as a confusing "password"
+        // error through the frontend humanizer.
+        let _ = std::fs::create_dir_all(data_dir);
+        let p = path(data_dir);
         std::fs::write(&p, value).context("writing passphrase file")?;
         #[cfg(unix)]
         {
@@ -88,8 +90,8 @@ mod imp {
         Ok(())
     }
 
-    pub fn delete_passphrase(_service: &str) -> anyhow::Result<()> {
-        match std::fs::remove_file(path()) {
+    pub fn delete_passphrase(_service: &str, data_dir: &Path) -> anyhow::Result<()> {
+        match std::fs::remove_file(path(data_dir)) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(anyhow::Error::new(e).context("deleting passphrase file")),
@@ -97,18 +99,21 @@ mod imp {
     }
 }
 
+use std::path::Path;
+
 /// Fetch the saved passphrase, returning `Ok(None)` if none has been
-/// stored yet on this device.
-pub fn get_passphrase(service: &str) -> anyhow::Result<Option<String>> {
-    imp::get_passphrase(service)
+/// stored yet on this device. `data_dir` locates the per-install file on
+/// Android (ignored on platforms with a real OS keyring).
+pub fn get_passphrase(service: &str, data_dir: &Path) -> anyhow::Result<Option<String>> {
+    imp::get_passphrase(service, data_dir)
 }
 
 /// Persist the passphrase. Overwrites any prior value.
-pub fn set_passphrase(service: &str, value: &str) -> anyhow::Result<()> {
-    imp::set_passphrase(service, value)
+pub fn set_passphrase(service: &str, data_dir: &Path, value: &str) -> anyhow::Result<()> {
+    imp::set_passphrase(service, data_dir, value)
 }
 
 /// Remove the stored passphrase. A missing entry is success.
-pub fn delete_passphrase(service: &str) -> anyhow::Result<()> {
-    imp::delete_passphrase(service)
+pub fn delete_passphrase(service: &str, data_dir: &Path) -> anyhow::Result<()> {
+    imp::delete_passphrase(service, data_dir)
 }

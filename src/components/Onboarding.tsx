@@ -59,7 +59,14 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
     if (pw !== confirm) return setErr(t("ob.errMismatch"));
     setBusy(true);
     try {
-      await submitPassword(pw);
+      const st = await submitPassword(pw);
+      // Don't claim success if walletd didn't actually come up. The user is
+      // *setting* a new password here, so a start failure is never "incorrect
+      // password" — surface the real reason and keep them on the form.
+      if (st.status === "failed") {
+        setErr(humanizeError(st.message));
+        return;
+      }
       toast.success(t("ob.toastReady"), t("ob.toastReadyBody"));
       onReady();
     } catch (e) {

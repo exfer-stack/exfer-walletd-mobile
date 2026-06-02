@@ -32,7 +32,15 @@ async fn submit_password(
     if password.is_empty() {
         return Err("password must not be empty".into());
     }
-    secrets::set_passphrase(KEYRING_SERVICE, &password).map_err(|e| e.to_string())?;
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    // Persisting to the keychain only enables silent unlock on relaunch —
+    // the seed is always Argon2id-sealed with this passphrase regardless.
+    // A keychain write failure (seen on some Huawei/HarmonyOS ROMs) must
+    // NOT block wallet creation; otherwise the frontend humanizer turns the
+    // "writing passphrase file" error into a misleading "incorrect password".
+    if let Err(e) = secrets::set_passphrase(KEYRING_SERVICE, &datadir, &password) {
+        tracing::warn!(error = %e, "could not persist passphrase; silent unlock disabled");
+    }
     Ok(start_with_app(&ctx, &password, Some(app)).await)
 }
 
@@ -255,7 +263,7 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
     std::fs::create_dir_all(&datadir).map_err(|e| format!("recreating datadir: {e}"))?;
 
     // 3. Clear the keychain passphrase (best-effort; missing entry is fine).
-    let _ = secrets::delete_passphrase(KEYRING_SERVICE);
+    let _ = secrets::delete_passphrase(KEYRING_SERVICE, &datadir);
 
     // 4. Reset in-memory state back to first-run.
     {
@@ -355,7 +363,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("resolving app_data_dir");
             std::fs::create_dir_all(&datadir).expect("creating app_data_dir");
-            let ctx = AppCtx::new(datadir);
+            let ctx = AppCtx::new(datadir.clone());
             app.manage(ctx.clone());
 
             // Try silent passphrase recovery from the OS keychain. If
@@ -364,8 +372,9 @@ pub fn run() {
             // bootstrap_status poll and show the prompt.
             let ctx_for_spawn = ctx.clone();
             let app_for_spawn = app.handle().clone();
+            let datadir_for_spawn = datadir.clone();
             tauri::async_runtime::spawn(async move {
-                match secrets::get_passphrase(KEYRING_SERVICE) {
+                match secrets::get_passphrase(KEYRING_SERVICE, &datadir_for_spawn) {
                     Ok(Some(passphrase)) => {
                         let _ = start_with_app(&ctx_for_spawn, &passphrase, Some(app_for_spawn))
                             .await;
