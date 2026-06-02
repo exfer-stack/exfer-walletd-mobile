@@ -255,12 +255,34 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
     // 1. Stop the running daemon (releases file handles on the datadir).
     stop(&ctx).await;
 
-    // 2. Delete the datadir contents.
+    // 2. Empty the datadir's *contents* — do NOT remove the datadir node
+    //    itself. On Android the app can't unlink its own app_data_dir
+    //    (its parent is owned by the system), so `remove_dir_all` on the
+    //    root failed with EACCES — surfacing as "没有权限" on wipe. Deleting
+    //    each entry achieves the same wipe and leaves the root in place.
     let datadir = ctx.inner.lock().await.datadir.clone();
-    if datadir.exists() {
-        std::fs::remove_dir_all(&datadir).map_err(|e| format!("deleting datadir: {e}"))?;
-    }
     std::fs::create_dir_all(&datadir).map_err(|e| format!("recreating datadir: {e}"))?;
+    let mut failures = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&datadir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let r = if is_dir {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+            if let Err(e) = r {
+                tracing::warn!(path = %p.display(), error = %e, "reset: could not remove entry");
+                failures.push(format!("{}: {e}", p.display()));
+            }
+        }
+    }
+    // Only fail the whole wipe if something we actually needed gone is still
+    // there — a stray un-removable temp file shouldn't block a reset.
+    if !failures.is_empty() {
+        return Err(format!("could not fully wipe wallet data: {}", failures.join("; ")));
+    }
 
     // 3. Clear the keychain passphrase (best-effort; missing entry is fine).
     let _ = secrets::delete_passphrase(KEYRING_SERVICE, &datadir);

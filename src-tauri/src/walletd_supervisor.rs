@@ -149,7 +149,9 @@ pub fn write_desktop_config(datadir: &std::path::Path, cfg: &DesktopConfig) -> a
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+        // Best-effort: a filesystem that rejects chmod must not abort the
+        // config write (the datadir is already app-private).
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
     }
     std::fs::rename(&tmp, &path)?;
     Ok(())

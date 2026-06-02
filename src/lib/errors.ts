@@ -51,6 +51,12 @@ const PATTERNS: { test: RegExp; key: MsgKey }[] = [
     key: "err.network",
   },
   {
+    // Storage/OS permission failures (e.g. a wipe or backup the ROM blocks).
+    // Matches English and the localized strerror Chinese ROMs surface.
+    test: /permission denied|operation not permitted|access is denied|os error 13|os error 1\b|权限|拒绝访问|不允许/i,
+    key: "err.permission",
+  },
+  {
     test: /already (known|in mempool|exists)|duplicate|nonce/i,
     key: "err.duplicate",
   },
