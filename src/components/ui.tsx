@@ -274,7 +274,10 @@ export function Modal({
           zIndex: 71,
           display: "grid",
           placeItems: "center",
-          padding: 20,
+          // Clear the status bar + nav bar so a tall modal never tucks under
+          // them; the card is capped to this padded area and scrolls inside.
+          padding:
+            "calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))",
           pointerEvents: "none",
         }}
       >
@@ -283,12 +286,18 @@ export function Modal({
           style={{
             width: "100%",
             maxWidth: 360,
+            // Never exceed the padded area — tall content (e.g. the 24-word
+            // recovery phrase) scrolls in the body instead of overflowing the
+            // screen top/bottom and clipping the title.
+            maxHeight: "100%",
+            display: "flex",
+            flexDirection: "column",
             pointerEvents: "auto",
             overflow: "hidden",
             background: "var(--elevated)",
           }}
         >
-          <div style={{ padding: "18px 18px 0" }}>
+          <div style={{ padding: "18px 18px 0", flex: "0 0 auto" }}>
             <div className="h-row" style={{ marginBottom: 4 }}>
               <div
                 className="title-lg"
@@ -301,9 +310,11 @@ export function Modal({
               </button>
             </div>
           </div>
-          <div style={{ padding: "8px 18px 18px" }}>{children}</div>
+          <div style={{ padding: "8px 18px 18px", overflowY: "auto", flex: "1 1 auto" }}>
+            {children}
+          </div>
           {footer && (
-            <div style={{ padding: "0 18px 18px", display: "flex", gap: 10 }}>
+            <div style={{ padding: "0 18px 18px", flex: "0 0 auto", display: "flex", gap: 10 }}>
               {footer}
             </div>
           )}
