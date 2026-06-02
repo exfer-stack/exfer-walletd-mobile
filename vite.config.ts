@@ -31,6 +31,16 @@ export default defineConfig(async ({ mode }) => {
       __APP_VERSION__: JSON.stringify(APP_VERSION),
     },
 
+    // Down-level modern syntax (optional chaining, nullish coalescing, etc.)
+    // so the bundle parses on the older WebViews shipped by Android 7–8 and
+    // non-GMS ROMs (Huawei/HarmonyOS), where System WebView may be stale.
+    // We use no runtime-only modern APIs (verified), so syntax transpilation
+    // is enough — no need for the heavier @vitejs/plugin-legacy polyfills.
+    // Floor matches the Android 7.0 (API 24) minSdk.
+    build: {
+      target: ["es2019", "chrome70", "safari12"],
+    },
+
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
     //
     // 1. prevent Vite from obscuring rust errors
