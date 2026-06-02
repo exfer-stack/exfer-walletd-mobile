@@ -121,6 +121,7 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
   if (
     method === "generate_address" ||
     method === "generate_independent_address" ||
+    method === "generate_standard_address" ||
     method === "import_private_key" ||
     method === "import_mnemonic" ||
     method === "abandon_transfer"
@@ -259,27 +260,6 @@ export const devmock = {
   ): Promise<{ address: string }> {
     throw new Error("mnemonic import is only available in the installed app");
   },
-  async generate_standard_address(_label?: string): Promise<{ address: string }> {
-    const s = loadState();
-    const address = fakeHex(`std-${s.addresses.length}-${Date.now()}`, 64);
-    s.addresses.push({
-      address,
-      index: s.addresses.length,
-      pubkey: fakeHex(`pk-${address.slice(0, 8)}`, 64),
-      balance: 0,
-      utxoCount: 0,
-    });
-    saveState(s);
-    return { address };
-  },
-  async reveal_mnemonic(
-    address: string,
-    passphrase: string,
-  ): Promise<{ mnemonic: string[]; standard: boolean }> {
-    if (passphrase.length < 4) throw new Error("keystore locked: wrong passphrase");
-    return { mnemonic: mockMnemonic(address), standard: true };
-  },
-
   async get_node_rpc(): Promise<string> {
     if (useRealWalletd()) {
       const st = (await realRpc("get_status", {})) as {
@@ -476,6 +456,23 @@ export const devmock = {
           pubkey,
           balance,
           utxoCount: balance > 0 ? 1 : 0,
+          imported: true,
+        });
+        saveState(s);
+        return { address, pubkey, imported: true };
+      }
+
+      case "generate_standard_address": {
+        // Standard BIP39 address (walletd v1.12+). Dev mock: a fresh fake key.
+        const n = s.addresses.length;
+        const address = fakeHex(`std-${n}-${Date.now()}`, 64);
+        const pubkey = fakeHex(`stdpk-${n}`, 64);
+        s.addresses.push({
+          address,
+          index: n,
+          pubkey,
+          balance: 0,
+          utxoCount: 0,
           imported: true,
         });
         saveState(s);

@@ -87,31 +87,6 @@ pub fn preview(phrase: &str) -> Result<(String, String), String> {
     Ok((standard, legacy))
 }
 
-/// Generate a fresh standard wallet. Returns the 24-word phrase, its 32-byte
-/// BIP-39 entropy (what we seal so the phrase is revealable later), the derived
-/// ed25519 secret (what gets imported), and the address.
-pub fn generate_standard() -> Result<(String, [u8; 32], [u8; 32], String), String> {
-    let m = bip39::Mnemonic::generate_in(bip39::Language::English, 24)
-        .map_err(|e| format!("mnemonic generation failed: {e}"))?;
-    let phrase = m.words().collect::<Vec<&str>>().join(" ");
-    let ent = m.to_entropy();
-    if ent.len() != 32 {
-        return Err("expected 32-byte entropy".to_string());
-    }
-    let mut entropy = [0u8; 32];
-    entropy.copy_from_slice(&ent);
-    let secret = derive_secret(&phrase, Scheme::Standard)?;
-    let address = address_for_secret(&secret);
-    Ok((phrase, entropy, secret, address))
-}
-
-/// Reconstruct the 24-word phrase from its stored 32-byte entropy.
-pub fn phrase_from_entropy(entropy: &[u8; 32]) -> Result<Vec<String>, String> {
-    let m = bip39::Mnemonic::from_entropy(entropy)
-        .map_err(|e| format!("mnemonic from entropy: {e}"))?;
-    Ok(m.words().map(|w| w.to_string()).collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,14 +122,4 @@ mod tests {
         assert!(derive_secret(&twelve, Scheme::Standard).is_err());
     }
 
-    #[test]
-    fn generate_is_standard_and_entropy_round_trips() {
-        let (phrase, entropy, secret, address) = generate_standard().unwrap();
-        // The address must be the STANDARD derivation of its own phrase, so it
-        // matches what an external standard wallet computes for that phrase.
-        assert_eq!(secret, derive_secret(&phrase, Scheme::Standard).unwrap());
-        assert_eq!(address, address_for_secret(&secret));
-        // The sealed entropy reconstructs the exact phrase (what reveal does).
-        assert_eq!(phrase_from_entropy(&entropy).unwrap().join(" "), phrase);
-    }
 }

@@ -107,12 +107,6 @@ pub struct Inner {
     pub conn: Option<Arc<ConnectionInfo>>,
     /// Cached pinned reqwest client. Re-built when `handle` rotates.
     pub client: Option<reqwest::Client>,
-    /// The unlock passphrase, kept in process memory while the wallet is
-    /// open. walletd already holds this same secret in-process (to seal new
-    /// keys), so this is no extra exposure; we need it to seal the standard
-    /// BIP-39 mnemonic of each newly-generated address (so it can be revealed
-    /// later). Cleared on stop/reset.
-    pub passphrase: Option<zeroize::Zeroizing<String>>,
 }
 
 #[derive(Clone)]
@@ -129,7 +123,6 @@ impl AppCtx {
                 handle: None,
                 conn: None,
                 client: None,
-                passphrase: None,
             })),
         }
     }
@@ -373,9 +366,6 @@ pub async fn start_with_app(
     inner.handle = Some(handle);
     inner.conn = Some(conn);
     inner.client = Some(client);
-    // Keep the passphrase while open so new addresses can seal their standard
-    // mnemonic (see `generate_standard_address`).
-    inner.passphrase = Some(zeroize::Zeroizing::new(passphrase.to_string()));
     status
 }
 
@@ -546,7 +536,6 @@ pub async fn stop(ctx: &AppCtx) {
     }
     inner.conn = None;
     inner.client = None;
-    inner.passphrase = None;
 }
 
 /// Restore a wallet from a 24-word recovery phrase into a clean datadir,

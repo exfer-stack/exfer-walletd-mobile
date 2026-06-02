@@ -13,7 +13,6 @@ mod walletd_supervisor;
 
 use serde_json::Value;
 use tauri::{Manager, State};
-use zeroize::Zeroize;
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
@@ -145,100 +144,6 @@ async fn import_mnemonic_scheme(
     rpc_client::forward_rpc(&client, &conn, "import_private_key", params)
         .await
         .map_err(|e| e.to_user_string())
-}
-
-/// Directory holding each standard address's sealed mnemonic (EXFK of the
-/// 24-word phrase's entropy), so the phrase can be revealed later.
-fn mnemonic_dir(datadir: &std::path::Path) -> std::path::PathBuf {
-    datadir.join("mnemonics")
-}
-
-/// Create a NEW address using the standard BIP-39 scheme (matches exfer.dev /
-/// the Exfer app), and seal its mnemonic so it can be revealed later. Replaces
-/// the legacy `generate_independent_address` (random raw key) for new wallets;
-/// existing/imported addresses are untouched and still work.
-#[tauri::command]
-async fn generate_standard_address(
-    ctx: State<'_, AppCtx>,
-    label: Option<String>,
-) -> Result<Value, String> {
-    let (passphrase, datadir, client, conn) = {
-        let inner = ctx.inner.lock().await;
-        let pass = inner
-            .passphrase
-            .clone()
-            .ok_or_else(|| "wallet is locked".to_string())?;
-        match (inner.client.clone(), inner.conn.clone()) {
-            (Some(c), Some(k)) => (pass, inner.datadir.clone(), c, k),
-            _ => return Err("walletd not ready".into()),
-        }
-    };
-
-    let (_phrase, mut entropy, mut secret, _addr_preview) = mnemonic::generate_standard()?;
-
-    // Import the derived key into walletd.
-    let params = serde_json::json!({ "secret_hex": hex::encode(secret), "label": label });
-    secret.zeroize();
-    let result = rpc_client::forward_rpc(&client, &conn, "import_private_key", params)
-        .await
-        .map_err(|e| e.to_user_string())?;
-    let address = result
-        .get("address")
-        .and_then(|v| v.as_str())
-        .ok_or("walletd response missing address")?
-        .to_ascii_lowercase();
-
-    // Seal the mnemonic entropy next to it (Argon2id+AES-GCM via the EXFK
-    // format) so reveal can show the standard phrase. If this write fails the
-    // address still works; reveal would just fall back to the legacy encoding.
-    let sealed = export_key::build_exfk(&entropy, passphrase.as_bytes());
-    entropy.zeroize();
-    match sealed {
-        Ok(blob) => {
-            let dir = mnemonic_dir(&datadir);
-            let _ = std::fs::create_dir_all(&dir);
-            if let Err(e) = std::fs::write(dir.join(format!("{address}.key")), &blob) {
-                tracing::warn!(error = %e, "could not store new address mnemonic");
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, "could not seal new address mnemonic"),
-    }
-    Ok(result)
-}
-
-/// Reveal an address's recovery phrase. For a standard address we unseal the
-/// stored 24-word phrase (re-importable anywhere as standard → same address).
-/// For legacy / imported addresses there's no stored phrase, so we fall back to
-/// walletd's `reveal_address_mnemonic` (the raw-key encoding). `standard` tells
-/// the UI which it is.
-#[tauri::command]
-async fn reveal_mnemonic(
-    ctx: State<'_, AppCtx>,
-    address: String,
-    passphrase: String,
-) -> Result<Value, String> {
-    let (datadir, client, conn) = {
-        let inner = ctx.inner.lock().await;
-        match (inner.client.clone(), inner.conn.clone()) {
-            (Some(c), Some(k)) => (inner.datadir.clone(), c, k),
-            _ => return Err("walletd not ready".into()),
-        }
-    };
-    let address = address.to_ascii_lowercase();
-    let path = mnemonic_dir(&datadir).join(format!("{address}.key"));
-    if let Ok(blob) = std::fs::read(&path) {
-        // Standard address — wrong password fails the AES-GCM auth here.
-        let entropy = export_key::parse_exfk(&blob, passphrase.as_bytes())?;
-        let words = mnemonic::phrase_from_entropy(&entropy)?;
-        return Ok(serde_json::json!({ "mnemonic": words, "standard": true }));
-    }
-    // Legacy / imported — defer to walletd's raw-key encoding.
-    let params = serde_json::json!({ "address": address, "passphrase": passphrase });
-    let res = rpc_client::forward_rpc(&client, &conn, "reveal_address_mnemonic", params)
-        .await
-        .map_err(|e| e.to_user_string())?;
-    let words = res.get("mnemonic").cloned().unwrap_or(Value::Null);
-    Ok(serde_json::json!({ "mnemonic": words, "standard": false }))
 }
 
 /// Build a single address's key as an official Exfer `wallet.key`
@@ -475,7 +380,6 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
         inner.handle = None;
         inner.conn = None;
         inner.client = None;
-        inner.passphrase = None;
     }
     Ok(BootstrapStatus::NeedsPassword)
 }
@@ -610,8 +514,6 @@ pub fn run() {
             rpc,
             preview_mnemonic_import,
             import_mnemonic_scheme,
-            generate_standard_address,
-            reveal_mnemonic,
             get_node_rpc,
             set_node_rpc,
             get_indexer_config,

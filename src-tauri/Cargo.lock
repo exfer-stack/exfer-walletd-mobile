@@ -1421,8 +1421,8 @@ dependencies = [
 
 [[package]]
 name = "exfer-walletd"
-version = "1.11.2"
-source = "git+https://github.com/exfer-stack/exfer-walletd?tag=v1.11.2#21c3fe1c561dfd3382ec16c7a109a64eccfa7b25"
+version = "1.12.0"
+source = "git+https://github.com/exfer-stack/exfer-walletd?tag=v1.12.0#92a77c1ff1f501ef3ec2fbcf2c2a2ea26f8dbc36"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1490,7 +1490,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-roots 0.26.11",
- "zeroize",
 ]
 
 [[package]]
