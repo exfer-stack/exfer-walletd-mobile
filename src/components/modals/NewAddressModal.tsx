@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Modal, Field, Spinner } from "../ui";
 import { Icon } from "../../lib/icons";
 import { useToast } from "../../lib/toast";
-import { rpc } from "../../lib/rpc";
+import { generateStandardAddress } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { setLabel, shortAddress } from "../../lib/labels";
@@ -28,7 +28,7 @@ export function NewAddressModal({
   async function create() {
     setBusy(true);
     try {
-      const res = await rpc<{ address: string }>("generate_independent_address");
+      const res = await generateStandardAddress(name.trim() || undefined);
       const label = name.trim();
       if (label) setLabel(res.address, label);
       await onCreated();

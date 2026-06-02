@@ -55,7 +55,9 @@ hex                = "0.4"
 # Mnemonic import: derive the standard BIP39 (exfer.dev / Flutter wallet)
 # and legacy (raw-entropy) secrets so the same 24 words can restore the same
 # address as those wallets. Same pin walletd uses.
-bip39              = "2.2"
+bip39              = { version = "2.2", features = ["rand"] }
+# Zero the retained unlock passphrase + decrypted mnemonics from memory.
+zeroize            = "1"
 
 serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"

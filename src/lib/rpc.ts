@@ -70,6 +70,23 @@ export function importMnemonicScheme(
   return invoke("import_mnemonic_scheme", { phrase, scheme, label: label ?? null });
 }
 
+/** Create a new address using the standard BIP39 scheme (unifies with other
+ *  Exfer wallets) and seal its mnemonic so it can be revealed later. */
+export function generateStandardAddress(label?: string): Promise<{ address: string }> {
+  if (devmock.isActive()) return devmock.generate_standard_address(label);
+  return invoke("generate_standard_address", { label: label ?? null });
+}
+
+/** Reveal an address's recovery phrase. `standard` is true for the modern
+ *  scheme (re-importable as standard) and false for legacy/imported keys. */
+export function revealMnemonic(
+  address: string,
+  passphrase: string,
+): Promise<{ mnemonic: string[]; standard: boolean }> {
+  if (devmock.isActive()) return devmock.reveal_mnemonic(address, passphrase);
+  return invoke("reveal_mnemonic", { address, passphrase });
+}
+
 export function getNodeRpc(): Promise<string> {
   if (devmock.isActive()) return devmock.get_node_rpc();
   return invoke<string>("get_node_rpc");

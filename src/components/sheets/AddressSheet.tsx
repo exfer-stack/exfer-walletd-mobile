@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
-import { rpc, exportWalletKey, formatBalanceCompact } from "../../lib/rpc";
+import { rpc, exportWalletKey, formatBalanceCompact, revealMnemonic } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
 import { shortAddress } from "../../lib/labels";
 import { isHidden, hide, unhide } from "../../lib/hidden";
@@ -258,10 +258,7 @@ function RecoveryPhraseModal({
     }
     setBusy(true);
     try {
-      const res = await rpc<{ mnemonic: string[] }>("reveal_address_mnemonic", {
-        address,
-        passphrase: pw,
-      });
+      const res = await revealMnemonic(address, pw);
       setWords(res.mnemonic);
     } catch (e) {
       toast.error(t("adr.rpFail"), humanizeError(e));

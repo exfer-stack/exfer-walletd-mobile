@@ -259,6 +259,26 @@ export const devmock = {
   ): Promise<{ address: string }> {
     throw new Error("mnemonic import is only available in the installed app");
   },
+  async generate_standard_address(_label?: string): Promise<{ address: string }> {
+    const s = loadState();
+    const address = fakeHex(`std-${s.addresses.length}-${Date.now()}`, 64);
+    s.addresses.push({
+      address,
+      index: s.addresses.length,
+      pubkey: fakeHex(`pk-${address.slice(0, 8)}`, 64),
+      balance: 0,
+      utxoCount: 0,
+    });
+    saveState(s);
+    return { address };
+  },
+  async reveal_mnemonic(
+    address: string,
+    passphrase: string,
+  ): Promise<{ mnemonic: string[]; standard: boolean }> {
+    if (passphrase.length < 4) throw new Error("keystore locked: wrong passphrase");
+    return { mnemonic: mockMnemonic(address), standard: true };
+  },
 
   async get_node_rpc(): Promise<string> {
     if (useRealWalletd()) {
