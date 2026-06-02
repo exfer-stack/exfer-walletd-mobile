@@ -15,5 +15,15 @@
     <string>Scan a QR code to fill in a recipient address.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>Unlock your wallet with Face ID.</string>
+    <!--
+      Expose the app's Documents folder in the Files app. iOS has no public
+      "Download" dir, so exported backups (.vault / wallet .key) and CSV/label
+      files land in Documents — without these two keys that folder is an
+      invisible sandbox and the user can never retrieve their backup.
+    -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
 </dict>
 </plist>

@@ -16,6 +16,7 @@ import {
   importVaultFile,
   formatExfer,
 } from "../lib/rpc";
+import { saveBytes } from "../lib/fsfile";
 import { humanizeError } from "../lib/errors";
 import { useT, LANGS, type Lang } from "../lib/i18n";
 import { useUpdateCheck, openDownload, APP_VERSION } from "../lib/update";
@@ -128,7 +129,7 @@ export function Settings({
     setBiometricLock(v);
   }
 
-  function exportCsv() {
+  async function exportCsv() {
     const labels = listLabels();
     const rows = [
       ["index", "address", "label", "balance_exfer", "hidden"],
@@ -140,17 +141,21 @@ export function Settings({
         isHidden(a.address) ? "yes" : "no",
       ]),
     ];
-    download(rows.map((r) => r.join(",")).join("\n"), `exfer-addresses-${today()}.csv`, "text/csv");
-    toast.success(t("set.exported"), t("set.exportedCsv"));
+    try {
+      await download(rows.map((r) => r.join(",")).join("\n"), `exfer-addresses-${today()}.csv`);
+      toast.success(t("set.exported"), t("set.exportedCsv"));
+    } catch (e) {
+      toast.error(t("set.exportCsv"), humanizeError(e));
+    }
   }
-  function exportLabels() {
+  async function exportLabels() {
     const map = listLabels();
-    download(
-      JSON.stringify(map, null, 2),
-      `exfer-labels-${today()}.json`,
-      "application/json",
-    );
-    toast.success(t("set.exported"), t("set.exportedJson"));
+    try {
+      await download(JSON.stringify(map, null, 2), `exfer-labels-${today()}.json`);
+      toast.success(t("set.exported"), t("set.exportedJson"));
+    } catch (e) {
+      toast.error(t("set.exportLabels"), humanizeError(e));
+    }
   }
 
   return (
@@ -440,13 +445,12 @@ const iconBox = {
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
-function download(text: string, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
+// Save a text file. Routes through saveBytes so device builds use the Tauri
+// FS plugin — iOS WKWebView ignores the `<a download>` attribute (Android's
+// WebView honors it), so the blob+anchor path inside saveBytes is browser-dev
+// only. Returns the saved path/location.
+function download(text: string, name: string): Promise<string> {
+  return saveBytes(name, new TextEncoder().encode(text));
 }
 
 function Section({ label }: { label: string }) {
