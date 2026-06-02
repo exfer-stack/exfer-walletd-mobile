@@ -15,6 +15,7 @@ import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { shortAddress } from "../../lib/labels";
 import { setLabel as saveLabel } from "../../lib/labels";
+import { MnemonicHelp } from "../MnemonicHelp";
 
 export function ImportPhraseModal({
   onClose,
@@ -156,8 +157,18 @@ export function ImportPhraseModal({
         {valid && (previewing || preview || previewErr) && (
           <Field label={preview && fundedScheme ? t("imp.foundTitle") : t("imp.schemeTitle")}>
             {!fundedScheme && (
-              <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8 }}>
-                {t("imp.schemeHint")}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  fontSize: 12.5,
+                  color: "var(--text-dim)",
+                  marginBottom: 8,
+                }}
+              >
+                <span style={{ flex: 1 }}>{t("imp.schemeHint")}</span>
+                <MnemonicHelp size={18} />
               </div>
             )}
             {previewing && (
@@ -187,6 +198,21 @@ export function ImportPhraseModal({
                 <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>
                   {shortAddress(preview[fundedScheme].address)}
                 </span>
+              </div>
+            )}
+            {preview && fundedScheme && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "var(--text-dim)",
+                }}
+              >
+                <span style={{ flex: 1 }}>{t("mn.helpTitle")}</span>
+                <MnemonicHelp size={18} />
               </div>
             )}
             {preview && !fundedScheme && (

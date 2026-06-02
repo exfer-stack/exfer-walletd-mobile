@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "../../lib/icons";
+import { MnemonicHelp } from "../MnemonicHelp";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc, exportWalletKey, formatBalanceCompact, revealMnemonic } from "../../lib/rpc";
@@ -353,7 +354,21 @@ function RecoveryPhraseModal({
               </button>
             )}
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 12,
+              gap: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="faint" style={{ fontSize: 12 }}>
+                {t("mn.helpTitle")}
+              </span>
+              <MnemonicHelp size={18} />
+            </div>
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => {
