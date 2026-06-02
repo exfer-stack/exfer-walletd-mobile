@@ -7,7 +7,9 @@ import {
   importWalletKey,
   previewMnemonicImport,
   importMnemonicScheme,
+  formatBalanceCompact,
   type MnemonicScheme,
+  type MnemonicCandidate,
 } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
@@ -27,7 +29,10 @@ export function ImportPhraseModal({
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [scheme, setScheme] = useState<MnemonicScheme>("standard");
-  const [preview, setPreview] = useState<{ standard: string; legacy: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    standard: MnemonicCandidate;
+    legacy: MnemonicCandidate;
+  } | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const words = phrase.trim().split(/\s+/).filter(Boolean);
@@ -48,7 +53,15 @@ export function ImportPhraseModal({
     const handle = setTimeout(() => {
       previewMnemonicImport(phrase.trim())
         .then((p) => {
-          if (!cancelled) setPreview(p);
+          if (cancelled) return;
+          setPreview(p);
+          // Default to the address that actually holds coins, so a user
+          // migrating an old phrase lands on their funded address without
+          // having to understand the scheme. Tie / both-empty → standard.
+          const sb = p.standard.balance ?? 0;
+          const lb = p.legacy.balance ?? 0;
+          if (lb > 0 && sb === 0) setScheme("legacy");
+          else setScheme("standard");
         })
         .catch((e) => {
           if (!cancelled) {
@@ -66,7 +79,7 @@ export function ImportPhraseModal({
     };
   }, [phrase, valid]);
 
-  const chosenAddress = preview ? preview[scheme] : null;
+  const chosenAddress = preview ? preview[scheme].address : null;
 
   async function go() {
     if (!valid) {
@@ -151,9 +164,10 @@ export function ImportPhraseModal({
                   [
                     ["standard", t("imp.schemeStandard"), preview.standard],
                     ["legacy", t("imp.schemeLegacy"), preview.legacy],
-                  ] as [MnemonicScheme, string, string][]
-                ).map(([key, title, addr]) => {
+                  ] as [MnemonicScheme, string, MnemonicCandidate][]
+                ).map(([key, title, cand]) => {
                   const active = scheme === key;
+                  const funded = (cand.balance ?? 0) > 0;
                   return (
                     <button
                       key={key}
@@ -170,9 +184,21 @@ export function ImportPhraseModal({
                         gap: 3,
                       }}
                     >
-                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{title}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 600 }}>{title}</span>
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            color: funded ? "var(--accent)" : "var(--text-dim)",
+                          }}
+                        >
+                          {cand.balance == null ? "—" : formatBalanceCompact(cand.balance)}
+                        </span>
+                      </div>
                       <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {shortAddress(addr)}
+                        {shortAddress(cand.address)}
                       </span>
                     </button>
                   );

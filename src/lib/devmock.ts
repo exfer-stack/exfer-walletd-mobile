@@ -248,9 +248,10 @@ export const devmock = {
     return (loadState().addresses?.length ?? 0) > 0;
   },
 
-  async preview_mnemonic_import(
-    _phrase: string,
-  ): Promise<{ standard: string; legacy: string }> {
+  async preview_mnemonic_import(_phrase: string): Promise<{
+    standard: { address: string; balance: number | null };
+    legacy: { address: string; balance: number | null };
+  }> {
     throw new Error("mnemonic preview is only available in the installed app");
   },
   async import_mnemonic_scheme(

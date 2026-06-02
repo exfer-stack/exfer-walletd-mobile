@@ -50,12 +50,16 @@ export function restoreFromMnemonic(
 
 export type MnemonicScheme = "standard" | "legacy";
 
-/** The two addresses a 24-word phrase maps to: `standard` (BIP39, matches
- *  exfer.dev / the Flutter wallet) and `legacy` (raw-key words). Pure
- *  derivation — imports nothing. */
+/** One candidate address for an imported phrase, with its on-chain balance
+ *  (base units; null if the chain couldn't be reached). */
+export type MnemonicCandidate = { address: string; balance: number | null };
+
+/** The two addresses a 24-word phrase maps to — `standard` (BIP39, matches
+ *  exfer.dev / the apps) and `legacy` (raw-key words) — each with its balance
+ *  so the user can pick the one that holds their coins. Imports nothing. */
 export function previewMnemonicImport(
   phrase: string,
-): Promise<{ standard: string; legacy: string }> {
+): Promise<{ standard: MnemonicCandidate; legacy: MnemonicCandidate }> {
   if (devmock.isActive()) return devmock.preview_mnemonic_import(phrase);
   return invoke("preview_mnemonic_import", { phrase });
 }

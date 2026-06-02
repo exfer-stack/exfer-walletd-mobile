@@ -107,14 +107,43 @@ async fn rpc(
         .map_err(|e| e.to_user_string())
 }
 
-/// Preview the two addresses a 24-word phrase would import to: the standard
-/// BIP39 scheme (exfer.dev / Flutter wallet) and the legacy raw-key scheme.
-/// Pure derivation — touches no wallet state, mints no key. Lets the UI show
-/// "this phrase maps to <addr>" for each scheme before the user commits.
+/// Best-effort on-chain balance (base units) for ANY address — used to show,
+/// before importing, which candidate address actually holds the coins.
+async fn address_balance(
+    client: &reqwest::Client,
+    conn: &rpc_client::ConnectionInfo,
+    address: &str,
+) -> Option<u64> {
+    let params = serde_json::json!({ "address": address });
+    let v = rpc_client::forward_rpc(client, conn, "get_balance", params)
+        .await
+        .ok()?;
+    v.get("balance").and_then(|b| b.as_u64()).or_else(|| v.as_u64())
+}
+
+/// Preview the two addresses a 24-word phrase maps to (standard BIP39 vs the
+/// legacy raw-key scheme) WITH each address's on-chain balance, so the user can
+/// pick the one that holds their coins instead of guessing a scheme. Pure
+/// derivation + a read-only balance query; mints no key, imports nothing.
 #[tauri::command]
-async fn preview_mnemonic_import(phrase: String) -> Result<Value, String> {
+async fn preview_mnemonic_import(ctx: State<'_, AppCtx>, phrase: String) -> Result<Value, String> {
     let (standard, legacy) = mnemonic::preview(&phrase)?;
-    Ok(serde_json::json!({ "standard": standard, "legacy": legacy }))
+    let cc = {
+        let inner = ctx.inner.lock().await;
+        inner.client.clone().zip(inner.conn.clone())
+    };
+    let (std_bal, leg_bal) = if let Some((client, conn)) = cc {
+        tokio::join!(
+            address_balance(&client, &conn, &standard),
+            address_balance(&client, &conn, &legacy),
+        )
+    } else {
+        (None, None)
+    };
+    Ok(serde_json::json!({
+        "standard": { "address": standard, "balance": std_bal },
+        "legacy": { "address": legacy, "balance": leg_bal },
+    }))
 }
 
 /// Import a 24-word phrase under the chosen scheme (`"standard"` | `"legacy"`).
