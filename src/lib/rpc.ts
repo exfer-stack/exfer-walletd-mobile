@@ -28,6 +28,13 @@ export function bootstrapStatus(): Promise<BootstrapStatus> {
   return invoke<BootstrapStatus>("bootstrap_status");
 }
 
+/** True when a wallet already exists on this device (needs unlocking) vs. a
+ *  genuine first run. Drives the onboarding's unlock-vs-create choice. */
+export function walletExists(): Promise<boolean> {
+  if (devmock.isActive()) return devmock.wallet_exists();
+  return invoke<boolean>("wallet_exists_cmd");
+}
+
 export function submitPassword(password: string): Promise<BootstrapStatus> {
   if (devmock.isActive()) return devmock.submit_password(password);
   return invoke<BootstrapStatus>("submit_password", { password });

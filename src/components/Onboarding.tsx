@@ -1,11 +1,11 @@
 // Onboarding — create (password) or restore (.vault file + new password).
 // Mirrors onboarding.jsx copy; no 24-word phrase path (the design removed it).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
-import { submitPassword, importVaultFile } from "../lib/rpc";
+import { submitPassword, importVaultFile, walletExists } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
 import { useT } from "../lib/i18n";
 
@@ -21,6 +21,41 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // null = still checking. true = a wallet is already on this device and just
+  // needs unlocking (e.g. silent unlock didn't fire after an upgrade) — show
+  // an Unlock prompt, never "Create", so existing data never looks gone.
+  const [existing, setExisting] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    walletExists()
+      .then((e) => !cancelled && setExisting(e))
+      .catch(() => !cancelled && setExisting(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Unlock an existing keystore: submitPassword opens it when the password is
+  // right. The keystore was never deleted — only the silent-unlock hint was
+  // missing — so the right password brings the whole wallet back.
+  async function unlock() {
+    setErr(null);
+    if (!pw) return;
+    setBusy(true);
+    try {
+      const st = await submitPassword(pw);
+      if (st.status === "failed") {
+        setErr(humanizeError(st.message));
+        return;
+      }
+      onReady();
+    } catch (e) {
+      setErr(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit() {
     setErr(null);
@@ -83,6 +118,76 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
     : mode === "create"
       ? t("ob.create")
       : t("ob.chooseRestore");
+
+  // Still deciding create-vs-unlock: render nothing for the brief check so we
+  // never flash "Create your wallet" at someone who actually has one.
+  if (existing === null) {
+    return <div className="screen" />;
+  }
+
+  // A wallet already exists here — unlock it, don't offer to create.
+  if (existing) {
+    return (
+      <div className="screen">
+        <div
+          className="screen-pad"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "100%",
+            paddingTop: "calc(env(safe-area-inset-top) + 48px)",
+          }}
+        >
+          <div className="title-xl" style={{ textAlign: "center", marginBottom: 8 }}>
+            {t("ob.unlockTitle")}
+          </div>
+          <p
+            className="dim"
+            style={{ textAlign: "center", fontSize: 14, lineHeight: 1.6, margin: "0 6px 24px" }}
+          >
+            {t("ob.unlockSub")}
+          </p>
+          <Field label={t("ob.password")}>
+            <div style={{ position: "relative" }}>
+              <input
+                className="field"
+                type={show ? "text" : "password"}
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && unlock()}
+                style={{ paddingRight: 46 }}
+                autoFocus
+              />
+              <button
+                className="icon-btn"
+                onClick={() => setShow((s) => !s)}
+                style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none" }}
+                aria-label="toggle visibility"
+              >
+                <Icon name={show ? "eye-off" : "eye"} size={18} />
+              </button>
+            </div>
+          </Field>
+          {err && <div className="banner banner-danger" style={{ marginTop: 14 }}>{err}</div>}
+          <div style={{ flex: 1, minHeight: 24 }} />
+          <button
+            className="btn btn-block"
+            style={{ padding: "16px" }}
+            disabled={busy || !pw}
+            onClick={unlock}
+          >
+            {busy ? (
+              <>
+                <Spinner /> {t("ob.unlocking")}
+              </>
+            ) : (
+              t("ob.unlock")
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="screen">

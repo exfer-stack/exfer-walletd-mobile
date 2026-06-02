@@ -66,13 +66,40 @@ mod imp {
         data_dir.join(".exfer-keystore-passphrase")
     }
 
+    /// Where versions <= 0.5.4 wrote the passphrase: `$HOME` if set, else the
+    /// temp dir. We moved it into `data_dir` in 0.5.5; these are checked on
+    /// read so an upgrade doesn't lose silent unlock.
+    fn legacy_paths() -> Vec<PathBuf> {
+        let mut v = Vec::new();
+        if let Some(home) = std::env::var_os("HOME") {
+            v.push(PathBuf::from(home).join(".exfer-keystore-passphrase"));
+        }
+        v.push(std::env::temp_dir().join(".exfer-keystore-passphrase"));
+        v
+    }
+
     pub fn get_passphrase(_service: &str, data_dir: &Path) -> anyhow::Result<Option<String>> {
         let p = path(data_dir);
         match std::fs::read_to_string(&p) {
-            Ok(s) => Ok(Some(s)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(anyhow::Error::new(e).context("reading passphrase file")),
+            Ok(s) => return Ok(Some(s)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(anyhow::Error::new(e).context("reading passphrase file")),
         }
+        // Not in the new location — fall back to the pre-0.5.5 paths. Moving
+        // this file (without a fallback) made upgrades drop to the
+        // Create/Restore screen as if the wallet were gone, even though the
+        // keystore itself was always safe in data_dir. Migrate it forward so
+        // it stays put from here on.
+        for legacy in legacy_paths() {
+            match std::fs::read_to_string(&legacy) {
+                Ok(s) => {
+                    let _ = set_passphrase(_service, data_dir, &s);
+                    return Ok(Some(s));
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(None)
     }
 
     pub fn set_passphrase(_service: &str, data_dir: &Path, value: &str) -> anyhow::Result<()> {

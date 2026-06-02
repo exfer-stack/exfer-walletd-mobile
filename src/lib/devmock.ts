@@ -242,6 +242,11 @@ export const devmock = {
   // The standard/legacy mnemonic derivation lives in the Rust command
   // (BIP39 + SHA-256 + ed25519); there's no Rust in browser dev, so these
   // are device-only. The UI degrades to a note when preview throws.
+  async wallet_exists(): Promise<boolean> {
+    // Dev mode: treat a previously-seeded mock state as an existing wallet.
+    return (loadState().addresses?.length ?? 0) > 0;
+  },
+
   async preview_mnemonic_import(
     _phrase: string,
   ): Promise<{ standard: string; legacy: string }> {

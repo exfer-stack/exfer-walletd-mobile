@@ -15,13 +15,22 @@ use serde_json::Value;
 use tauri::{Manager, State};
 
 use walletd_supervisor::{
-    read_desktop_config, restart, restore, start_with_app, stop, write_desktop_config,
-    AppCtx, BootstrapStatus, KEYRING_SERVICE,
+    read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
+    write_desktop_config, AppCtx, BootstrapStatus, KEYRING_SERVICE,
 };
 
 #[tauri::command]
 async fn bootstrap_status(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String> {
     Ok(ctx.inner.lock().await.status.clone())
+}
+
+/// Whether a wallet already exists on this device (needs unlocking) vs. a
+/// fresh first run. The onboarding uses this to show "Unlock" instead of
+/// "Create", so a failed silent unlock never looks like lost data.
+#[tauri::command]
+async fn wallet_exists_cmd(ctx: State<'_, AppCtx>) -> Result<bool, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    Ok(wallet_exists(&datadir))
 }
 
 #[tauri::command]
@@ -453,6 +462,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap_status,
+            wallet_exists_cmd,
             submit_password,
             rpc,
             preview_mnemonic_import,

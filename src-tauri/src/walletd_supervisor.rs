@@ -192,6 +192,22 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
     }
 }
 
+/// True if a keystore already lives in `datadir` — i.e. a wallet was set up
+/// here and just needs unlocking, vs. a genuine first run. Lets the UI show
+/// an Unlock prompt instead of Create/Restore (which reads as "your wallet is
+/// gone" when silent unlock fails). Checks the keystore's own files: a seeded
+/// wallet's `seed.enc`, the keyring `state.json`, or any imported key.
+pub fn wallet_exists(datadir: &std::path::Path) -> bool {
+    let desktop_cfg = read_desktop_config(datadir);
+    let cfg = build_walletd_config(datadir, &desktop_cfg);
+    let wdir = cfg.resolved_wallet_dir();
+    wdir.join("seed.enc").exists()
+        || wdir.join("state.json").exists()
+        || std::fs::read_dir(wdir.join("imported"))
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+}
+
 /// Boot walletd in-process. On success, mutates `inner` to `Ready`. On
 /// failure, mutates to `Failed`. Either way the call returns the
 /// resulting status so the caller can pass it back to the frontend.
