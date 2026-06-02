@@ -113,10 +113,21 @@ export async function checkForUpdate(force = false): Promise<UpdateState> {
   }
 }
 
-/** Open the download in the system browser, with a clipboard fallback for
- *  webviews where window.open is a no-op. Returns true if a link was copied. */
-export function openDownload(release: LatestRelease): boolean {
+/** Open the download in the system browser (so the .apk downloads directly).
+ *  The mobile WebView's `window.open` is a no-op, so on a real build we go
+ *  through the Tauri opener plugin; browser dev falls back to window.open, and
+ *  only if everything fails do we copy the link. Resolves true iff it had to
+ *  copy (so the caller can show a "link copied" hint). */
+export async function openDownload(release: LatestRelease): Promise<boolean> {
   const url = release.apkUrl || release.releaseUrl;
+  // Real app: hand the URL to the OS browser.
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+    return false;
+  } catch {
+    /* not in Tauri (browser dev) or plugin unavailable — try the web path */
+  }
   try {
     const w = window.open(url, "_blank", "noopener");
     if (w) return false;
@@ -124,7 +135,7 @@ export function openDownload(release: LatestRelease): boolean {
     /* fall through to clipboard */
   }
   try {
-    navigator.clipboard?.writeText(url);
+    await navigator.clipboard?.writeText(url);
   } catch {
     /* ignore */
   }

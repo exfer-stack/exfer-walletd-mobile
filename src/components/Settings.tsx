@@ -379,9 +379,9 @@ export function Settings({
             {update.state.status === "available" ? (
               <button
                 className="btn btn-sm"
-                onClick={() => {
+                onClick={async () => {
                   const r = update.state.status === "available" ? update.state.release : null;
-                  if (r && openDownload(r)) {
+                  if (r && (await openDownload(r))) {
                     toast.info(t("upd.linkCopied"), r.apkUrl || r.releaseUrl);
                   }
                 }}
