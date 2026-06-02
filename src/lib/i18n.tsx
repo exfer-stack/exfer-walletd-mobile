@@ -261,7 +261,7 @@ const EN = {
   "adr.exCta": "Export",
   "adr.exFail": "Export failed",
   "adr.exDone": "wallet.key exported",
-  "adr.exDoneBody": "Saved to {loc}. Import it on exfer.dev.",
+  "adr.exDoneBody": "Saved to {loc}. Import it into another Exfer wallet.",
 
   // errors (humanizeError)
   "err.busy": "The network is busy right now. Wait a few seconds and try again.",
@@ -346,7 +346,7 @@ const EN = {
   "imp.importFail": "Import failed",
   "imp.keyTitle": "Import wallet.key",
   "imp.chooseImport": "Choose file & import",
-  "imp.keyInfo": "Adds an externally-held address from an encrypted .key file (e.g. exported from exfer.dev). Enter the file's password, then tap Import to choose the .key file.",
+  "imp.keyInfo": "Adds an externally-held address from an encrypted .key file. Enter the file's password, then tap Import to choose the .key file.",
   "imp.filePassword": "File password",
 
   // label modal
@@ -630,7 +630,7 @@ const ZH: Record<MsgKey, string> = {
   "adr.exCta": "导出",
   "adr.exFail": "导出失败",
   "adr.exDone": "wallet.key 已导出",
-  "adr.exDoneBody": "已保存到 {loc}，可在 exfer.dev 导入。",
+  "adr.exDoneBody": "已保存到 {loc}，可导入到其它 Exfer 钱包。",
 
   "err.busy": "网络正忙，请过几秒再试。",
   "err.insufficient": "余额不足以支付金额和网络手续费。",
@@ -711,7 +711,7 @@ const ZH: Record<MsgKey, string> = {
   "imp.importFail": "导入失败",
   "imp.keyTitle": "导入 wallet.key",
   "imp.chooseImport": "选择文件并导入",
-  "imp.keyInfo": "从加密的 .key 文件导入一个外部地址（例如从 exfer.dev 导出的）。输入文件密码，然后点导入选择 .key 文件。",
+  "imp.keyInfo": "从加密的 .key 文件导入一个外部地址。输入文件密码，然后点导入选择 .key 文件。",
   "imp.filePassword": "文件密码",
 
   "lbl.renameTitle": "重命名地址",
