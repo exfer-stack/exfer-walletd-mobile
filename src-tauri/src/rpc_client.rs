@@ -123,7 +123,8 @@ fn scope_for_method(method: &str) -> Scope {
         // generate_*). import_private_key was previously missing here and
         // fell through to Read, which walletd rejects with -32001.
         "generate_address" | "generate_independent_address" | "generate_standard_address"
-        | "import_private_key" | "import_mnemonic" | "abandon_transfer" => Scope::Manage,
+        | "import_private_key" | "import_mnemonic" | "import_standard_mnemonic"
+        | "abandon_transfer" => Scope::Manage,
         _ => Scope::Read,
     }
 }

@@ -118,10 +118,9 @@ async fn preview_mnemonic_import(phrase: String) -> Result<Value, String> {
 }
 
 /// Import a 24-word phrase under the chosen scheme (`"standard"` | `"legacy"`).
-/// We derive the raw ed25519 secret on the Rust side and hand it to walletd's
-/// `import_private_key`, so the standard BIP39 wallets (exfer.dev / Flutter)
-/// land on the SAME address here — something `import_mnemonic` (legacy-only)
-/// could never do. Returns walletd's response (`{ address, imported }`).
+/// Routes to walletd so the phrase is sealed and reveals back: standard →
+/// `import_standard_mnemonic` (same address as exfer.dev / the apps), legacy →
+/// `import_mnemonic` (raw-key encoding). Returns `{ address, imported }`.
 #[tauri::command]
 async fn import_mnemonic_scheme(
     ctx: State<'_, AppCtx>,
@@ -129,10 +128,10 @@ async fn import_mnemonic_scheme(
     scheme: String,
     label: Option<String>,
 ) -> Result<Value, String> {
-    let scheme = mnemonic::Scheme::parse(&scheme)?;
-    let secret = mnemonic::derive_secret(&phrase, scheme)?;
-    let secret_hex = hex::encode(secret);
-
+    let method = match mnemonic::Scheme::parse(&scheme)? {
+        mnemonic::Scheme::Standard => "import_standard_mnemonic",
+        mnemonic::Scheme::Legacy => "import_mnemonic",
+    };
     let (client, conn) = {
         let inner = ctx.inner.lock().await;
         match (inner.client.clone(), inner.conn.clone()) {
@@ -140,8 +139,8 @@ async fn import_mnemonic_scheme(
             _ => return Err("walletd not ready".into()),
         }
     };
-    let params = serde_json::json!({ "secret_hex": secret_hex, "label": label });
-    rpc_client::forward_rpc(&client, &conn, "import_private_key", params)
+    let params = serde_json::json!({ "mnemonic": phrase.trim(), "label": label });
+    rpc_client::forward_rpc(&client, &conn, method, params)
         .await
         .map_err(|e| e.to_user_string())
 }
