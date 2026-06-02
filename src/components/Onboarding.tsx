@@ -45,8 +45,11 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
     setBusy(true);
     try {
       const st = await submitPassword(pw);
-      if (st.status === "failed") {
-        setErr(humanizeError(st.message));
+      // Anything but Ready means it didn't open. A wrong password now comes
+      // back as needs_password (recoverable) rather than a dead-end failure —
+      // show the error and let them try again.
+      if (st.status !== "ready") {
+        setErr(st.status === "failed" ? humanizeError(st.message) : t("err.password"));
         return;
       }
       onReady();
@@ -95,11 +98,12 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
     setBusy(true);
     try {
       const st = await submitPassword(pw);
-      // Don't claim success if walletd didn't actually come up. The user is
-      // *setting* a new password here, so a start failure is never "incorrect
-      // password" — surface the real reason and keep them on the form.
-      if (st.status === "failed") {
-        setErr(humanizeError(st.message));
+      // Don't claim success if walletd didn't actually come up. If a keystore
+      // with a different password already exists, opening it comes back as
+      // needs_password — tell them it's an existing wallet with another
+      // password, rather than silently "succeeding".
+      if (st.status !== "ready") {
+        setErr(st.status === "failed" ? humanizeError(st.message) : t("err.password"));
         return;
       }
       toast.success(t("ob.toastReady"), t("ob.toastReadyBody"));

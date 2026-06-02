@@ -43,15 +43,27 @@ async fn submit_password(
         return Err("password must not be empty".into());
     }
     let datadir = ctx.inner.lock().await.datadir.clone();
-    // Persisting to the keychain only enables silent unlock on relaunch —
-    // the seed is always Argon2id-sealed with this passphrase regardless.
-    // A keychain write failure (seen on some Huawei/HarmonyOS ROMs) must
-    // NOT block wallet creation; otherwise the frontend humanizer turns the
-    // "writing passphrase file" error into a misleading "incorrect password".
-    if let Err(e) = secrets::set_passphrase(KEYRING_SERVICE, &datadir, &password) {
-        tracing::warn!(error = %e, "could not persist passphrase; silent unlock disabled");
+    // Start FIRST, persist to the keychain only if it actually worked. The old
+    // order (save, then start) meant a wrong password typed on the unlock /
+    // create screen got saved to the keychain, so every relaunch auto-tried
+    // the wrong password and dead-ended on "keystore locked" with no way back
+    // in. The seed is Argon2id-sealed with the passphrase regardless, so the
+    // keychain copy is pure silent-unlock convenience.
+    let status = start_with_app(&ctx, &password, Some(app)).await;
+    match status {
+        BootstrapStatus::Ready { .. } => {
+            if let Err(e) = secrets::set_passphrase(KEYRING_SERVICE, &datadir, &password) {
+                tracing::warn!(error = %e, "could not persist passphrase; silent unlock disabled");
+            }
+        }
+        _ => {
+            // Don't leave a non-working password saved (it would auto-fail the
+            // next launch). Clearing is safe: a valid saved password would have
+            // unlocked at startup and never reached this prompt.
+            let _ = secrets::delete_passphrase(KEYRING_SERVICE, &datadir);
+        }
     }
-    Ok(start_with_app(&ctx, &password, Some(app)).await)
+    Ok(status)
 }
 
 #[tauri::command]
@@ -447,8 +459,17 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match secrets::get_passphrase(KEYRING_SERVICE, &datadir_for_spawn) {
                     Ok(Some(passphrase)) => {
-                        let _ = start_with_app(&ctx_for_spawn, &passphrase, Some(app_for_spawn))
-                            .await;
+                        let st =
+                            start_with_app(&ctx_for_spawn, &passphrase, Some(app_for_spawn)).await;
+                        // If the saved password is wrong (e.g. a bad one got
+                        // persisted by an older build), drop it so we don't
+                        // auto-fail every launch — the UI will prompt instead.
+                        if matches!(st, BootstrapStatus::NeedsPassword) {
+                            let _ = secrets::delete_passphrase(
+                                KEYRING_SERVICE,
+                                &datadir_for_spawn,
+                            );
+                        }
                     }
                     Ok(None) => {
                         // First launch — stay in NeedsPassword.

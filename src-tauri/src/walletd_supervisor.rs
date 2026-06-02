@@ -246,8 +246,20 @@ pub async fn start_with_app(
     let handle = match run_embedded(walletd_cfg, passphrase, shutdown).await {
         Ok(h) => h,
         Err(e) => {
-            let s = BootstrapStatus::Failed {
-                message: format!("{e:#}"),
+            let msg = format!("{e:#}");
+            // A wrong password is RECOVERABLE — the keystore is intact, it just
+            // wasn't unlocked. Route back to NeedsPassword so the UI shows the
+            // (re-enterable) unlock prompt instead of a dead-end "Couldn't
+            // start" the user can't get past. Only genuine boot errors (IO,
+            // node, etc.) stay Failed.
+            let lower = msg.to_lowercase();
+            let s = if lower.contains("wrong passphrase")
+                || lower.contains("keystore locked")
+                || lower.contains("decryption failed")
+            {
+                BootstrapStatus::NeedsPassword
+            } else {
+                BootstrapStatus::Failed { message: msg }
             };
             inner.status = s.clone();
             return s;
