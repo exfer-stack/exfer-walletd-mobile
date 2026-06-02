@@ -54,6 +54,24 @@ export function MnemonicHelp({ size = 20 }: { size?: number }) {
             <div className="banner banner-info" style={{ fontSize: 13, fontWeight: 600 }}>
               {t("mn.helpSafe")}
             </div>
+            <div
+              style={{
+                marginTop: 2,
+                paddingTop: 11,
+                borderTop: "1px solid var(--border-soft)",
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-faint)", textTransform: "uppercase" }}>
+                {t("mn.techTitle")}
+              </div>
+              {[t("mn.tech1"), t("mn.tech2"), t("mn.tech3"), t("mn.tech4")].map((line, i) => (
+                <p key={i} style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: "var(--text-dim)" }}>
+                  {line}
+                </p>
+              ))}
+            </div>
           </div>
         </Modal>
       )}
