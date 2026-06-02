@@ -326,7 +326,6 @@ export const devmock = {
     // Dev mode can't decrypt EXFK; fabricate a fake "imported" address so
     // the modal flow is exercisable end-to-end in the browser.
     if (!args.fileHex) throw new Error("no wallet.key file selected");
-    if (!args.filePassword) throw new Error("file password required");
     const s = loadState();
     const address = fakeHex(`imported-${Date.now()}`, 64);
     s.addresses.push({

@@ -352,6 +352,8 @@ const EN = {
   "imp.chooseImport": "Choose file & import",
   "imp.keyInfo": "Adds an externally-held address from an encrypted .key file. Enter the file's password, then tap Import to choose the .key file.",
   "imp.filePassword": "File password",
+  "imp.filePasswordOpt": "File password (optional)",
+  "imp.filePwPlaceholder": "Leave blank if the file isn't encrypted",
 
   // label modal
   "lbl.renameTitle": "Rename address",
@@ -721,6 +723,8 @@ const ZH: Record<MsgKey, string> = {
   "imp.chooseImport": "选择文件并导入",
   "imp.keyInfo": "从加密的 .key 文件导入一个外部地址。输入文件密码，然后点导入选择 .key 文件。",
   "imp.filePassword": "文件密码",
+  "imp.filePasswordOpt": "文件密码（可选）",
+  "imp.filePwPlaceholder": "文件未加密则留空",
 
   "lbl.renameTitle": "重命名地址",
   "lbl.addTitle": "添加标签",

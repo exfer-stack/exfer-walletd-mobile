@@ -217,8 +217,8 @@ export function ImportKeyFileModal({
 
   // The file is picked inside importWalletKey() (a document picker that
   // works on iOS + Android); the user taps Import, then chooses the file.
+  // The password is OPTIONAL — an unencrypted key file imports with it blank.
   async function go() {
-    if (!pw) return;
     setBusy(true);
     try {
       const address = await importWalletKey({
@@ -251,7 +251,7 @@ export function ImportKeyFileModal({
           </button>
           <button
             className="btn btn-block"
-            disabled={!pw || busy}
+            disabled={busy}
             onClick={go}
           >
             {busy ? <Spinner /> : t("imp.chooseImport")}
@@ -263,12 +263,13 @@ export function ImportKeyFileModal({
         {t("imp.keyInfo")}
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <Field label={t("imp.filePassword")}>
+        <Field label={t("imp.filePasswordOpt")}>
           <input
             className="field"
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
+            placeholder={t("imp.filePwPlaceholder")}
           />
         </Field>
         <Field label={t("imp.labelOptional")}>
