@@ -31,3 +31,9 @@ src-tauri/icons/android/
 src-tauri/icons/ios/
 .gstack/
 .playwright-mcp/
+
+# local dev env (walletd proxy tokens)
+.env.local
+dist/
+*.png
+test-results/

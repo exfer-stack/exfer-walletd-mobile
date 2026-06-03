@@ -90,6 +90,14 @@ interface InflightSwap {
   amount_out: string;
 }
 
+/** Trim a human decimal string to ≤4 fractional digits (drops trailing zeros). */
+function fmtAmt(s: string, dp = 4): string {
+  if (!s) return s;
+  const [w, f = ""] = s.split(".");
+  const frac = f.slice(0, dp).replace(/0+$/, "");
+  return frac ? `${w}.${frac}` : w;
+}
+
 /** Map a walletd swap status to its localized label. */
 function swapStatusText(t: (k: MsgKey) => string, status: string): string {
   switch (status) {
@@ -362,8 +370,8 @@ export function Home({
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Icon name="refresh" />
                   <span style={{ fontSize: 13 }}>
-                    {s.amount_in} {s.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
-                    {s.amount_out} {s.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
+                    {fmtAmt(s.amount_in)} {s.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
+                    {fmtAmt(s.amount_out)} {s.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>

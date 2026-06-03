@@ -22,6 +22,15 @@ import { Sheet, CopyButton, Spinner } from "../ui";
 import { Qr } from "../Qr";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
+/** Trim a human decimal string to at most `dp` fractional digits (drops
+ *  trailing zeros). Keeps big USDT amounts from rendering 18 raw decimals. */
+function fmtAmt(s: string | undefined, dp = 4): string {
+  if (!s) return s ?? "";
+  const [w, f = ""] = s.split(".");
+  const frac = f.slice(0, dp).replace(/0+$/, "");
+  return frac ? `${w}.${frac}` : w;
+}
+
 /** Format a smallest-unit integer string (e.g. wei) to a short human amount. */
 function fmtUnits(raw: string | undefined, decimals: number, frac = 4): string {
   if (!raw) return "0";
@@ -292,7 +301,7 @@ export function SwapSheet({
           <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>{sendUnit}</span>
         </div>
 
-        <label className="eyebrow">{t("swap.from")}</label>
+        <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <select
           value={fromAddr}
           onChange={(e) => setFrom(e.target.value)}
@@ -357,8 +366,8 @@ export function SwapSheet({
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <Row label={t("swap.youSend")} value={`${quote.amount_in} ${sendUnit}`} />
-          <Row label={t("swap.youReceive")} value={`${quote.amount_out} ${recvUnit}`} strong />
+          <Row label={t("swap.youSend")} value={`${fmtAmt(quote.amount_in)} ${sendUnit}`} />
+          <Row label={t("swap.youReceive")} value={`${fmtAmt(quote.amount_out)} ${recvUnit}`} strong />
           {(() => {
             const a = Number(quote.amount_in);
             const b = Number(quote.amount_out);
@@ -406,8 +415,8 @@ export function SwapSheet({
         <div style={{ fontSize: 16, fontWeight: 600 }}>{statusLabel}</div>
         {live && (
           <div style={{ color: "var(--text-faint)", fontSize: 14 }}>
-            {live.amount_in} {live.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
-            {live.amount_out} {live.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
+            {fmtAmt(live.amount_in)} {live.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
+            {fmtAmt(live.amount_out)} {live.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
           </div>
         )}
         {!terminal && (
