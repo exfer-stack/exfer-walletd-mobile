@@ -177,7 +177,7 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
         auth_token_manage: None,
         auth_token_spend: None,
         upstream_timeout_secs: 15,
-        upstream_attempts: 3,
+        upstream_attempts: 6,
         upstream_retry_backoff_ms: 250,
         // Upstream indexer delegation: walletd proxies `get_address_history`
         // (and the other non-owned-data methods) to the co-located
