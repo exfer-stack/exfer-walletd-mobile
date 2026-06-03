@@ -118,7 +118,13 @@ fn scope_for_method(method: &str) -> Scope {
         // walletd v1.9.x keyring lifecycle: per-address recovery phrase,
         // key-material exports, and deletion all move/expose secrets.
         | "reveal_address_mnemonic" | "export_vault" | "export_address"
-        | "import_vault" | "delete_address" => Scope::Spend,
+        | "import_vault" | "delete_address"
+        // HTLC lifecycle moves funds — Spend. (Previously missing: fell through
+        // to Read and walletd rejected with -32001.)
+        | "htlc_lock" | "htlc_claim" | "htlc_reclaim"
+        // Cross-chain swap: quoting reserves a preimage, execute/refund move
+        // funds across both legs — all Spend.
+        | "swap_get_quote" | "swap_execute" | "swap_refund" => Scope::Spend,
         // import_private_key/import_mnemonic add a key (Manage, like
         // generate_*). import_private_key was previously missing here and
         // fell through to Read, which walletd rejects with -32001.

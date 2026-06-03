@@ -30,6 +30,7 @@ import { Activity } from "./components/Activity";
 import { Settings } from "./components/Settings";
 import { ReceiveSheet } from "./components/sheets/ReceiveSheet";
 import { SendSheet } from "./components/sheets/SendSheet";
+import { SwapSheet } from "./components/sheets/SwapSheet";
 import { AddressSheet } from "./components/sheets/AddressSheet";
 
 type Tab = "wallet" | "activity" | "settings";
@@ -37,6 +38,7 @@ type Tab = "wallet" | "activity" | "settings";
 type Overlay =
   | { type: "receive" }
   | { type: "send"; from?: string }
+  | { type: "swap"; from?: string }
   | { type: "address"; address: string }
   | null;
 
@@ -232,6 +234,7 @@ function Shell() {
               <Home
                 onReceive={() => setOverlay({ type: "receive" })}
                 onSend={() => setOverlay({ type: "send" })}
+                onSwap={() => setOverlay({ type: "swap" })}
                 onOpenAddress={(address) => setOverlay({ type: "address", address })}
               />
             )}
@@ -261,6 +264,15 @@ function Shell() {
             )}
             {overlay?.type === "send" && (
               <SendSheet
+                initialFrom={overlay.from}
+                onClose={() => setOverlay(null)}
+                onDone={(t) => {
+                  if (t) setTab(t);
+                }}
+              />
+            )}
+            {overlay?.type === "swap" && (
+              <SwapSheet
                 initialFrom={overlay.from}
                 onClose={() => setOverlay(null)}
                 onDone={(t) => {

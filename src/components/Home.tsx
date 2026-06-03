@@ -84,10 +84,12 @@ function PrimaryAction({
 export function Home({
   onReceive,
   onSend,
+  onSwap,
   onOpenAddress,
 }: {
   onReceive: () => void;
   onSend: () => void;
+  onSwap: () => void;
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, error, refresh } = useWallet();
@@ -282,6 +284,7 @@ export function Home({
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />
+          <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="secondary" />
           <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
 
