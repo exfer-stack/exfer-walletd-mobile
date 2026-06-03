@@ -38,7 +38,7 @@ type Tab = "wallet" | "activity" | "settings";
 type Overlay =
   | { type: "receive" }
   | { type: "send"; from?: string }
-  | { type: "swap"; from?: string }
+  | { type: "swap"; from?: string; resumeSwapId?: string }
   | { type: "address"; address: string }
   | null;
 
@@ -235,6 +235,7 @@ function Shell() {
                 onReceive={() => setOverlay({ type: "receive" })}
                 onSend={() => setOverlay({ type: "send" })}
                 onSwap={() => setOverlay({ type: "swap" })}
+                onResumeSwap={(swapId) => setOverlay({ type: "swap", resumeSwapId: swapId })}
                 onOpenAddress={(address) => setOverlay({ type: "address", address })}
               />
             )}
@@ -274,6 +275,7 @@ function Shell() {
             {overlay?.type === "swap" && (
               <SwapSheet
                 initialFrom={overlay.from}
+                resumeSwapId={overlay.resumeSwapId}
                 onClose={() => setOverlay(null)}
                 onDone={(t) => {
                   if (t) setTab(t);

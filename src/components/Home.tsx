@@ -1,6 +1,6 @@
 // Home — balance hero, Receive/Send, address list, New-address menu.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../lib/icons";
 import tokenLogo from "../assets/exfer-mark.png";
 import { useWallet } from "../lib/wallet";
@@ -8,10 +8,11 @@ import { useToast } from "../lib/toast";
 import { useBalanceMask, Masked } from "../lib/balance";
 import {
   MAX_ADDRESSES,
+  rpc,
   splitBalanceCompact,
 } from "../lib/rpc";
 import { usePrice, usdValue } from "../lib/market";
-import { useT } from "../lib/i18n";
+import { useT, type MsgKey } from "../lib/i18n";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
@@ -81,20 +82,71 @@ function PrimaryAction({
   );
 }
 
+interface InflightSwap {
+  swap_id: string;
+  direction: "exfer_to_usdt" | "usdt_to_exfer";
+  status: string;
+  amount_in: string;
+  amount_out: string;
+}
+
+/** Map a walletd swap status to its localized label. */
+function swapStatusText(t: (k: MsgKey) => string, status: string): string {
+  switch (status) {
+    case "quoted": return t("swap.statusQuoted");
+    case "user_locked": return t("swap.statusUserLocked");
+    case "pool_locked": return t("swap.statusPoolLocked");
+    case "claiming": return t("swap.statusClaiming");
+    case "completed": return t("swap.statusCompleted");
+    case "refunding": return t("swap.statusRefunding");
+    case "refunded": return t("swap.statusRefunded");
+    case "failed": return t("swap.statusFailed");
+    default: return status;
+  }
+}
+
 export function Home({
   onReceive,
   onSend,
   onSwap,
+  onResumeSwap,
   onOpenAddress,
 }: {
   onReceive: () => void;
   onSend: () => void;
   onSwap: () => void;
+  onResumeSwap: (swapId: string) => void;
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
   const { t } = useT();
+
+  // Surface swaps that are still settling (or recently terminal) so money in
+  // motion is never invisible after the app is reopened. Queries the walletd
+  // swap journal; no-ops silently when the swap engine isn't configured.
+  const [inflight, setInflight] = useState<InflightSwap[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const all = await rpc<InflightSwap[]>("swap_list");
+        if (cancelled) return;
+        const live = (all ?? []).filter(
+          (s) => !["completed", "refunded", "failed"].includes(s.status),
+        );
+        setInflight(live);
+      } catch {
+        if (!cancelled) setInflight([]); // engine off / not configured
+      }
+    };
+    load();
+    const id = window.setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
   // `balance` is null until the first successful load. Show skeletons while
   // it's loading, but if that first load FAILED show an error+retry instead
   // of an infinite skeleton (and never a misleading "0 / No addresses").
@@ -287,6 +339,40 @@ export function Home({
           <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="secondary" />
           <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
+
+        {inflight.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swap.inflightTitle")}</div>
+            {inflight.map((s) => (
+              <button
+                key={s.swap_id}
+                onClick={() => onResumeSwap(s.swap_id)}
+                className="card"
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  marginBottom: 6,
+                  gap: 10,
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="refresh" />
+                  <span style={{ fontSize: 13 }}>
+                    {s.amount_in} {s.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
+                    {s.amount_out} {s.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
+                  </span>
+                </span>
+                <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+                  {swapStatusText(t, s.status)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="h-row" style={{ marginBottom: 11 }}>
           <div className="eyebrow">{t("home.addresses")}</div>

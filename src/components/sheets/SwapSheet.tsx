@@ -48,10 +48,14 @@ export function SwapSheet({
   onClose,
   onDone,
   initialFrom,
+  resumeSwapId,
 }: {
   onClose: () => void;
   onDone: (tab?: "wallet" | "activity" | "settings") => void;
   initialFrom?: string;
+  /** When set, jump straight to the progress screen and watch this existing
+   *  swap (e.g. resumed from Home after the app was reopened). */
+  resumeSwapId?: string;
 }) {
   const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
@@ -63,7 +67,7 @@ export function SwapSheet({
   const visible = entries.filter((a) => !isHidden(a.address));
   const fundable = visible.filter((a) => a.balance > 0);
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(resumeSwapId ? 3 : 1);
   const [direction, setDirection] = useState<Direction>("exfer_to_usdt");
   const [from, setFrom] = useState<string>(initialFrom ?? "");
   const [amount, setAmount] = useState("");
@@ -156,14 +160,16 @@ export function SwapSheet({
     }
   }
 
-  // Poll status while in progress.
+  // Poll status while in progress (works for both a freshly-executed swap and
+  // a resumed one).
+  const watchId = quote?.swap_id ?? resumeSwapId;
   const pollRef = useRef<number | null>(null);
   useEffect(() => {
-    if (step !== 3 || !quote) return;
+    if (step !== 3 || !watchId) return;
     let cancelled = false;
     const tick = async () => {
       try {
-        const r = await rpc<SwapRec>("swap_status", { swap_id: quote.swap_id });
+        const r = await rpc<SwapRec>("swap_status", { swap_id: watchId });
         if (cancelled) return;
         setLive(r);
         if (["completed", "refunded", "failed"].includes(r.status)) {
@@ -180,7 +186,7 @@ export function SwapSheet({
       cancelled = true;
       if (pollRef.current) window.clearTimeout(pollRef.current);
     };
-  }, [step, quote, refresh]);
+  }, [step, watchId, refresh]);
 
   const statusLabel = useMemo(() => {
     const s = live?.status ?? "quoted";
@@ -318,7 +324,8 @@ export function SwapSheet({
         <div style={{ fontSize: 16, fontWeight: 600 }}>{statusLabel}</div>
         {live && (
           <div style={{ color: "var(--text-faint)", fontSize: 14 }}>
-            {live.amount_in} {sendUnit} → {live.amount_out} {recvUnit}
+            {live.amount_in} {live.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
+            {live.amount_out} {live.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
           </div>
         )}
         {s !== "completed" && !terminal && (

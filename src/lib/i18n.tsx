@@ -459,6 +459,7 @@ const EN = {
   "swap.expired": "Quote expired — start over",
   "swap.amountInvalid": "Enter a valid amount",
   "swap.noFunds": "No usable address",
+  "swap.inflightTitle": "Swaps in progress",
   "home.swap": "Swap",
 } as const;
 
@@ -865,6 +866,7 @@ const ZH: Record<MsgKey, string> = {
   "swap.expired": "报价已过期——请重新开始",
   "swap.amountInvalid": "请输入有效金额",
   "swap.noFunds": "没有可用地址",
+  "swap.inflightTitle": "进行中的兑换",
   "home.swap": "兑换",
 };
 
