@@ -251,6 +251,31 @@ export function Sheet({
 }
 
 /* ── centered modal dialog ──────────────────────────────────────── */
+/** Track the visual viewport so a centered modal stays inside the area NOT
+ *  covered by the on-screen keyboard. Without this the soft keyboard overlays
+ *  the modal's lower half (e.g. the password field + Reveal button on the
+ *  recovery-phrase sheet, or the revealed 24 words). Falls back to the full
+ *  window when VisualViewport is unavailable (desktop). */
+function useVisualViewport(): { top: number; height: number } {
+  const [vv, setVv] = useState(() => ({
+    top: 0,
+    height: typeof window !== "undefined" ? window.innerHeight : 0,
+  }));
+  useEffect(() => {
+    const v = window.visualViewport;
+    if (!v) return;
+    const apply = () => setVv({ top: v.offsetTop, height: v.height });
+    apply();
+    v.addEventListener("resize", apply);
+    v.addEventListener("scroll", apply);
+    return () => {
+      v.removeEventListener("resize", apply);
+      v.removeEventListener("scroll", apply);
+    };
+  }, []);
+  return vv;
+}
+
 export function Modal({
   title,
   onClose,
@@ -264,13 +289,20 @@ export function Modal({
   footer?: ReactNode;
   danger?: boolean;
 }) {
+  const vv = useVisualViewport();
   return (
     <>
       <div className="scrim" onClick={onClose} style={{ zIndex: 70 }} />
       <div
         style={{
-          position: "absolute",
-          inset: 0,
+          // Pin to the VISIBLE viewport (above the keyboard), not the full
+          // window — otherwise a centered modal centers behind the keyboard
+          // and its lower half (input + actions) is unreachable.
+          position: "fixed",
+          left: 0,
+          right: 0,
+          top: vv.top,
+          height: vv.height,
           zIndex: 71,
           display: "grid",
           placeItems: "center",
