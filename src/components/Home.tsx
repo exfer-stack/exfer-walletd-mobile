@@ -84,7 +84,7 @@ function PrimaryAction({
 
 interface InflightSwap {
   swap_id: string;
-  direction: "exfer_to_usdt" | "usdt_to_exfer";
+  direction: "exfer_to_bnb" | "bnb_to_exfer";
   status: string;
   amount_in: string;
   amount_out: string;
@@ -372,8 +372,8 @@ export function Home({
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Icon name="refresh" />
                   <span style={{ fontSize: 13 }}>
-                    {fmtAmt(s.amount_in)} {s.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
-                    {fmtAmt(s.amount_out)} {s.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
+                    {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} →{" "}
+                    {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>

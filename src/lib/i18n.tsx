@@ -424,7 +424,7 @@ const EN = {
   "upd.toastBody": "v{v} is out — open Settings to update.",
   "upd.linkCopied": "Download link copied",
 
-  // Swap (EXFER ↔ USDT cross-chain)
+  // Swap (EXFER ↔ BNB cross-chain)
   "swap.title": "Swap",
   "swap.sell": "Sell EXFER",
   "swap.buy": "Buy EXFER",
@@ -441,7 +441,7 @@ const EN = {
   "swap.notConfirmedTitle": "Swap not confirmed",
   "swap.notConfirmedBody": "Authentication was cancelled or failed.",
   "swap.bscAddress": "Your deposit address (BNB Smart Chain)",
-  "swap.fundHint": "Send USDT here on BNB Smart Chain (BEP-20) — e.g. withdraw from an exchange — plus a little BNB (~$0.50) to pay the network fee, then come back to buy. This address is yours; funds stay yours until you swap.",
+  "swap.fundHint": "Send BNB to this address on BNB Smart Chain (BEP-20 native BNB) — it's both your funds and the network fee, no second token needed. This address is yours; funds stay yours until you swap.",
   "swap.needBnb": "No BNB for gas yet. Send about $0.50 of BNB to this address — without it the swap can't pay the BSC network fee.",
   "swap.balance": "Balance",
   "swap.max": "Max",
@@ -855,7 +855,7 @@ const ZH: Record<MsgKey, string> = {
   "upd.toastBody": "v{v} 已发布——到设置里更新。",
   "upd.linkCopied": "下载链接已复制",
 
-  // 兑换(EXFER ↔ USDT 跨链)
+  // 兑换(EXFER ↔ BNB 跨链)
   "swap.title": "兑换",
   "swap.sell": "卖出 EXFER",
   "swap.buy": "买入 EXFER",
@@ -872,7 +872,7 @@ const ZH: Record<MsgKey, string> = {
   "swap.notConfirmedTitle": "未确认兑换",
   "swap.notConfirmedBody": "身份验证被取消或失败。",
   "swap.bscAddress": "你的充值地址(BNB 智能链)",
-  "swap.fundHint": "请在 BNB 智能链(BEP-20)上往这个地址充入 USDT(例如从交易所提币),再加一点 BNB(约 $0.50)用来付网络手续费,然后回来买入。这个地址属于你,兑换前资金一直在你手中。",
+  "swap.fundHint": "请在 BNB 智能链(BEP-20 原生 BNB)上往这个地址充入 BNB——它既是你的本金,也用来付网络手续费,无需第二种代币。这个地址属于你,兑换前资金一直在你手中。",
   "swap.needBnb": "还没有 BNB 付手续费。请往这个地址充约 $0.50 的 BNB——否则兑换无法支付 BSC 网络手续费。",
   "swap.balance": "余额",
   "swap.max": "全部",

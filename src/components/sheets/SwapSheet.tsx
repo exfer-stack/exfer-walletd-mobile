@@ -1,4 +1,4 @@
-// Swap — EXFER ↔ USDT (BSC) cross-chain atomic swap. Wired to the walletd swap
+// Swap — EXFER ↔ BNB (BSC) cross-chain atomic swap. Wired to the walletd swap
 // engine: swap_get_quote → swap_execute → poll swap_status. The daemon owns the
 // preimage and both HTLC legs; this is just the 3-step UI.
 //
@@ -23,7 +23,7 @@ import { Qr } from "../Qr";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
 /** Trim a human decimal string to at most `dp` fractional digits (drops
- *  trailing zeros). Keeps big USDT amounts from rendering 18 raw decimals. */
+ *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals. */
 function fmtAmt(s: string | undefined, dp = 4): string {
   if (!s) return s ?? "";
   const [w, f = ""] = s.split(".");
@@ -81,7 +81,7 @@ function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
   );
 }
 
-type Direction = "exfer_to_usdt" | "usdt_to_exfer";
+type Direction = "exfer_to_bnb" | "bnb_to_exfer";
 
 /** Subset of walletd's SwapRecord (serde snake_case) the UI reads. */
 interface SwapRec {
@@ -128,7 +128,7 @@ export function SwapSheet({
   const fundable = visible.filter((a) => a.balance > 0);
 
   const [step, setStep] = useState<1 | 2 | 3>(resumeSwapId ? 3 : 1);
-  const [direction, setDirection] = useState<Direction>("exfer_to_usdt");
+  const [direction, setDirection] = useState<Direction>("exfer_to_bnb");
   const [from, setFrom] = useState<string>(initialFrom ?? "");
   const [amount, setAmount] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -138,10 +138,10 @@ export function SwapSheet({
 
   // BSC funding info (buy direction only).
   const [bscAddr, setBscAddr] = useState<string | null>(null);
-  const [bscBal, setBscBal] = useState<{ bnb: string; usdt: string } | null>(null);
+  const [bscBal, setBscBal] = useState<{ bnb: string } | null>(null);
   const [bscBusy, setBscBusy] = useState(false);
 
-  const sell = direction === "exfer_to_usdt";
+  const sell = direction === "exfer_to_bnb";
   // For sell we lock EXFER from a funded address; for buy we receive EXFER to one.
   const pickList = sell ? fundable : visible;
   const fromAddr = from || pickList[0]?.address || "";
@@ -153,8 +153,8 @@ export function SwapSheet({
     try {
       const a = await rpc<{ address: string }>("bsc_get_address");
       setBscAddr(a.address);
-      const b = await rpc<{ bnb_wei: string; usdt_units: string }>("bsc_get_balances");
-      setBscBal({ bnb: b.bnb_wei, usdt: b.usdt_units });
+      const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
+      setBscBal({ bnb: b.bnb_wei });
     } catch {
       /* engine may be disabled; surfaced on Review */
     } finally {
@@ -163,12 +163,12 @@ export function SwapSheet({
   }, []);
 
   useEffect(() => {
-    if (direction === "usdt_to_exfer") refreshBsc();
+    if (direction === "bnb_to_exfer") refreshBsc();
   }, [direction, refreshBsc]);
 
   const amountValid = AMOUNT_RE.test(amount.trim()) && Number(amount) > 0;
-  const sendUnit = sell ? "EXFER" : "USDT";
-  const recvUnit = sell ? "USDT" : "EXFER";
+  const sendUnit = sell ? "EXFER" : "BNB";
+  const recvUnit = sell ? "BNB" : "EXFER";
 
   async function getQuote() {
     if (!amountValid) {
@@ -316,14 +316,14 @@ export function SwapSheet({
           <button
             className={sell ? "btn btn-block" : "btn btn-secondary btn-block"}
             style={{ flex: 1 }}
-            onClick={() => { setDirection("exfer_to_usdt"); setFrom(""); }}
+            onClick={() => { setDirection("exfer_to_bnb"); setFrom(""); }}
           >
             {t("swap.sell")}
           </button>
           <button
             className={!sell ? "btn btn-block" : "btn btn-secondary btn-block"}
             style={{ flex: 1 }}
-            onClick={() => { setDirection("usdt_to_exfer"); setFrom(""); }}
+            onClick={() => { setDirection("bnb_to_exfer"); setFrom(""); }}
           >
             {t("swap.buy")}
           </button>
@@ -344,7 +344,7 @@ export function SwapSheet({
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px 14px" }}>
           <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>
-            {t("swap.balance")}: {sell ? formatBalanceCompact(sendBal) : `${fmtUnits(bscBal?.usdt, 18, 2)} USDT`}
+            {t("swap.balance")}: {sell ? formatBalanceCompact(sendBal) : `${fmtUnits(bscBal?.bnb, 18, 4)} BNB`}
           </span>
           {sell && sendBal > 0 && (
             <button
@@ -391,7 +391,6 @@ export function SwapSheet({
               <CopyButton text={bscAddr} />
             </div>
             <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12 }}>
-              <span>USDT: {fmtUnits(bscBal?.usdt, 18, 2)}</span>
               <span>BNB: {fmtUnits(bscBal?.bnb, 18, 4)}</span>
               <button className="btn-ghost btn-sm" disabled={bscBusy} onClick={refreshBsc}>
                 {bscBusy ? "…" : "↻"}
@@ -444,8 +443,8 @@ export function SwapSheet({
   // ---------- step 3: progress ----------
   const s = live?.status ?? "user_locked";
   const terminal = ["completed", "refunded", "failed"].includes(s);
-  const inUnit = live?.direction === "exfer_to_usdt" ? "EXFER" : "USDT";
-  const outUnit = live?.direction === "exfer_to_usdt" ? "USDT" : "EXFER";
+  const inUnit = live?.direction === "exfer_to_bnb" ? "EXFER" : "BNB";
+  const outUnit = live?.direction === "exfer_to_bnb" ? "BNB" : "EXFER";
   const amounts = live ? `${fmtAmt(live.amount_in)} ${inUnit} → ${fmtAmt(live.amount_out)} ${outUnit}` : "";
 
   // A "quoted" swap was never confirmed — no funds moved. Be honest instead of
