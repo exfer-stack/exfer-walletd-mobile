@@ -226,7 +226,7 @@ export function SwapSheet({
       } catch {
         /* transient; keep polling */
       }
-      pollRef.current = window.setTimeout(tick, 4000);
+      pollRef.current = window.setTimeout(tick, 2000);
     };
     tick();
     return () => {
@@ -392,42 +392,62 @@ export function SwapSheet({
         : s === "failed"
           ? t("swap.failedTitle")
           : t("swap.started");
-  const stuck = !terminal && elapsed > 120;
+  const stuck = !terminal && elapsed > 90;
   const canRefund = !terminal && ["user_locked", "pool_locked"].includes(s);
+  const inUnit = live?.direction === "exfer_to_usdt" ? "EXFER" : "USDT";
+  const outUnit = live?.direction === "exfer_to_usdt" ? "USDT" : "EXFER";
   return (
     <Sheet
-      title={title}
+      title={terminal ? title : t("swap.submittedTitle")}
       onClose={onClose}
       footer={
         terminal ? (
           <button className="btn btn-block" onClick={() => { onDone(); onClose(); }}>
             {t("swap.done")}
           </button>
-        ) : stuck && canRefund ? (
-          <button className="btn btn-secondary btn-block" disabled={busy} onClick={manualRefund}>
-            {busy ? <Spinner /> : t("swap.refundNow")}
+        ) : (
+          // The user's leg is on-chain — their part is done. Let them leave;
+          // the daemon's monitor settles the rest in the background.
+          <button className="btn btn-block" onClick={onClose}>
+            {t("swap.closeKeepSettling")}
           </button>
-        ) : undefined
+        )
       }
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "20px 0" }}>
-        {!terminal && <Spinner />}
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{statusLabel}</div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "16px 0" }}>
+        {terminal ? (
+          <div style={{ fontSize: 30 }}>{s === "completed" ? "✅" : s === "refunded" ? "↩️" : "⚠️"}</div>
+        ) : (
+          <div style={{ fontSize: 30 }}>✅</div>
+        )}
+        {!terminal && (
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{t("swap.submittedHeading")}</div>
+        )}
         {live && (
-          <div style={{ color: "var(--text-faint)", fontSize: 14 }}>
-            {fmtAmt(live.amount_in)} {live.direction === "exfer_to_usdt" ? "EXFER" : "USDT"} →{" "}
-            {fmtAmt(live.amount_out)} {live.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
+          <div style={{ fontSize: 15, fontWeight: 600 }}>
+            {fmtAmt(live.amount_in)} {inUnit} → {fmtAmt(live.amount_out)} {outUnit}
           </div>
         )}
         {!terminal && (
-          <div style={{ color: "var(--text-faint)", fontSize: 12, textAlign: "center" }}>
-            {stuck ? t("swap.takingLong") : t("swap.startedBody")}
-          </div>
+          <>
+            <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
+              {t("swap.bgSettleBody", { amt: `${fmtAmt(live?.amount_out ?? "")} ${outUnit}` })}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12 }}>
+              <Spinner size={13} /> {statusLabel}
+            </div>
+            {stuck && (
+              <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t("swap.takingLong")}</div>
+            )}
+            {stuck && canRefund && (
+              <button className="btn-ghost btn-sm" disabled={busy} onClick={manualRefund}>
+                {busy ? <Spinner size={13} /> : t("swap.refundNow")}
+              </button>
+            )}
+          </>
         )}
         {s === "refunded" && (
-          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center" }}>
-            {t("swap.refundedBody")}
-          </div>
+          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center" }}>{t("swap.refundedBody")}</div>
         )}
         {live?.error && <div style={{ color: "#f87171", fontSize: 13 }}>{live.error}</div>}
       </div>
