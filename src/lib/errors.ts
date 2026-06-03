@@ -26,6 +26,27 @@ function rawText(e: unknown): string {
 // Ordered most-specific → most-general. First match wins. `key` is resolved
 // through tStatic at call time so the message follows the chosen language.
 const PATTERNS: { test: RegExp; key: MsgKey }[] = [
+  // ---- swap-specific (most specific; must win over the generic ones) ----
+  {
+    test: /swap not configured|swap engine|set --swap-pool/i,
+    key: "err.swapUnavailable",
+  },
+  {
+    test: /quote expired|request a fresh quote/i,
+    key: "err.quoteExpired",
+  },
+  {
+    test: /pool liquidity|temporarily reserved|reserved by other|size cap|exceeds.*reserve/i,
+    key: "err.poolLiquidity",
+  },
+  {
+    test: /no BNB|BNB for gas|fund it before/i,
+    key: "err.needBnb",
+  },
+  {
+    test: /unsafe .*timeout|too-short.*timeout/i,
+    key: "err.unsafeTimeout",
+  },
   {
     test: /rate.?limit|too many requests|queries per minute|-32603/i,
     key: "err.busy",

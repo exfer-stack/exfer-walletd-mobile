@@ -10,7 +10,7 @@
 // We quote on the Review tap (not per keystroke) because each quote reserves a
 // preimage and seals the journal — too costly to run on every input change.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc } from "../../lib/rpc";
@@ -19,7 +19,21 @@ import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
 import { Sheet, CopyButton, Spinner } from "../ui";
+import { Qr } from "../Qr";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
+
+/** Format a smallest-unit integer string (e.g. wei) to a short human amount. */
+function fmtUnits(raw: string | undefined, decimals: number, frac = 4): string {
+  if (!raw) return "0";
+  try {
+    const n = BigInt(raw);
+    const base = 10n ** BigInt(decimals);
+    const fracStr = (n % base).toString().padStart(decimals, "0").slice(0, frac).replace(/0+$/, "");
+    return fracStr ? `${n / base}.${fracStr}` : `${n / base}`;
+  } catch {
+    return "0";
+  }
+}
 
 type Direction = "exfer_to_usdt" | "usdt_to_exfer";
 
@@ -78,31 +92,32 @@ export function SwapSheet({
 
   // BSC funding info (buy direction only).
   const [bscAddr, setBscAddr] = useState<string | null>(null);
-  const [bnbZero, setBnbZero] = useState(false);
+  const [bscBal, setBscBal] = useState<{ bnb: string; usdt: string } | null>(null);
+  const [bscBusy, setBscBusy] = useState(false);
 
   const sell = direction === "exfer_to_usdt";
   // For sell we lock EXFER from a funded address; for buy we receive EXFER to one.
   const pickList = sell ? fundable : visible;
   const fromAddr = from || pickList[0]?.address || "";
+  const bnbZero = bscBal != null && (() => { try { return BigInt(bscBal.bnb) === 0n; } catch { return false; } })();
+
+  const refreshBsc = useCallback(async () => {
+    setBscBusy(true);
+    try {
+      const a = await rpc<{ address: string }>("bsc_get_address");
+      setBscAddr(a.address);
+      const b = await rpc<{ bnb_wei: string; usdt_units: string }>("bsc_get_balances");
+      setBscBal({ bnb: b.bnb_wei, usdt: b.usdt_units });
+    } catch {
+      /* engine may be disabled; surfaced on Review */
+    } finally {
+      setBscBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (direction !== "usdt_to_exfer") return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const a = await rpc<{ address: string }>("bsc_get_address");
-        if (cancelled) return;
-        setBscAddr(a.address);
-        const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
-        if (!cancelled) setBnbZero(b.bnb_wei === "0");
-      } catch {
-        /* engine may be disabled; surfaced on Review */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [direction]);
+    if (direction === "usdt_to_exfer") refreshBsc();
+  }, [direction, refreshBsc]);
 
   const amountValid = AMOUNT_RE.test(amount.trim()) && Number(amount) > 0;
   const sendUnit = sell ? "EXFER" : "USDT";
@@ -154,7 +169,30 @@ export function SwapSheet({
       setStep(3);
       toast.success(t("swap.started"), t("swap.startedBody"));
     } catch (e) {
-      setErr(humanizeError(e));
+      // An expired quote is recoverable: bounce back to step 1 to re-quote.
+      if (/expired/i.test(String((e as { message?: string })?.message ?? e))) {
+        setQuote(null);
+        setStep(1);
+        toast.error(t("swap.failedTitle"), t("swap.expired"));
+      } else {
+        setErr(humanizeError(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Manual reclaim after a stalled/timed-out swap (the monitor also does this
+  // automatically past the deadline; this gives the user an explicit lever).
+  async function manualRefund() {
+    if (!watchId) return;
+    setBusy(true);
+    try {
+      const r = await rpc<SwapRec>("swap_refund", { swap_id: watchId });
+      setLive(r);
+      toast.success(t("swap.refundedTitle"), "");
+    } catch (e) {
+      toast.error(t("swap.failedTitle"), humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -187,6 +225,16 @@ export function SwapSheet({
       if (pollRef.current) window.clearTimeout(pollRef.current);
     };
   }, [step, watchId, refresh]);
+
+  // Elapsed seconds on the progress screen, for a "taking longer than usual" hint.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (step !== 3) return;
+    const t0 = Date.now();
+    setElapsed(0);
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [step]);
 
   const statusLabel = useMemo(() => {
     const s = live?.status ?? "quoted";
@@ -258,13 +306,35 @@ export function SwapSheet({
         </select>
 
         {!sell && bscAddr && (
-          <div style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span>{t("swap.bscAddress")}: {shortAddress(bscAddr)}</span>
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 12,
+              background: "var(--surface-2, rgba(127,127,127,0.08))",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <div className="eyebrow">{t("swap.bscAddress")}</div>
+            <Qr value={bscAddr} size={150} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <span style={{ fontFamily: "monospace" }}>{shortAddress(bscAddr)}</span>
               <CopyButton text={bscAddr} />
             </div>
-            <div style={{ marginTop: 4 }}>{t("swap.fundHint")}</div>
-            {bnbZero && <div style={{ color: "#fbbf24", marginTop: 4 }}>{t("swap.needBnb")}</div>}
+            <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12 }}>
+              <span>USDT: {fmtUnits(bscBal?.usdt, 18, 2)}</span>
+              <span>BNB: {fmtUnits(bscBal?.bnb, 18, 4)}</span>
+              <button className="btn-ghost btn-sm" disabled={bscBusy} onClick={refreshBsc}>
+                {bscBusy ? "…" : "↻"}
+              </button>
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--text-faint)", textAlign: "center" }}>
+              {t("swap.fundHint")}
+            </div>
+            {bnbZero && <div style={{ color: "#fbbf24", fontSize: 12 }}>{t("swap.needBnb")}</div>}
           </div>
         )}
 
@@ -289,6 +359,12 @@ export function SwapSheet({
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <Row label={t("swap.youSend")} value={`${quote.amount_in} ${sendUnit}`} />
           <Row label={t("swap.youReceive")} value={`${quote.amount_out} ${recvUnit}`} strong />
+          {(() => {
+            const a = Number(quote.amount_in);
+            const b = Number(quote.amount_out);
+            if (!a || !b) return null;
+            return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${(b / a).toPrecision(4)} ${recvUnit}`} />;
+          })()}
           <Row label={t("swap.from")} value={shortAddress(fromAddr)} />
           {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
         </div>
@@ -307,14 +383,20 @@ export function SwapSheet({
         : s === "failed"
           ? t("swap.failedTitle")
           : t("swap.started");
+  const stuck = !terminal && elapsed > 120;
+  const canRefund = !terminal && ["user_locked", "pool_locked"].includes(s);
   return (
     <Sheet
       title={title}
       onClose={onClose}
       footer={
         terminal ? (
-          <button className="btn btn-block" onClick={() => { onDone("activity"); onClose(); }}>
-            {t("swap.viewActivity")}
+          <button className="btn btn-block" onClick={() => { onDone(); onClose(); }}>
+            {t("swap.done")}
+          </button>
+        ) : stuck && canRefund ? (
+          <button className="btn btn-secondary btn-block" disabled={busy} onClick={manualRefund}>
+            {busy ? <Spinner /> : t("swap.refundNow")}
           </button>
         ) : undefined
       }
@@ -328,9 +410,14 @@ export function SwapSheet({
             {live.amount_out} {live.direction === "exfer_to_usdt" ? "USDT" : "EXFER"}
           </div>
         )}
-        {s !== "completed" && !terminal && (
+        {!terminal && (
           <div style={{ color: "var(--text-faint)", fontSize: 12, textAlign: "center" }}>
-            {t("swap.startedBody")}
+            {stuck ? t("swap.takingLong") : t("swap.startedBody")}
+          </div>
+        )}
+        {s === "refunded" && (
+          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center" }}>
+            {t("swap.refundedBody")}
           </div>
         )}
         {live?.error && <div style={{ color: "#f87171", fontSize: 13 }}>{live.error}</div>}

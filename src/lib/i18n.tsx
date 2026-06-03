@@ -460,6 +460,15 @@ const EN = {
   "swap.amountInvalid": "Enter a valid amount",
   "swap.noFunds": "No usable address",
   "swap.inflightTitle": "Swaps in progress",
+  "swap.done": "Done",
+  "swap.takingLong": "Taking a little longer than usual — your funds are safe and auto-refund if it times out.",
+  "swap.refundNow": "Refund now",
+  "swap.refundedBody": "Your funds have been returned to your wallet.",
+  "err.swapUnavailable": "Swap isn't available on this wallet yet.",
+  "err.quoteExpired": "That quote expired — get a fresh one.",
+  "err.poolLiquidity": "The swap pool is busy right now. Try a smaller amount or retry shortly.",
+  "err.needBnb": "Your BSC address needs a little BNB for gas first.",
+  "err.unsafeTimeout": "The pool returned unsafe terms; the swap was cancelled to protect your funds.",
   "home.swap": "Swap",
 } as const;
 
@@ -867,6 +876,15 @@ const ZH: Record<MsgKey, string> = {
   "swap.amountInvalid": "请输入有效金额",
   "swap.noFunds": "没有可用地址",
   "swap.inflightTitle": "进行中的兑换",
+  "swap.done": "完成",
+  "swap.takingLong": "比平时久一点——你的资金是安全的,超时会自动退款。",
+  "swap.refundNow": "立即退款",
+  "swap.refundedBody": "资金已退回你的钱包。",
+  "err.swapUnavailable": "此钱包暂不支持兑换。",
+  "err.quoteExpired": "报价已过期——请重新获取。",
+  "err.poolLiquidity": "兑换池暂时繁忙,换个小一点的金额或稍后再试。",
+  "err.needBnb": "你的 BSC 地址需要先充一点 BNB 付手续费。",
+  "err.unsafeTimeout": "兑换池返回了不安全的条款,已为你的资金安全取消本次兑换。",
   "home.swap": "兑换",
 };
 
