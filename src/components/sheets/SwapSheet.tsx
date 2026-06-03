@@ -10,10 +10,10 @@
 // We quote on the Review tap (not per keystroke) because each quote reserves a
 // preimage and seals the journal — too costly to run on every input change.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
-import { rpc } from "../../lib/rpc";
+import { rpc, formatExfer, formatBalanceCompact } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
@@ -42,6 +42,43 @@ function fmtUnits(raw: string | undefined, decimals: number, frac = 4): string {
   } catch {
     return "0";
   }
+}
+
+/** Light haptic feedback where supported (no-op on desktop / unsupported). */
+function buzz(pattern: number | number[]) {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* not supported */
+  }
+}
+
+/** A branded result badge — a tinted circle with a stroked glyph, replacing
+ *  the raw emoji that rendered inconsistently across OEM ROMs. */
+function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
+  const color = kind === "success" ? "#34d399" : kind === "refunded" ? "#fbbf24" : "#f87171";
+  const path =
+    kind === "success"
+      ? "M5 13l4 4L19 7" // check
+      : kind === "refunded"
+        ? "M9 14l-4-4 4-4M5 10h8a6 6 0 0 1 0 12h-1" // undo arrow
+        : "M6 6l12 12M18 6L6 18"; // x
+  return (
+    <div
+      style={{
+        width: 64,
+        height: 64,
+        borderRadius: 999,
+        background: `color-mix(in srgb, ${color} 16%, transparent)`,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+        <path d={path} />
+      </svg>
+    </div>
+  );
 }
 
 type Direction = "exfer_to_usdt" | "usdt_to_exfer";
@@ -108,6 +145,7 @@ export function SwapSheet({
   // For sell we lock EXFER from a funded address; for buy we receive EXFER to one.
   const pickList = sell ? fundable : visible;
   const fromAddr = from || pickList[0]?.address || "";
+  const sendBal = pickList.find((a) => a.address === fromAddr)?.balance ?? 0;
   const bnbZero = bscBal != null && (() => { try { return BigInt(bscBal.bnb) === 0n; } catch { return false; } })();
 
   const refreshBsc = useCallback(async () => {
@@ -160,6 +198,7 @@ export function SwapSheet({
 
   async function confirm() {
     if (!quote) return;
+    buzz(10);
     const bio = await biometricStatus();
     if (bio.available) {
       const ok = await biometricUnlock(
@@ -245,20 +284,21 @@ export function SwapSheet({
     return () => window.clearInterval(id);
   }, [step]);
 
-  const statusLabel = useMemo(() => {
-    const s = live?.status ?? "quoted";
-    const map: Record<string, string> = {
-      quoted: t("swap.statusQuoted"),
-      user_locked: t("swap.statusUserLocked"),
-      pool_locked: t("swap.statusPoolLocked"),
-      claiming: t("swap.statusClaiming"),
-      completed: t("swap.statusCompleted"),
-      refunding: t("swap.statusRefunding"),
-      refunded: t("swap.statusRefunded"),
-      failed: t("swap.statusFailed"),
-    };
-    return map[s] ?? s;
-  }, [live, t]);
+  // On completion: celebratory haptic + a gentle auto-dismiss so the user
+  // isn't left staring at a finished screen. Refund/fail get a single buzz.
+  useEffect(() => {
+    if (step !== 3) return;
+    const s = live?.status;
+    if (s === "completed") {
+      buzz([0, 30, 40, 30]);
+      const id = window.setTimeout(() => {
+        onDone();
+        onClose();
+      }, 3200);
+      return () => window.clearTimeout(id);
+    }
+    if (s === "refunded" || s === "failed") buzz(60);
+  }, [step, live?.status, onDone, onClose]);
 
   // ---------- step 1: build ----------
   if (step === 1) {
@@ -290,22 +330,39 @@ export function SwapSheet({
         </div>
 
         <label className="eyebrow">{t("swap.youSend")}</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input
+            className="field"
             inputMode="decimal"
+            autoFocus
             placeholder="0.0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            style={{ flex: 1, fontSize: 22, padding: "10px 12px" }}
+            style={{ flex: 1, fontSize: 22, fontWeight: 600 }}
           />
           <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>{sendUnit}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px 14px" }}>
+          <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>
+            {t("swap.balance")}: {sell ? formatBalanceCompact(sendBal) : `${fmtUnits(bscBal?.usdt, 18, 2)} USDT`}
+          </span>
+          {sell && sendBal > 0 && (
+            <button
+              className="btn-ghost btn-sm"
+              style={{ padding: "4px 10px", color: "var(--accent)" }}
+              onClick={() => setAmount(formatExfer(sendBal).replace(" EXFER", ""))}
+            >
+              {t("swap.max")}
+            </button>
+          )}
         </div>
 
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <select
+          className="field"
           value={fromAddr}
           onChange={(e) => setFrom(e.target.value)}
-          style={{ width: "100%", padding: "10px 12px", marginBottom: 14 }}
+          style={{ width: "100%", marginBottom: 14 }}
         >
           {pickList.map((a) => (
             <option key={a.address} value={a.address}>
@@ -375,6 +432,9 @@ export function SwapSheet({
             return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${(b / a).toPrecision(4)} ${recvUnit}`} />;
           })()}
           <Row label={t("swap.from")} value={shortAddress(fromAddr)} />
+          <div className="banner banner-info" style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.55 }}>
+            {t("swap.safetyNote")}
+          </div>
           {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
         </div>
       </Sheet>
@@ -384,72 +444,156 @@ export function SwapSheet({
   // ---------- step 3: progress ----------
   const s = live?.status ?? "user_locked";
   const terminal = ["completed", "refunded", "failed"].includes(s);
-  const title =
-    s === "completed"
-      ? t("swap.completedTitle")
-      : s === "refunded"
-        ? t("swap.refundedTitle")
-        : s === "failed"
-          ? t("swap.failedTitle")
-          : t("swap.started");
-  const stuck = !terminal && elapsed > 90;
-  const canRefund = !terminal && ["user_locked", "pool_locked"].includes(s);
   const inUnit = live?.direction === "exfer_to_usdt" ? "EXFER" : "USDT";
   const outUnit = live?.direction === "exfer_to_usdt" ? "USDT" : "EXFER";
+  const amounts = live ? `${fmtAmt(live.amount_in)} ${inUnit} → ${fmtAmt(live.amount_out)} ${outUnit}` : "";
+
+  // A "quoted" swap was never confirmed — no funds moved. Be honest instead of
+  // claiming funds are locked (the old UI's biggest correctness bug).
+  if (s === "quoted") {
+    return (
+      <Sheet
+        title={t("swap.notConfirmedTitle")}
+        onClose={onClose}
+        footer={<button className="btn btn-block" onClick={onClose}>{t("swap.done")}</button>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "22px 0" }}>
+          <ResultBadge kind="refunded" />
+          {amounts && <div style={{ fontSize: 15, fontWeight: 600 }}>{amounts}</div>}
+          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.55 }}>
+            {t("swap.notConfirmedResumeBody")}
+          </div>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // Terminal states get a branded result badge (no raw emoji).
+  if (terminal) {
+    const kind = s === "completed" ? "success" : s === "refunded" ? "refunded" : "failed";
+    const title =
+      s === "completed" ? t("swap.completedTitle") : s === "refunded" ? t("swap.refundedTitle") : t("swap.failedTitle");
+    return (
+      <Sheet
+        title={title}
+        onClose={onClose}
+        footer={<button className="btn btn-block" onClick={() => { onDone(); onClose(); }}>{t("swap.done")}</button>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "24px 0" }}>
+          <ResultBadge kind={kind} />
+          {amounts && <div style={{ fontSize: 16, fontWeight: 700 }}>{amounts}</div>}
+          {s === "completed" && (
+            <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
+              {t("swap.completedBody", { amt: `${fmtAmt(live?.amount_out ?? "")} ${outUnit}` })}
+            </div>
+          )}
+          {s === "refunded" && (
+            <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
+              {t("swap.refundedBody")}
+            </div>
+          )}
+          {live?.error && <div style={{ color: "#f87171", fontSize: 13, textAlign: "center" }}>{live.error}</div>}
+        </div>
+      </Sheet>
+    );
+  }
+
+  // Refunding: an amber in-between state while the daemon reverses the lock.
+  if (s === "refunding") {
+    return (
+      <Sheet title={t("swap.refundingTitle")} onClose={onClose} footer={<button className="btn btn-block" onClick={onClose}>{t("swap.closeKeepSettling")}</button>}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "22px 0" }}>
+          <ResultBadge kind="refunded" />
+          {amounts && <div style={{ fontSize: 15, fontWeight: 600 }}>{amounts}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 13 }}>
+            <Spinner size={13} /> {t("swap.statusRefunding")}
+          </div>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // In-progress (user_locked / pool_locked / claiming): a 3-step checklist so
+  // "in progress" reads as measurable forward motion, not an endless spinner.
+  const doneCount = s === "pool_locked" || s === "claiming" ? 2 : 1;
+  const pct = s === "pool_locked" || s === "claiming" ? 82 : 40;
+  const stepLabels = [t("swap.stepLocked"), t("swap.stepMatched"), t("swap.stepSettling")];
+  const stuck = elapsed > 90;
+  const canRefund = ["user_locked", "pool_locked"].includes(s);
   return (
     <Sheet
-      title={terminal ? title : t("swap.submittedTitle")}
+      title={t("swap.submittedTitle")}
       onClose={onClose}
-      footer={
-        terminal ? (
-          <button className="btn btn-block" onClick={() => { onDone(); onClose(); }}>
-            {t("swap.done")}
-          </button>
-        ) : (
-          // The user's leg is on-chain — their part is done. Let them leave;
-          // the daemon's monitor settles the rest in the background.
-          <button className="btn btn-block" onClick={onClose}>
-            {t("swap.closeKeepSettling")}
-          </button>
-        )
-      }
+      // The user's leg is on-chain — their part is done. Let them leave; the
+      // daemon's monitor settles the rest in the background.
+      footer={<button className="btn btn-block" onClick={onClose}>{t("swap.closeKeepSettling")}</button>}
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "16px 0" }}>
-        {terminal ? (
-          <div style={{ fontSize: 30 }}>{s === "completed" ? "✅" : s === "refunded" ? "↩️" : "⚠️"}</div>
-        ) : (
-          <div style={{ fontSize: 30 }}>✅</div>
-        )}
-        {!terminal && (
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{t("swap.submittedHeading")}</div>
-        )}
-        {live && (
-          <div style={{ fontSize: 15, fontWeight: 600 }}>
-            {fmtAmt(live.amount_in)} {inUnit} → {fmtAmt(live.amount_out)} {outUnit}
-          </div>
-        )}
-        {!terminal && (
-          <>
-            <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
-              {t("swap.bgSettleBody", { amt: `${fmtAmt(live?.amount_out ?? "")} ${outUnit}` })}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12 }}>
-              <Spinner size={13} /> {statusLabel}
-            </div>
-            {stuck && (
-              <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t("swap.takingLong")}</div>
-            )}
-            {stuck && canRefund && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "8px 0 4px" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{t("swap.submittedHeading")}</div>
+          {amounts && <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>}
+        </div>
+
+        {/* determinate-ish progress bar */}
+        <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${pct}%`,
+              borderRadius: 999,
+              background: "var(--accent)",
+              transition: "width .6s var(--ease, ease)",
+            }}
+          />
+        </div>
+
+        {/* 3-step checklist */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {stepLabels.map((label, i) => {
+            const done = i < doneCount;
+            const active = i === doneCount;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                <span style={{ width: 22, height: 22, display: "grid", placeItems: "center", flex: "0 0 auto" }}>
+                  {done ? (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : active ? (
+                    <Spinner size={16} />
+                  ) : (
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />
+                  )}
+                </span>
+                <span
+                  style={{
+                    fontSize: 14.5,
+                    fontWeight: done || active ? 600 : 500,
+                    color: done || active ? "var(--text)" : "var(--text-faint)",
+                  }}
+                >
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
+          {t("swap.etaHint")}
+        </div>
+
+        {stuck && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t("swap.takingLong")}</div>
+            {canRefund && (
               <button className="btn-ghost btn-sm" disabled={busy} onClick={manualRefund}>
                 {busy ? <Spinner size={13} /> : t("swap.refundNow")}
               </button>
             )}
-          </>
+          </div>
         )}
-        {s === "refunded" && (
-          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center" }}>{t("swap.refundedBody")}</div>
-        )}
-        {live?.error && <div style={{ color: "#f87171", fontSize: 13 }}>{live.error}</div>}
+        {live?.error && <div style={{ color: "#f87171", fontSize: 13, textAlign: "center" }}>{live.error}</div>}
       </div>
     </Sheet>
   );

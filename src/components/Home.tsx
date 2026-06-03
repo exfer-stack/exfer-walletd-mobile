@@ -140,8 +140,10 @@ export function Home({
       try {
         const all = await rpc<InflightSwap[]>("swap_list");
         if (cancelled) return;
+        // "quoted" is a draft — no funds have moved — so it is NOT in progress.
+        // Only surface swaps where the user's leg is actually on-chain.
         const live = (all ?? []).filter(
-          (s) => !["completed", "refunded", "failed"].includes(s.status),
+          (s) => !["quoted", "completed", "refunded", "failed"].includes(s.status),
         );
         setInflight(live);
       } catch {

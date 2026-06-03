@@ -37,3 +37,4 @@ src-tauri/icons/ios/
 dist/
 *.png
 test-results/
+.design-audit/
