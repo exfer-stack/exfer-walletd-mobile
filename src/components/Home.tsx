@@ -17,7 +17,8 @@ import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
-import { AddrAvatar, ActionMenu, PendingDot } from "./ui";
+import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton } from "./ui";
+import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
 
@@ -90,6 +91,19 @@ interface InflightSwap {
   amount_out: string;
 }
 
+/** Format native BNB wei (18 dp) to a short human string. */
+function fmtBnbWei(wei: string | undefined, frac = 5): string {
+  if (!wei) return "0";
+  try {
+    const n = BigInt(wei);
+    const base = 10n ** 18n;
+    const f = (n % base).toString().padStart(18, "0").slice(0, frac).replace(/0+$/, "");
+    return f ? `${n / base}.${f}` : `${n / base}`;
+  } catch {
+    return "0";
+  }
+}
+
 /** Trim a human decimal string to ≤4 fractional digits (drops trailing zeros). */
 function fmtAmt(s: string, dp = 4): string {
   if (!s) return s;
@@ -152,6 +166,32 @@ export function Home({
     };
     load();
     const id = window.setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // The user's BNB lives at an in-wallet BSC address. Surface it as a first-class
+  // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
+  // can't see it assumes their money is gone). No-ops when swap isn't configured.
+  const [bnb, setBnb] = useState<{ addr: string; wei: string } | null>(null);
+  const [depositOpen, setDepositOpen] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [a, b] = await Promise.all([
+          rpc<{ address: string }>("bsc_get_address"),
+          rpc<{ bnb_wei: string }>("bsc_get_balances"),
+        ]);
+        if (!cancelled) setBnb({ addr: a.address, wei: b.bnb_wei });
+      } catch {
+        if (!cancelled) setBnb(null); // engine off / not configured
+      }
+    };
+    load();
+    const id = window.setInterval(load, 20_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -349,6 +389,44 @@ export function Home({
           <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="secondary" />
           <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
+
+        {/* BNB asset card — BNB lives at an in-wallet BSC address; show it as a
+            real holding so deposited/received BNB is never invisible. Tap to
+            see the deposit address. Only renders when swap is configured. */}
+        {bnb && (
+          <button
+            onClick={() => setDepositOpen(true)}
+            className="card"
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 12,
+              padding: "13px 14px", marginBottom: 14, textAlign: "left",
+            }}
+          >
+            <span
+              style={{
+                width: 34, height: 34, borderRadius: 999, flex: "0 0 auto",
+                display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700,
+                background: "color-mix(in srgb, #f3ba2f 22%, transparent)", color: "#f3ba2f",
+              }}
+            >
+              BNB
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>BNB</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>
+                {t("home.bnbChain")}
+              </span>
+            </span>
+            <span style={{ textAlign: "right" }}>
+              <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>
+                <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
+              </span>
+              <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)" }}>
+                {t("home.depositBnb")}
+              </span>
+            </span>
+          </button>
+        )}
 
         {inflight.length > 0 && (
           <div style={{ marginBottom: 14 }}>
@@ -598,6 +676,23 @@ export function Home({
       )}
       {impKey && (
         <ImportKeyFileModal onClose={() => setImpKey(false)} onImported={refresh} />
+      )}
+      {depositOpen && bnb && (
+        <Modal title={t("home.depositBnb")} onClose={() => setDepositOpen(false)}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "4px 0" }}>
+            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+              {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
+            </div>
+            <Qr value={bnb.addr} size={170} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+              <span className="mono">{shortAddress(bnb.addr)}</span>
+              <CopyButton text={bnb.addr} />
+            </div>
+            <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+              {t("home.depositBnbBody")}
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

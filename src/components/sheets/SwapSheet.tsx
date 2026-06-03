@@ -515,7 +515,6 @@ export function SwapSheet({
   // In-progress (user_locked / pool_locked / claiming): a 3-step checklist so
   // "in progress" reads as measurable forward motion, not an endless spinner.
   const doneCount = s === "pool_locked" || s === "claiming" ? 2 : 1;
-  const pct = s === "pool_locked" || s === "claiming" ? 82 : 40;
   const stepLabels = [t("swap.stepLocked"), t("swap.stepMatched"), t("swap.stepSettling")];
   const stuck = elapsed > 90;
   const canRefund = ["user_locked", "pool_locked"].includes(s);
@@ -533,49 +532,69 @@ export function SwapSheet({
           {amounts && <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>}
         </div>
 
-        {/* determinate-ish progress bar */}
-        <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
-          <div
-            style={{
-              height: "100%",
-              width: `${pct}%`,
-              borderRadius: 999,
-              background: "var(--accent)",
-              transition: "width .6s var(--ease, ease)",
-            }}
-          />
-        </div>
-
-        {/* 3-step checklist */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {stepLabels.map((label, i) => {
-            const done = i < doneCount;
-            const active = i === doneCount;
-            return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                <span style={{ width: 22, height: 22, display: "grid", placeItems: "center", flex: "0 0 auto" }}>
-                  {done ? (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : active ? (
-                    <Spinner size={16} />
-                  ) : (
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />
-                  )}
-                </span>
-                <span
+        {/* horizontal staged stepper: 3 nodes with chevrons flowing into the
+            active stage, so the wait reads as visible forward motion. */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", padding: "0 4px" }}>
+            {[0, 1, 2].map((i) => {
+              const done = i < doneCount;
+              const active = i === doneCount;
+              const node = (
+                <div
+                  key={`n${i}`}
+                  className={active ? "swap-node-active" : undefined}
                   style={{
-                    fontSize: 14.5,
-                    fontWeight: done || active ? 600 : 500,
-                    color: done || active ? "var(--text)" : "var(--text-faint)",
+                    width: 30, height: 30, borderRadius: 999, flex: "0 0 auto",
+                    display: "grid", placeItems: "center",
+                    background: done ? "#34d399" : active ? "var(--accent)" : "var(--surface-2)",
+                    border: done || active ? "none" : "1px solid var(--border)",
+                    color: done || active ? "var(--accent-ink)" : "var(--text-faint)",
                   }}
                 >
-                  {label}
-                </span>
-              </div>
-            );
-          })}
+                  {done ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                  ) : active ? (
+                    <Spinner size={14} />
+                  ) : (
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+                  )}
+                </div>
+              );
+              if (i === 2) return node;
+              const connDone = i + 1 < doneCount;
+              const connActive = i + 1 === doneCount;
+              const conn = (
+                <div key={`c${i}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 2 }}>
+                  {connActive ? (
+                    <div className="swap-flow" style={{ display: "flex", gap: 1, color: "var(--accent)" }}>
+                      {[0, 1, 2].map((k) => (
+                        <svg key={k} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ width: "100%", height: 2, borderRadius: 2, background: connDone ? "#34d399" : "var(--surface-2)" }} />
+                  )}
+                </div>
+              );
+              return [node, conn];
+            })}
+          </div>
+          <div style={{ display: "flex", marginTop: 8 }}>
+            {stepLabels.map((label, i) => (
+              <span
+                key={i}
+                style={{
+                  flex: 1,
+                  fontSize: 11.5,
+                  textAlign: i === 0 ? "left" : i === 2 ? "right" : "center",
+                  fontWeight: i <= doneCount ? 600 : 500,
+                  color: i <= doneCount ? "var(--text)" : "var(--text-faint)",
+                }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
 
         <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>

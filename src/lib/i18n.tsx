@@ -92,6 +92,11 @@ const EN = {
   "home.totalBalance": "Total balance",
   "home.receive": "Receive",
   "home.send": "Send",
+  "home.bnbChain": "BNB Smart Chain",
+  "home.depositBnb": "Deposit BNB",
+  "home.bnbBalanceLabel": "Your BNB balance",
+  "home.depositBnbBody":
+    "Send BNB on BNB Smart Chain (native BEP-20) to this address — it's what you swap for EXFER, and it also pays the network fee. Withdraw from an exchange (e.g. Binance) or another wallet. Funds stay yours until you swap.",
   "home.addresses": "Addresses",
   "home.newAddress": "New address",
   "home.noAddrTitle": "No addresses yet",
@@ -544,6 +549,11 @@ const ZH: Record<MsgKey, string> = {
   "home.totalBalance": "总余额",
   "home.receive": "收款",
   "home.send": "发送",
+  "home.bnbChain": "BNB 智能链",
+  "home.depositBnb": "充值 BNB",
+  "home.bnbBalanceLabel": "你的 BNB 余额",
+  "home.depositBnbBody":
+    "请在 BNB 智能链（原生 BEP-20）上往这个地址充入 BNB——它就是你用来换 EXFER 的币，同时也用来付网络手续费。可从交易所（如币安）或其他钱包提币过来。兑换前资金一直在你手中。",
   "home.addresses": "地址",
   "home.newAddress": "新建地址",
   "home.noAddrTitle": "还没有地址",
