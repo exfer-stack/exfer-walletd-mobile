@@ -72,6 +72,19 @@ pub struct DesktopConfig {
     /// parse (they just fall back to the default).
     #[serde(default)]
     pub indexer_rpc: Option<String>,
+    /// exfer-swap pool base URL. `None`/empty ⇒ the swap engine stays OFF and
+    /// `swap_*`/`bsc_*` RPCs return -32602. Set it to turn cross-chain swap on.
+    #[serde(default)]
+    pub swap_pool_url: Option<String>,
+    /// BSC JSON-RPC for the swap engine's USDT leg. `None` ⇒ mainnet default.
+    #[serde(default)]
+    pub bsc_rpc_url: Option<String>,
+    /// BSC chain id (56 mainnet, 97 Chapel testnet). `None` ⇒ 56.
+    #[serde(default)]
+    pub bsc_chain_id: Option<u64>,
+    /// USDT (BEP-20) token address on BSC. `None` ⇒ mainnet USDT.
+    #[serde(default)]
+    pub bsc_usdt_address: Option<String>,
 }
 
 impl Default for DesktopConfig {
@@ -79,6 +92,10 @@ impl Default for DesktopConfig {
         Self {
             node_rpc: DEFAULT_NODE_RPC.to_string(),
             indexer_rpc: None,
+            swap_pool_url: None,
+            bsc_rpc_url: None,
+            bsc_chain_id: None,
+            bsc_usdt_address: None,
         }
     }
 }
@@ -189,6 +206,22 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
         // The indexer is anonymous (public read-only chain data); no token.
         indexer_token: None,
         indexer_timeout_secs: Some(15),
+        // Cross-chain swap engine: only lights up when a pool URL is set.
+        // bsc_* default to mainnet; set them (with swap_pool_url) for testnet.
+        swap_pool_url: desktop_cfg
+            .swap_pool_url
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string),
+        bsc_rpc_url: desktop_cfg
+            .bsc_rpc_url
+            .clone()
+            .unwrap_or_else(|| "https://bsc-dataseed1.binance.org".to_string()),
+        bsc_chain_id: desktop_cfg.bsc_chain_id.unwrap_or(56),
+        bsc_usdt_address: desktop_cfg
+            .bsc_usdt_address
+            .clone()
+            .unwrap_or_else(|| "0x55d398326f99059fF775485246999027B3197955".to_string()),
     }
 }
 
