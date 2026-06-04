@@ -20,7 +20,7 @@ import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
 import { addrName } from "../../lib/format";
 import type { WalletEntry } from "../../lib/types";
-import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark, StagedStepper } from "../ui";
+import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark, StagedStepper, Modal } from "../ui";
 import { Qr } from "../Qr";
 import { usePrice, useBnbUsd } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
@@ -183,6 +183,8 @@ export function SwapSheet({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState<SwapRec | null>(null);
+  // Gate: a high-impact trade must be explicitly confirmed on the review step.
+  const [showImpactConfirm, setShowImpactConfirm] = useState(false);
   const [live, setLive] = useState<SwapRec | null>(null);
 
   // BSC funding info (buy direction only).
@@ -294,14 +296,31 @@ export function SwapSheet({
   const recvUnit = sell ? "BNB" : "EXFER";
 
   // Live client-side estimate of the output as the user types (the real quote
-  // still happens on Review). Sell: EXFER→BNB = amount * mid. Buy: BNB→EXFER =
-  // amount / mid. Kept as raw numbers so the quote card can render them with
-  // proper typographic hierarchy (big figure + unit + USD), not a flat string.
+  // still happens on Review). Uses the SAME constant-product formula as the pool
+  // (Uniswap-v2 with fee) — NOT a flat amount×mid — so the estimate already
+  // includes slippage: a bigger trade gets a visibly worse rate, matching what
+  // swap_get_quote will return. (A flat mid made the per-unit rate look constant
+  // regardless of size, which is misleading even though execution was honest.)
+  // Falls back to the linear mid only when the reserves aren't known yet.
   const estOut = (() => {
     if (!poolInfo || !amountValid || poolInfo.mid <= 0) return null;
     const a = Number(amount);
     if (!isFinite(a) || a <= 0) return null;
+    const reserveIn = sell ? poolInfo.exferReserve : poolInfo.bnbReserve;
+    const reserveOut = sell ? poolInfo.bnbReserve : poolInfo.exferReserve;
+    if (reserveIn > 0 && reserveOut > 0) {
+      const inWithFee = (a * (10_000 - poolInfo.feeBps)) / 10_000;
+      return (inWithFee * reserveOut) / (reserveIn + inWithFee);
+    }
     return sell ? a * poolInfo.mid : a / poolInfo.mid;
+  })();
+  // Effective per-EXFER rate for THIS trade (BNB per 1 EXFER), derived from the
+  // slippage-aware estimate so it moves as the amount changes. Sell pays out BNB
+  // for EXFER (out/in); buy spends BNB for EXFER (in/out).
+  const effRate = (() => {
+    const a = Number(amount);
+    if (estOut == null || !isFinite(a) || a <= 0) return null;
+    return sell ? estOut / a : a / estOut;
   })();
   // Effective EXFER/USD: derived from the LIVE pool ratio (pool BNB-per-EXFER ×
   // BNB/USD) so the price tracks the pool — every swap shifts it. Falls back to
@@ -364,8 +383,17 @@ export function SwapSheet({
     }
   }
 
-  async function confirm() {
+  // Tapping Confirm: a high-impact trade pops a confirmation first; everything
+  // else goes straight to execute.
+  function confirm() {
     if (!quote) return;
+    if (highImpact) { setShowImpactConfirm(true); return; }
+    void doExecute();
+  }
+
+  async function doExecute() {
+    if (!quote) return;
+    setShowImpactConfirm(false);
     buzz(10);
     const bio = await biometricStatus();
     if (bio.available) {
@@ -612,10 +640,19 @@ export function SwapSheet({
                   {sigFmt(estOut, 6)}
                   <span className="quote-unit">{recvUnit}</span>
                 </div>
-                {/* The per-EXFER rate (and its USD) — more useful than a lone total. */}
+                {/* Effective rate for THIS trade (moves with the amount, since it
+                    includes slippage) + the price impact, like a real swap app. */}
                 <div className="quote-sub">
-                  1 EXFER ≈ {sigFmt(poolInfo.mid)} BNB{exferUsd != null ? ` · $${sigFmt(exferUsd, 4)}` : ""}
+                  1 EXFER ≈ {sigFmt(effRate ?? poolInfo.mid)} BNB
                 </div>
+                {priceImpact > 0 && (
+                  <div
+                    className="quote-sub"
+                    style={{ marginTop: 2, color: highImpact ? "#fbbf24" : "var(--text-faint)" }}
+                  >
+                    {t("swap.priceImpact")} {(priceImpact * 100).toFixed(2)}%
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -640,18 +677,6 @@ export function SwapSheet({
             )}
           </div>
         )}
-        {highImpact && (
-          <div
-            className="banner banner-warn"
-            style={{ margin: "0 0 14px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: 1 }}>
-              <path d="M12 9v4M12 17h.01M10.3 3.9l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z" />
-            </svg>
-            <span>{t("swap.highImpact", { pct: (priceImpact * 100).toFixed(1) })}</span>
-          </div>
-        )}
-
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <AddrPicker items={pickList} value={fromAddr} onChange={setFrom} />
 
@@ -696,6 +721,7 @@ export function SwapSheet({
   // ---------- step 2: review ----------
   if (step === 2 && quote) {
     return (
+      <>
       <Sheet
         title={t("swap.review")}
         onClose={onClose}
@@ -715,6 +741,14 @@ export function SwapSheet({
             if (!a || !b) return null;
             return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${sigFmt(b / a)} ${recvUnit}`} />;
           })()}
+          {priceImpact > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.priceImpact")}</span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: highImpact ? "#fbbf24" : "var(--text)" }}>
+                {(priceImpact * 100).toFixed(2)}%
+              </span>
+            </div>
+          )}
           {typeof quote.fee_bps === "number" && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "var(--text-faint)", fontSize: 13 }}>
@@ -737,6 +771,27 @@ export function SwapSheet({
           {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
         </div>
       </Sheet>
+      {showImpactConfirm && (
+        <Modal
+          title={t("swap.impactConfirmTitle")}
+          onClose={() => setShowImpactConfirm(false)}
+          footer={
+            <>
+              <button className="btn btn-secondary btn-block" onClick={() => setShowImpactConfirm(false)}>
+                {t("sheet.cancel")}
+              </button>
+              <button className="btn btn-block" onClick={() => void doExecute()}>
+                {t("swap.impactConfirmCta")}
+              </button>
+            </>
+          }
+        >
+          <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+            {t("swap.impactConfirmBody", { pct: (priceImpact * 100).toFixed(1) })}
+          </div>
+        </Modal>
+      )}
+      </>
     );
   }
 
