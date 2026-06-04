@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
 import { rpc } from "../lib/rpc";
-import { usePrice, getKlines, type Candle } from "../lib/market";
+import { usePrice, getKlines, circulatingSupplyExfer, getBlockHeight, type Candle } from "../lib/market";
 import { useT, type MsgKey } from "../lib/i18n";
 import { Spinner, BnbMark } from "./ui";
 import { PriceChart } from "./PriceChart";
@@ -27,6 +27,7 @@ interface InflightSwap {
 // instead of popping in after their async fetches.
 let candlesCache: Record<string, Candle[]> = {};
 let lpAvailableCache = false;
+let supplyCache: number | null = null;
 
 function fmtAmt(s: string, dp = 4): string {
   if (!s) return s;
@@ -55,6 +56,16 @@ function ChangePill({ pct }: { pct: number }) {
     <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, color, background: `color-mix(in srgb, ${color} 14%, transparent)`, padding: "2px 8px", borderRadius: 999 }}>
       {up ? "▲" : down ? "▼" : "•"} {Math.abs(pct).toFixed(1)}%
     </span>
+  );
+}
+
+/** One market-stat cell: a small muted label over a tabular value. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </div>
   );
 }
 
@@ -99,6 +110,20 @@ export function SwapTab({
   const [inflight, setInflight] = useState<InflightSwap[]>([]);
   const [lpOps, setLpOps] = useState<LpOp[]>(getLpOps());
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
+  const [supply, setSupply] = useState<number | null>(supplyCache);
+
+  // Circulating EXFER supply, computed from the tip height (no supply RPC). It
+  // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
+  useEffect(() => {
+    let cancelled = false;
+    getBlockHeight().then((h) => {
+      if (cancelled || h == null) return;
+      const s = circulatingSupplyExfer(h);
+      supplyCache = s;
+      setSupply(s);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,7 +182,19 @@ export function SwapTab({
   }, []);
 
   const exferUsd = price?.usd ?? null;
-  const usdStr = exferUsd == null ? "—" : exferUsd >= 1 ? exferUsd.toFixed(2) : exferUsd.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+  const fp = (n: number) => (n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false }));
+  const usdStr = exferUsd == null ? "—" : fp(exferUsd);
+
+  // Period high / low / average over the loaded candles (USD prices).
+  const stats = (() => {
+    if (!candles.length) return null;
+    let hi = -Infinity, lo = Infinity, sum = 0;
+    for (const c of candles) { if (c.high > hi) hi = c.high; if (c.low < lo) lo = c.low; sum += c.close; }
+    return { hi, lo, avg: sum / candles.length };
+  })();
+  const marketCap = supply != null && exferUsd != null ? supply * exferUsd : null;
+  const compact = (n: number) =>
+    n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n.toFixed(0);
 
   return (
     <div className="screen">
@@ -202,6 +239,26 @@ export function SwapTab({
               </div>
             )}
           </div>
+
+          {/* Market stats: period high/low/avg + circulating supply & market cap. */}
+          {(stats || supply != null) && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "12px 8px",
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid var(--border-soft)",
+              }}
+            >
+              {stats && <Stat label={t("swapTab.high")} value={`$${fp(stats.hi)}`} />}
+              {stats && <Stat label={t("swapTab.low")} value={`$${fp(stats.lo)}`} />}
+              {stats && <Stat label={t("swapTab.avg")} value={`$${fp(stats.avg)}`} />}
+              <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
+              <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
+            </div>
+          )}
         </div>
 
         {/* Primary swap CTA. */}

@@ -35,15 +35,35 @@ export function PriceChart({
       height,
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: text, fontFamily: "inherit", fontSize: 11 },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-      rightPriceScale: { borderColor: border, scaleMargins: { top: 0.12, bottom: 0.12 } },
-      timeScale: { borderColor: border, timeVisible, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
-      crosshair: { mode: 0 },
+      // Tighter margins give the price axis more room → more labeled levels.
+      rightPriceScale: {
+        borderColor: border,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        ticksVisible: true,
+        entireTextOnly: true,
+      },
+      timeScale: {
+        borderColor: border,
+        timeVisible,
+        secondsVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+        ticksVisible: true,
+        minBarSpacing: 4,
+      },
+      // Magnet crosshair snaps to candles so the exact price/time reads cleanly.
+      crosshair: { mode: 1 },
       handleScroll: true,
       handleScale: true,
     });
     const series = chart.addCandlestickSeries({
       upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false,
       priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
+      // Show the last-price line + label so the current level is always marked.
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineColor: border,
+      priceLineWidth: 1,
     });
     chartRef.current = chart;
     seriesRef.current = series;

@@ -108,6 +108,36 @@ export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]>
   return [];
 }
 
+// ── circulating supply ───────────────────────────────────────────────────
+// The node exposes no supply RPC, so we reproduce the emission curve from the
+// consensus constants: per block h the reward is
+//   R(h) = 1 EXFER + 99 EXFER · 2^(-h / HALF_LIFE)
+// (a perpetual 1-EXFER tail plus a ~2-year-half-life decaying bonus). Total
+// minted through height H is the running sum, which has a closed form:
+//   supply(H) = (H+1) + 99 · (1 - r^(H+1))/(1 - r),  r = 2^(-1/HALF_LIFE)
+// accurate to far better than display precision.
+
+const HALF_LIFE = 6_307_200; // blocks (~2 years at 10s) — matches the node
+
+/** Total EXFER emitted through `height` (whole EXFER). */
+export function circulatingSupplyExfer(height: number): number {
+  if (!isFinite(height) || height < 0) return 0;
+  const n = height + 1;
+  const r = Math.pow(2, -1 / HALF_LIFE);
+  const decaySum = (1 - Math.pow(r, n)) / (1 - r);
+  return n + 99 * decaySum;
+}
+
+/** Current EXFER tip height via walletd (null on failure). */
+export async function getBlockHeight(): Promise<number | null> {
+  try {
+    const r = await rpc<{ height?: number }>("get_block_height");
+    return typeof r?.height === "number" ? r.height : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── BNB/USD spot ─────────────────────────────────────────────────────────
 // The independent USD anchor for BNB, so the EXFER price can be derived from
 // the live pool ratio (EXFER/USD = pool BNB-per-EXFER × BNB/USD) instead of a
