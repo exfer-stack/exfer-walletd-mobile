@@ -164,12 +164,24 @@ export function SwapSheet({
 
   // Indicative pool rate (BNB per 1 EXFER), fetched once on open. May be absent
   // when the swap engine is off — the preview simply hides.
-  const [poolInfo, setPoolInfo] = useState<{ mid: number; feeBps: number } | null>(null);
+  const [poolInfo, setPoolInfo] = useState<
+    { mid: number; feeBps: number; exferReserve: number; bnbReserve: number; maxSwapBps: number } | null
+  >(null);
   useEffect(() => {
     let cancelled = false;
-    rpc<{ mid_price_bnb_per_exfer: number; fee_bps: number }>("swap_pool_info")
+    rpc<{
+      mid_price_bnb_per_exfer: number; fee_bps: number;
+      exfer_reserve: number | string | null; bnb_reserve: number | string | null; max_swap_bps: number | null;
+    }>("swap_pool_info")
       .then((p) => {
-        if (!cancelled) setPoolInfo({ mid: p.mid_price_bnb_per_exfer, feeBps: p.fee_bps });
+        if (!cancelled)
+          setPoolInfo({
+            mid: p.mid_price_bnb_per_exfer,
+            feeBps: p.fee_bps,
+            exferReserve: Number(p.exfer_reserve) || 0,
+            bnbReserve: Number(p.bnb_reserve) || 0,
+            maxSwapBps: Number(p.max_swap_bps) || 500,
+          });
       })
       .catch(() => {
         /* engine off — hide the preview */
@@ -268,6 +280,20 @@ export function SwapSheet({
     }
     return t("swap.estOut", { est: sigFmt(est, 6), unit: recvUnit });
   })();
+
+  // Max the pool can fill right now, in input units — the smaller of the
+  // per-swap size cap (input side) and what keeps the output within the
+  // output-side reserve. Lets us warn BEFORE the user taps Review (rather than
+  // only failing there). 0/unknown when pool info isn't loaded.
+  const maxIn = (() => {
+    if (!poolInfo || poolInfo.mid <= 0) return 0;
+    const outReserve = sell ? poolInfo.bnbReserve : poolInfo.exferReserve;
+    const inReserve = sell ? poolInfo.exferReserve : poolInfo.bnbReserve;
+    const capByOut = sell ? outReserve / poolInfo.mid : outReserve * poolInfo.mid;
+    const capBySize = inReserve * (poolInfo.maxSwapBps / 10_000);
+    return Math.max(0, Math.min(capByOut, capBySize) * 0.98); // small safety margin
+  })();
+  const overLimit = amountValid && maxIn > 0 && Number(amount) > maxIn;
 
   async function getQuote() {
     if (!amountValid) {
@@ -445,7 +471,7 @@ export function SwapSheet({
         title={t("swap.title")}
         onClose={onClose}
         footer={
-          <button className="btn btn-block" disabled={busy || !amountValid} onClick={getQuote}>
+          <button className="btn btn-block" disabled={busy || !amountValid || overLimit} onClick={getQuote}>
             {busy ? <Spinner /> : t("swap.review")}
           </button>
         }
@@ -516,6 +542,11 @@ export function SwapSheet({
           )}
           {rateLine && (
             <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{rateLine}</span>
+          )}
+          {overLimit && (
+            <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+              {t("swap.overLimit", { max: `${sigFmt(maxIn, 4)} ${sendUnit}` })}
+            </span>
           )}
         </div>
 
