@@ -783,20 +783,26 @@ export function SwapSheet({
             })}
           </div>
           <div style={{ display: "flex", marginTop: 8 }}>
-            {stepLabels.map((label, i) => (
-              <span
-                key={i}
-                style={{
-                  flex: 1,
-                  fontSize: 11.5,
-                  textAlign: i === 0 ? "left" : i === 2 ? "right" : "center",
-                  fontWeight: i <= doneCount ? 600 : 500,
-                  color: i <= doneCount ? "var(--text)" : "var(--text-faint)",
-                }}
-              >
-                {label}
-              </span>
-            ))}
+            {stepLabels.map((label, i) => {
+              const isActive = i === doneCount;
+              const isDone = i < doneCount;
+              return (
+                <span
+                  key={i}
+                  style={{
+                    flex: 1,
+                    fontSize: 11.5,
+                    textAlign: i === 0 ? "left" : i === 2 ? "right" : "center",
+                    // Active step is the brightest (it's where the eye should
+                    // land); done is normal text; ahead is muted.
+                    fontWeight: isActive ? 700 : isDone ? 600 : 500,
+                    color: isActive ? "var(--accent)" : isDone ? "var(--text)" : "var(--text-faint)",
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
           </div>
         </div>
 
