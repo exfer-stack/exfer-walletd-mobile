@@ -556,24 +556,30 @@ export function Home({
                 style={{
                   width: "100%",
                   display: "flex",
-                  justifyContent: "space-between",
                   alignItems: "center",
-                  padding: "10px 12px",
+                  padding: "11px 13px",
                   marginBottom: 6,
-                  gap: 10,
+                  gap: 11,
                   textAlign: "left",
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Icon name="refresh" />
-                  <span style={{ fontSize: 13 }}>
+                {/* Spinning accent ring — makes "in progress" actually read as
+                    moving/loading, not a static row. */}
+                <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}>
+                  <Spinner size={18} />
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
                     {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} →{" "}
                     {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
                   </span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>
+                    {swapStatusText(t, s.status)}
+                  </span>
                 </span>
-                <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
-                  {swapStatusText(t, s.status)}
-                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
               </button>
             ))}
           </div>

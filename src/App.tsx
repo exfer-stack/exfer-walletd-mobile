@@ -32,6 +32,7 @@ import { ReceiveSheet } from "./components/sheets/ReceiveSheet";
 import { SendSheet } from "./components/sheets/SendSheet";
 import { SwapSheet } from "./components/sheets/SwapSheet";
 import { AddressSheet } from "./components/sheets/AddressSheet";
+import { SwapWatcher } from "./components/SwapWatcher";
 
 type Tab = "wallet" | "activity" | "settings";
 
@@ -230,6 +231,9 @@ function Shell() {
           />
         ) : (
           <WalletProvider>
+            {/* Always-mounted: announces a finished swap (toast + OS
+                notification) regardless of tab or whether the sheet is open. */}
+            <SwapWatcher />
             {tab === "wallet" && (
               <Home
                 onReceive={() => setOverlay({ type: "receive" })}
