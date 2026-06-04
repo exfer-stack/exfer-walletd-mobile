@@ -10,15 +10,23 @@ export function PriceChart({
   theme,
   height = 200,
   timeVisible = false,
+  onHover,
 }: {
   candles: Candle[];
   theme: "dark" | "light";
   height?: number;
   timeVisible?: boolean;
+  /** Fires with the candle under the crosshair (null when the cursor leaves the
+   *  plot) so the parent can show that bar's OHLC, like a TradingView legend. */
+  onHover?: (c: Candle | null) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  // Keep the latest callback in a ref so the chart isn't recreated when the
+  // parent passes a fresh closure each render.
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
 
   // (Re)create the chart on theme / sizing changes.
   useEffect(() => {
@@ -67,6 +75,20 @@ export function PriceChart({
     });
     chartRef.current = chart;
     seriesRef.current = series;
+
+    // Report the hovered bar's OHLC to the parent (null when off the plot).
+    chart.subscribeCrosshairMove((param) => {
+      const cb = onHoverRef.current;
+      if (!cb) return;
+      const bar = (param.time && param.point ? param.seriesData.get(series) : undefined) as
+        | { open?: number; high?: number; low?: number; close?: number }
+        | undefined;
+      if (bar && typeof bar.open === "number" && typeof bar.high === "number" && typeof bar.low === "number" && typeof bar.close === "number") {
+        cb({ time: Number(param.time), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+      } else {
+        cb(null);
+      }
+    });
 
     const ro = new ResizeObserver(() => {
       if (ref.current) chart.applyOptions({ width: ref.current.clientWidth });

@@ -115,6 +115,7 @@ export function SwapTab({
   const [lpOps, setLpOps] = useState<LpOp[]>(getLpOps());
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
   const [supply, setSupply] = useState<number | null>(supplyCache);
+  const [hovered, setHovered] = useState<Candle | null>(null); // crosshair bar (OHLC legend)
 
   // Circulating EXFER supply, computed from the tip height (no supply RPC). It
   // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
@@ -222,7 +223,7 @@ export function SwapTab({
             {INTERVALS.map((iv) => (
               <button
                 key={iv.key}
-                onClick={() => setInterval(iv.key)}
+                onClick={() => { setInterval(iv.key); setHovered(null); }}
                 style={{
                   border: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600,
                   padding: "4px 11px", borderRadius: 7, flex: "0 0 auto",
@@ -236,7 +237,7 @@ export function SwapTab({
           </div>
           <div style={{ marginTop: 8, minHeight: 200 }}>
             {candles.length > 0 ? (
-              <PriceChart candles={candles} theme={theme} height={200} timeVisible={INTERVALS.find((i) => i.key === interval)?.tv ?? true} />
+              <PriceChart candles={candles} theme={theme} height={200} timeVisible={INTERVALS.find((i) => i.key === interval)?.tv ?? true} onHover={setHovered} />
             ) : (
               <div style={{ height: 200, display: "grid", placeItems: "center", color: "var(--text-faint)", fontSize: 13 }}>
                 {loadingChart ? <Spinner size={20} /> : t("swapTab.noChart")}
@@ -256,9 +257,11 @@ export function SwapTab({
                 borderTop: "1px solid var(--border-soft)",
               }}
             >
-              {stats && <Stat label={t("swapTab.high")} value={`$${fp(stats.hi)}`} />}
-              {stats && <Stat label={t("swapTab.low")} value={`$${fp(stats.lo)}`} />}
-              {stats && <Stat label={t("swapTab.avg")} value={`$${fp(stats.avg)}`} />}
+              {/* When the crosshair is over a bar, the three price cells show
+                  THAT bar's high / low / close; otherwise the whole period. */}
+              {stats && <Stat label={hovered ? t("swapTab.barHigh") : t("swapTab.high")} value={`$${fp(hovered ? hovered.high : stats.hi)}`} />}
+              {stats && <Stat label={hovered ? t("swapTab.barLow") : t("swapTab.low")} value={`$${fp(hovered ? hovered.low : stats.lo)}`} />}
+              {stats && <Stat label={hovered ? t("swapTab.barClose") : t("swapTab.avg")} value={`$${fp(hovered ? hovered.close : stats.avg)}`} />}
               <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
               <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
             </div>
