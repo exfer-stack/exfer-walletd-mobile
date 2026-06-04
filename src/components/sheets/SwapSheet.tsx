@@ -126,6 +126,20 @@ function sigFmt(n: number, sig = 4): string {
 
 const AMOUNT_RE = /^\d+(\.\d{1,18})?$/;
 
+interface PoolInfo {
+  mid: number;
+  feeBps: number;
+  exferReserve: number;
+  bnbReserve: number;
+  maxSwapBps: number;
+}
+
+// Module-level cache for the indicative pool rate. The sheet remounts on every
+// open, so without this the rate line ("1 EXFER ≈ … BNB") is absent for the
+// first beat (while swap_pool_info is in flight), then pops in and shoves the
+// rest of the form down. Seeding state from the cache makes reopens instant.
+let poolInfoCache: PoolInfo | null = null;
+
 export function SwapSheet({
   onClose,
   onDone,
@@ -164,11 +178,11 @@ export function SwapSheet({
   const [bscBal, setBscBal] = useState<{ bnb: string } | null>(null);
   const [bscBusy, setBscBusy] = useState(false);
 
-  // Indicative pool rate (BNB per 1 EXFER), fetched once on open. May be absent
-  // when the swap engine is off — the preview simply hides.
-  const [poolInfo, setPoolInfo] = useState<
-    { mid: number; feeBps: number; exferReserve: number; bnbReserve: number; maxSwapBps: number } | null
-  >(null);
+  // Indicative pool rate (BNB per 1 EXFER), seeded from the module cache so a
+  // reopen shows it immediately, then refreshed. May be absent on the very
+  // first open ever (or when the swap engine is off) — the line reserves its
+  // space (see the helper block) so its arrival never shifts the layout.
+  const [poolInfo, setPoolInfo] = useState<PoolInfo | null>(poolInfoCache);
   useEffect(() => {
     let cancelled = false;
     rpc<{
@@ -176,14 +190,14 @@ export function SwapSheet({
       exfer_reserve: number | string | null; bnb_reserve: number | string | null; max_swap_bps: number | null;
     }>("swap_pool_info")
       .then((p) => {
-        if (!cancelled)
-          setPoolInfo({
-            mid: p.mid_price_bnb_per_exfer,
-            feeBps: p.fee_bps,
-            exferReserve: Number(p.exfer_reserve) || 0,
-            bnbReserve: Number(p.bnb_reserve) || 0,
-            maxSwapBps: Number(p.max_swap_bps) || 500,
-          });
+        poolInfoCache = {
+          mid: p.mid_price_bnb_per_exfer,
+          feeBps: p.fee_bps,
+          exferReserve: Number(p.exfer_reserve) || 0,
+          bnbReserve: Number(p.bnb_reserve) || 0,
+          maxSwapBps: Number(p.max_swap_bps) || 500,
+        };
+        if (!cancelled) setPoolInfo(poolInfoCache);
       })
       .catch(() => {
         /* engine off — hide the preview */
@@ -567,8 +581,10 @@ export function SwapSheet({
           )}
         </div>
         {/* Live client-side estimate of the output as you type, then the
-            indicative pool rate — both subtle helper lines. */}
-        <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
+            indicative pool rate — both subtle helper lines. A reserved
+            min-height keeps the rate line's async arrival from shoving the rest
+            of the form down (the "jump" on first open). */}
+        <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2, minHeight: 17 }}>
           {/* Estimate is the primary helper (brighter, larger — it's the answer
               to "what do I get?"); the indicative rate is secondary. */}
           {estLine && (
