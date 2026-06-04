@@ -130,6 +130,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   // a non-default address reads as "no liquidity" and the user can't find it.
   const [positions, setPositions] = useState<{ address: string; pos: Position }[]>([]);
   const [posScanned, setPosScanned] = useState(false);
+  const [feeOpen, setFeeOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -480,9 +481,6 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
           <div className="quote-card" style={{ padding: "16px 14px 2px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="quote-label">{t("lp.yourPosition")}</span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 14%, transparent)", padding: "2px 8px", borderRadius: 999 }}>
-                {sig(pos.pool_share_pct, 3)}% {t("lp.ofPool")}
-              </span>
             </div>
             <div className="quote-figure" style={{ fontSize: 30, marginTop: 4 }}><span className="quote-cur" style={{ fontWeight: 500 }}>≈ $</span>{usd(posValueUsd)}</div>
             <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{shortAddress(exferAddr)}</div>
@@ -543,7 +541,19 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
           {pos?.has_position && <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setWithdrawPct(100); setStep("withdraw"); }}>{t("lp.remove")}</button>}
         </div>
 
-        <div style={{ fontSize: 11.5, color: "var(--text-faint)", padding: "0 2px" }}>{t("lp.feeChip")}</div>
+        <div style={{ padding: "0 2px" }}>
+          <button
+            type="button"
+            onClick={() => setFeeOpen((o) => !o)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, color: "var(--text-faint)" }}
+          >
+            {t("lp.feeChip")}
+            <span style={{ display: "inline-grid", placeItems: "center", width: 14, height: 14, borderRadius: 999, border: "1px solid var(--text-faint)", fontSize: 9.5, fontWeight: 700, lineHeight: 1 }}>?</span>
+          </button>
+          {feeOpen && (
+            <div style={{ fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.5, marginTop: 6 }}>{t("lp.feeInfo")}</div>
+          )}
+        </div>
       </div>
     </Sheet>
   );

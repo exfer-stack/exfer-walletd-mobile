@@ -247,7 +247,9 @@ export function SwapSheet({
   }, []);
 
   useEffect(() => {
-    if (direction === "bnb_to_exfer") refreshBsc();
+    // The wallet's BNB (BSC) address is shown in both directions: as the
+    // payment source when buying, and as the receive address when selling.
+    refreshBsc();
   }, [direction, refreshBsc]);
 
   // Focus the amount field once the sheet has slid into place, WITHOUT
@@ -730,15 +732,25 @@ export function SwapSheet({
               </span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtUnits(bscBal?.bnb, 18, 4)} BNB</span>
             </div>
-            <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>
-              {t("swap.payFromHint")}
-            </div>
           </>
         )}
 
-        {sell && (
-          <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
-            {t("swap.sellReceiveHint")}
+        {sell && bscAddr && (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 11,
+              padding: "11px 13px", borderRadius: 12,
+              background: "var(--surface-2)", marginBottom: 8,
+            }}
+          >
+            <BnbMark size={30} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>{t("swap.bnbReceiveTo")}</span>
+              <span className="mono" style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)" }}>
+                {shortAddress(bscAddr)}
+              </span>
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtUnits(bscBal?.bnb, 18, 4)} BNB</span>
           </div>
         )}
 
