@@ -310,30 +310,32 @@ export function SwapSheet({
   // flicker on open (it changed once bnbUsd loaded and mid×bnbUsd replaced it).
   const exferUsd = price?.usd ?? (poolInfo && poolInfo.mid > 0 && bnbUsd ? poolInfo.mid * bnbUsd : null);
 
-  // Max the pool can fill right now, in input units — the smaller of the
-  // per-swap size cap (input side) and what keeps the output within the
-  // output-side reserve. Lets us warn BEFORE the user taps Review (rather than
-  // only failing there). 0/unknown when pool info isn't loaded.
-  const maxIn = (() => {
-    if (!poolInfo || poolInfo.mid <= 0) return 0;
-    const outReserve = sell ? poolInfo.bnbReserve : poolInfo.exferReserve;
+  // Price impact = the fraction of the input-side reserve this trade consumes
+  // (constant-product). We DON'T cap the amount — the user may swap whatever
+  // they want and eat the slippage — but we warn when the impact is high so the
+  // consequence is clear before they commit. maxSwapBps (the old hard cap) is
+  // reused here purely as the "high impact" threshold. 0 when pool/amount aren't
+  // ready.
+  const priceImpact = (() => {
+    if (!poolInfo || !amountValid) return 0;
+    const a = Number(amount);
+    if (!isFinite(a) || a <= 0) return 0;
     const inReserve = sell ? poolInfo.exferReserve : poolInfo.bnbReserve;
-    const capByOut = sell ? outReserve / poolInfo.mid : outReserve * poolInfo.mid;
-    const capBySize = inReserve * (poolInfo.maxSwapBps / 10_000);
-    return Math.max(0, Math.min(capByOut, capBySize) * 0.98); // small safety margin
+    if (inReserve <= 0) return 1;
+    return a / (inReserve + a);
   })();
-  const overLimit = amountValid && maxIn > 0 && Number(amount) > maxIn;
+  const highImpact = !!poolInfo && priceImpact * 10_000 >= poolInfo.maxSwapBps;
 
-  // Buy-side Max: the spendable BNB, less a small reserve to cover the lock
-  // transaction's gas (BNB is also the gas token), capped at what the pool can
-  // fill right now so tapping Max never immediately trips the over-limit warn.
+  // Buy-side Max: all spendable BNB, less a small reserve to cover the lock
+  // transaction's gas (BNB is also the gas token). Not capped by the pool — the
+  // user can put in everything they have; the price-impact warning handles the
+  // consequence of a too-big trade.
   const buyMax = (() => {
     if (sell || !bscBal) return 0;
     let bnbHuman = 0;
     try { bnbHuman = Number(BigInt(bscBal.bnb)) / 1e18; } catch { return 0; }
     const GAS_RESERVE = 0.002; // ample for a BSC HTLC lock (gas is ~0.0001 BNB)
-    const avail = Math.max(0, bnbHuman - GAS_RESERVE);
-    return maxIn > 0 ? Math.min(avail, maxIn) : avail;
+    return Math.max(0, bnbHuman - GAS_RESERVE);
   })();
 
   async function getQuote() {
@@ -526,7 +528,7 @@ export function SwapSheet({
         title={t("swap.title")}
         onClose={onClose}
         footer={
-          <button className="btn btn-block" disabled={busy || !amountValid || overLimit} onClick={getQuote}>
+          <button className="btn btn-block" disabled={busy || !amountValid} onClick={getQuote}>
             {busy ? <Spinner /> : t("swap.review")}
           </button>
         }
@@ -638,7 +640,7 @@ export function SwapSheet({
             )}
           </div>
         )}
-        {overLimit && (
+        {highImpact && (
           <div
             className="banner banner-warn"
             style={{ margin: "0 0 14px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}
@@ -646,7 +648,7 @@ export function SwapSheet({
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: 1 }}>
               <path d="M12 9v4M12 17h.01M10.3 3.9l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z" />
             </svg>
-            <span>{t("swap.overLimit", { max: `${sigFmt(maxIn, 4)} ${sendUnit}` })}</span>
+            <span>{t("swap.highImpact", { pct: (priceImpact * 100).toFixed(1) })}</span>
           </div>
         )}
 
