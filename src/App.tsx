@@ -7,7 +7,7 @@ import type { BootstrapStatus } from "./lib/types";
 import { bootstrapStatus } from "./lib/rpc";
 import { humanizeError } from "./lib/errors";
 import { biometricStatus, biometricUnlock } from "./lib/biometric";
-import { biometricLockEnabled } from "./lib/biolock";
+import { biometricLockEnabled, lockWallet, unlockWallet } from "./lib/biolock";
 import { devmock } from "./lib/devmock";
 import wordmark from "./assets/wordmark.png";
 import { ToastProvider, ToastHost, useToast } from "./lib/toast";
@@ -102,6 +102,11 @@ function Shell() {
       if (cancelled) return;
       // Flag on + biometrics present → lock; otherwise no lock.
       setLocked(s.available);
+      // When we actually engage the lock, re-seal the embedded walletd so a
+      // spend-scope RPC can't sign while the wallet sits behind the biometric
+      // gate. Best-effort + self-guarded on the Rust side (only seals when it
+      // can silently restore), so this can't strand a user behind the lock.
+      if (s.available) void lockWallet();
     })();
     return () => {
       cancelled = true;
@@ -355,9 +360,18 @@ function LockScreen({
     setBusy(true);
     setFailed(false);
     const ok = await biometricUnlock("Unlock your wallet");
-    setBusy(false);
-    if (ok) onUnlocked();
-    else setFailed(true);
+    if (ok) {
+      // Bring the embedded walletd back if the lock sealed it (no-op when it's
+      // still running). We do NOT gate re-entry on this: a silent-restore miss
+      // surfaces through the normal status polling as "offline" (recoverable),
+      // never as a hard lockout behind the biometric screen.
+      await unlockWallet();
+      setBusy(false);
+      onUnlocked();
+    } else {
+      setBusy(false);
+      setFailed(true);
+    }
   }, [onUnlocked]);
 
   // Prompt automatically on first mount once we know a lock is needed.

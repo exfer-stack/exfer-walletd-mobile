@@ -2,7 +2,47 @@
 // fingerprint) app lock. Lives here so both Settings (the toggle) and App
 // (the lock screen gate) agree on the localStorage key.
 
+import { invoke } from "@tauri-apps/api/core";
+import type { BootstrapStatus } from "./types";
+
 export const BIOMETRIC_LOCK_KEY = "exfer-biometric-lock";
+
+/** True only inside a Tauri webview (so the plain browser dev build, which
+ *  has no walletd to seal, never tries to invoke these commands). */
+function inTauri(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in (window as unknown as Record<string, unknown>)
+  );
+}
+
+/** Re-seal the embedded walletd when the biometric app-lock engages, so a
+ *  spend-scope RPC can't sign while the wallet is locked. Best-effort: the
+ *  Rust side only seals when it can silently restore (keychain passphrase
+ *  present), and resolves false otherwise; we never throw — failing to seal
+ *  must not break the lock UI. Resolves true iff the daemon was sealed. */
+export async function lockWallet(): Promise<boolean> {
+  if (!inTauri()) return false;
+  try {
+    return await invoke<boolean>("lock_wallet");
+  } catch {
+    return false;
+  }
+}
+
+/** Bring walletd back after a successful biometric unlock (mirrors
+ *  {@link lockWallet}). A no-op when the daemon is still running. Never
+ *  throws — a restore failure surfaces through the normal status polling,
+ *  it must not block re-entry to the wallet. Resolves the resulting status,
+ *  or null when not in Tauri / on error. */
+export async function unlockWallet(): Promise<BootstrapStatus | null> {
+  if (!inTauri()) return null;
+  try {
+    return await invoke<BootstrapStatus>("unlock_wallet");
+  } catch {
+    return null;
+  }
+}
 
 /** Whether the user has enabled biometric unlock. */
 export function biometricLockEnabled(): boolean {

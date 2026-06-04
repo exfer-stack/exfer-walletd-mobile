@@ -39,8 +39,12 @@ async fn submit_password(
     ctx: State<'_, AppCtx>,
     password: String,
 ) -> Result<BootstrapStatus, String> {
-    if password.is_empty() {
-        return Err("password must not be empty".into());
+    // Enforce the SAME floor as the restore path (restore_from_mnemonic):
+    // len >= 8. The Argon2id KEK that seals the seed is only as strong as this
+    // passphrase, so the create/unlock path must not be drivable (by bypassing
+    // the JS UI) into a 1-char KEK. Message mirrors the restore path.
+    if password.len() < 8 {
+        return Err("password must be at least 8 characters".into());
     }
     let datadir = ctx.inner.lock().await.datadir.clone();
     // Start FIRST, persist to the keychain only if it actually worked. The old
@@ -64,6 +68,58 @@ async fn submit_password(
         }
     }
     Ok(status)
+}
+
+/// Re-seal the in-memory wallet when the app's biometric lock engages.
+///
+/// The biometric app-lock is a frontend gate, but walletd is already unsealed
+/// and running behind it (silent-unlock at boot), so a spend-scope RPC reaching
+/// the loopback would still sign WITHOUT a biometric. Tearing down the daemon
+/// here drops its conn/client so EVERY RPC (transfer, bsc_send_bnb, balance)
+/// returns "walletd not ready" until [`unlock_wallet`] brings it back.
+///
+/// SAFETY — we only seal when we can prove we can silently restore it: the
+/// keychain must already hold the passphrase. On a device where silent unlock
+/// is unavailable (e.g. an OEM ROM that couldn't persist the passphrase),
+/// sealing would strand the user behind the lock with no way back in, so we
+/// leave the daemon running and report `false`. The frontend lock still hides
+/// the wallet UI either way; the residual gap (daemon stays unsealed while
+/// app-locked on those devices) needs the full Keystore-bound redesign.
+///
+/// Returns `true` if the daemon was actually sealed, `false` if it was left
+/// running because no silent-restore passphrase is available.
+#[tauri::command]
+async fn lock_wallet(ctx: State<'_, AppCtx>) -> Result<bool, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    match secrets::get_passphrase(KEYRING_SERVICE, &datadir) {
+        Ok(Some(_)) => {
+            stop(&ctx).await;
+            Ok(true)
+        }
+        // No silently-restorable passphrase (Ok(None)) or a keychain read error:
+        // do NOT seal — keeping the daemon up is strictly safer than risking a
+        // lockout, and matches the pre-existing behaviour exactly.
+        _ => Ok(false),
+    }
+}
+
+/// Bring walletd back after a biometric unlock, mirroring [`lock_wallet`].
+///
+/// If the daemon is already running (lock was a no-op on this device), this is
+/// a cheap no-op that just returns the current status. Otherwise it restarts
+/// walletd, silently re-fetching the passphrase from the keychain (no UI
+/// re-prompt) — the same path used after a node-config change. The biometric
+/// gate on the frontend is what authorizes invoking this.
+#[tauri::command]
+async fn unlock_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String> {
+    // Already up (lock was a no-op) → nothing to restart; hand back the status.
+    {
+        let inner = ctx.inner.lock().await;
+        if inner.handle.is_some() {
+            return Ok(inner.status.clone());
+        }
+    }
+    restart(&ctx).await.map_err(|e| e.to_user_string())
 }
 
 #[tauri::command]
@@ -585,6 +641,8 @@ pub fn run() {
             bootstrap_status,
             wallet_exists_cmd,
             submit_password,
+            lock_wallet,
+            unlock_wallet,
             rpc,
             preview_mnemonic_import,
             import_mnemonic_scheme,
