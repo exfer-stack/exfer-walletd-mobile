@@ -328,6 +328,10 @@ export function SwapSheet({
   // Prefer the pool-sourced, cached price (usePrice) so the figure doesn't
   // flicker on open (it changed once bnbUsd loaded and mid×bnbUsd replaced it).
   const exferUsd = price?.usd ?? (poolInfo && poolInfo.mid > 0 && bnbUsd ? poolInfo.mid * bnbUsd : null);
+  // Per-EXFER USD price for THIS trade — what the user actually cares about.
+  // effRate (BNB per EXFER, slippage-aware) × BNB/USD; falls back to the
+  // mid-based exferUsd when the effective rate or BNB/USD isn't available.
+  const effUsd = effRate != null && bnbUsd ? effRate * bnbUsd : exferUsd;
 
   // Price impact = the fraction of the input-side reserve this trade consumes
   // (constant-product). We DON'T cap the amount — the user may swap whatever
@@ -643,7 +647,7 @@ export function SwapSheet({
                 {/* Effective rate for THIS trade (moves with the amount, since it
                     includes slippage) + the price impact, like a real swap app. */}
                 <div className="quote-sub">
-                  1 EXFER ≈ {sigFmt(effRate ?? poolInfo.mid)} BNB
+                  1 EXFER ≈ {effUsd != null ? `$${sigFmt(effUsd, 4)} · ` : ""}{sigFmt(effRate ?? poolInfo.mid)} BNB
                 </div>
                 {priceImpact > 0 && (
                   <div
