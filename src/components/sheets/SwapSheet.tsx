@@ -25,6 +25,7 @@ import { Qr } from "../Qr";
 import { usePrice, useBnbUsd } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 import { recordSwapUsd } from "../../lib/swapPrice";
+import { SwapTimingHelp } from "../SwapTimingHelp";
 
 /** Trim a human decimal string to at most `dp` fractional digits (drops
  *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals.
@@ -305,13 +306,9 @@ export function SwapSheet({
   // Effective EXFER/USD: derived from the LIVE pool ratio (pool BNB-per-EXFER ×
   // BNB/USD) so the price tracks the pool — every swap shifts it. Falls back to
   // the OTC EXFER quote when the pool rate or BNB/USD isn't available.
-  const exferUsd = poolInfo && poolInfo.mid > 0 && bnbUsd ? poolInfo.mid * bnbUsd : price?.usd ?? null;
-
-  // USD value of the trade (the EXFER side × the effective price). Sell: input
-  // EXFER; buy: output EXFER.
-  const estExfer = estOut == null ? null : sell ? Number(amount) : estOut;
-  const estUsd = estExfer != null && exferUsd != null ? estExfer * exferUsd : null;
-  const fmtUsd = (u: number) => (u < 1 ? u.toFixed(4) : u.toFixed(2));
+  // Prefer the pool-sourced, cached price (usePrice) so the figure doesn't
+  // flicker on open (it changed once bnbUsd loaded and mid×bnbUsd replaced it).
+  const exferUsd = price?.usd ?? (poolInfo && poolInfo.mid > 0 && bnbUsd ? poolInfo.mid * bnbUsd : null);
 
   // Max the pool can fill right now, in input units — the smaller of the
   // per-swap size cap (input side) and what keeps the output within the
@@ -616,7 +613,10 @@ export function SwapSheet({
                   {sigFmt(estOut, 6)}
                   <span className="quote-unit">{recvUnit}</span>
                 </div>
-                {estUsd != null && <div className="quote-sub">≈ ${fmtUsd(estUsd)}</div>}
+                {/* The per-EXFER rate (and its USD) — more useful than a lone total. */}
+                <div className="quote-sub">
+                  1 EXFER ≈ {sigFmt(poolInfo.mid)} BNB{exferUsd != null ? ` · $${sigFmt(exferUsd, 4)}` : ""}
+                </div>
               </>
             ) : (
               <>
@@ -832,8 +832,9 @@ export function SwapSheet({
         {/* horizontal staged stepper — shared with the liquidity flow */}
         <StagedStepper labels={stepLabels} doneCount={doneCount} />
 
-        <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
-          {t("swap.etaHint")}
+        <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, alignSelf: "center", flexWrap: "wrap" }}>
+          <span>{t("swap.etaHint")}</span>
+          <SwapTimingHelp />
         </div>
 
         {stuck && (
