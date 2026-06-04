@@ -860,8 +860,12 @@ export function Home({
                 {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
               </div>
               <Qr value={bnb.addr} size={170} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
-                <span className="mono">{shortAddress(bnb.addr)}</span>
+              {/* Full address (wraps) — a deposit address must be fully
+                  verifiable, not truncated. */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, width: "100%" }}>
+                <span className="mono" style={{ flex: 1, minWidth: 0, wordBreak: "break-all", lineHeight: 1.5, textAlign: "center" }}>
+                  {bnb.addr}
+                </span>
                 <CopyButton text={bnb.addr} />
               </div>
               {(() => {
