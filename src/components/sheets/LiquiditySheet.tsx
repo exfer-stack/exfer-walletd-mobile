@@ -19,6 +19,7 @@ import tokenCoin from "../../assets/exfer-token.png";
 import { Icon } from "../../lib/icons";
 import { AddrPicker } from "../AddrPicker";
 import { shortAddress } from "../../lib/labels";
+import { addLpOp, removeLpOp } from "../../lib/inflightLp";
 
 const FEE_RATE = 1; // exfers/byte, matches SendSheet
 // The BNB leg is swept from a per-request address that pays its own BSC gas, so
@@ -181,11 +182,15 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
     try {
       const intent = await rpc<{ id: string; deposit_exfer_address: string; deposit_bsc_address: string }>(
         "lp_deposit_start", { exfer_address: exferAddr, bsc_address: bscAddr });
+      // Track it so the Swap tab's "in progress" list shows it — and so it's
+      // still visible if the user closes this sheet ("safe to close" hint).
+      addLpOp({ id: intent.id, kind: "add", exfer: amount, bnb: sig(bnbNeeded, 4), startedAt: Date.now() });
       setStage(0);
       await rpc("transfer", { from: exferAddr, outputs: [{ to: intent.deposit_exfer_address, amount: parseExferAmount(amount) }], fee_rate: FEE_RATE });
       await rpc("bsc_send_bnb", { to: intent.deposit_bsc_address, amount: sig(bnbNeeded, 8) });
       setStage(1);
       const status = await pollDeposit(intent.id);
+      removeLpOp(intent.id);
       await load(); await refresh();
       if (status === "completed") {
         const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
@@ -233,7 +238,10 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
     const owed = { exfer: (Number(pos.value_exfer) * pct / 100).toString(), bnb: (Number(pos.value_bnb) * pct / 100).toString() };
     setBusy(true); setErr(null);
     try {
-      await rpc("lp_withdraw_self", { exfer_address: exferAddr, shares });
+      const w = await rpc<{ withdrawal_id?: string }>("lp_withdraw_self", { exfer_address: exferAddr, shares });
+      // Show it in the Swap tab's "in progress" list while the pool pays both
+      // legs (a few seconds); it falls off by TTL since there's no status poll.
+      addLpOp({ id: w?.withdrawal_id || `wd-${Date.now()}`, kind: "remove", exfer: owed.exfer, bnb: sig(Number(owed.bnb), 4), startedAt: Date.now() });
       await load(); await refresh();
       buzz([0, 30, 40, 30]);
       setResult({ kind: "removed", exfer: owed.exfer, bnb: owed.bnb });

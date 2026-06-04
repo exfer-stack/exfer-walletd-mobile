@@ -10,6 +10,10 @@ import { useT, type MsgKey } from "../lib/i18n";
 import { Spinner, BnbMark } from "./ui";
 import { PriceChart } from "./PriceChart";
 import tokenCoin from "../assets/exfer-token.png";
+import { getLpOps, removeLpOp, onLpOpsChange, type LpOp } from "../lib/inflightLp";
+
+const TERMINAL_SWAP = ["quoted", "completed", "refunded", "failed"];
+const TERMINAL_DEP = ["completed", "expired", "refunded", "failed"];
 
 interface InflightSwap {
   swap_id: string;
@@ -93,6 +97,7 @@ export function SwapTab({
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
   const [loadingChart, setLoadingChart] = useState(false);
   const [inflight, setInflight] = useState<InflightSwap[]>([]);
+  const [lpOps, setLpOps] = useState<LpOp[]>(getLpOps());
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
 
   useEffect(() => {
@@ -115,18 +120,40 @@ export function SwapTab({
     return () => { cancelled = true; };
   }, [interval]);
 
-  // In-flight swaps.
+  // In-progress: swaps + liquidity ops. Refreshes on a 15s timer AND on focus /
+  // visibility / lp-store changes, so a finished item is dropped promptly (no
+  // lingering spinner for an op that already completed while you were away).
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
+    const refresh = async () => {
       try {
         const all = await rpc<InflightSwap[]>("swap_list");
-        if (!cancelled) setInflight((all ?? []).filter((s) => !["quoted", "completed", "refunded", "failed"].includes(s.status)));
+        if (!cancelled) setInflight((all ?? []).filter((s) => !TERMINAL_SWAP.includes(s.status)));
       } catch { if (!cancelled) setInflight([]); }
+      // Drop any LP add whose deposit has gone terminal (the status read is a
+      // cheap DB lookup via walletd, not a node-RPC hit).
+      for (const op of getLpOps()) {
+        if (op.kind !== "add") continue;
+        try {
+          const s = await rpc<{ status: string }>("lp_deposit_status", { id: op.id });
+          if (s?.status && TERMINAL_DEP.includes(s.status)) removeLpOp(op.id);
+        } catch { /* leave it; TTL is the backstop */ }
+      }
+      if (!cancelled) setLpOps(getLpOps());
     };
-    load();
-    const id = window.setInterval(load, 15_000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    void refresh();
+    const id = window.setInterval(refresh, 15_000);
+    const onWake = () => { if (document.visibilityState !== "hidden") void refresh(); };
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onWake);
+    const unsub = onLpOpsChange(() => { if (!cancelled) setLpOps(getLpOps()); });
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onWake);
+      unsub();
+    };
   }, []);
 
   const exferUsd = price?.usd ?? null;
@@ -199,10 +226,10 @@ export function SwapTab({
           </button>
         )}
 
-        {/* In-flight swaps (transient status, last). */}
-        {inflight.length > 0 && (
+        {/* In progress: swaps + liquidity adds/removes. */}
+        {(inflight.length > 0 || lpOps.length > 0) && (
           <div style={{ marginBottom: 16 }}>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swap.inflightTitle")}</div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swapTab.inProgress")}</div>
             {inflight.map((s) => (
               <button key={s.swap_id} onClick={() => onResumeSwap(s.swap_id)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
                 <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}><Spinner size={18} /></span>
@@ -211,6 +238,18 @@ export function SwapTab({
                     {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} → {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
                   </span>
                   <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>{swapStatusText(t, s.status)}</span>
+                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
+              </button>
+            ))}
+            {lpOps.map((op) => (
+              <button key={op.id} onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
+                <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}><Spinner size={18} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
+                    {op.kind === "add" ? t("lp.addTitle") : t("lp.removeTitle")} · {fmtAmt(op.exfer)} EXFER + {op.bnb} BNB
+                  </span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>{t("swapTab.lpProcessing")}</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
               </button>
