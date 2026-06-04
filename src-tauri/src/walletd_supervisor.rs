@@ -82,9 +82,6 @@ pub struct DesktopConfig {
     /// BSC chain id (56 mainnet, 97 Chapel testnet). `None` ⇒ 56.
     #[serde(default)]
     pub bsc_chain_id: Option<u64>,
-    /// USDT (BEP-20) token address on BSC. `None` ⇒ mainnet USDT.
-    #[serde(default)]
-    pub bsc_usdt_address: Option<String>,
 }
 
 impl Default for DesktopConfig {
@@ -92,10 +89,12 @@ impl Default for DesktopConfig {
         Self {
             node_rpc: DEFAULT_NODE_RPC.to_string(),
             indexer_rpc: None,
-            swap_pool_url: None,
+            // Cross-chain swap + self-serve LP point at the live mainnet pool by
+            // default (the pool runs on BSC mainnet). Empty/None would keep the
+            // swap_*/bsc_*/lp_* RPCs OFF.
+            swap_pool_url: Some("http://64.176.231.198:8080".to_string()),
             bsc_rpc_url: None,
             bsc_chain_id: None,
-            bsc_usdt_address: None,
         }
     }
 }
@@ -213,15 +212,13 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(str::to_string),
+        // NOT bsc-dataseed: it rejects eth_getLogs (-32005) which the swap engine
+        // needs to detect on-chain HTLC locks/claims. publicnode handles getLogs.
         bsc_rpc_url: desktop_cfg
             .bsc_rpc_url
             .clone()
-            .unwrap_or_else(|| "https://bsc-dataseed1.binance.org".to_string()),
+            .unwrap_or_else(|| "https://bsc-rpc.publicnode.com".to_string()),
         bsc_chain_id: desktop_cfg.bsc_chain_id.unwrap_or(56),
-        bsc_usdt_address: desktop_cfg
-            .bsc_usdt_address
-            .clone()
-            .unwrap_or_else(|| "0x55d398326f99059fF775485246999027B3197955".to_string()),
     }
 }
 
