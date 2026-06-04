@@ -751,6 +751,11 @@ export function Home({
               <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
                 {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
               </div>
+              {/* Plain-language "what is this address" so a non-technical user
+                  isn't puzzled by a BNB address appearing in an EXFER wallet. */}
+              <div style={{ fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.55, textAlign: "center", padding: "0 4px" }}>
+                {t("home.bnbWhat")}
+              </div>
               <Qr value={bnb.addr} size={170} />
               {/* Full address (wraps) in an inset chip — a deposit address must
                   be fully verifiable; the copy button sits centered against it. */}

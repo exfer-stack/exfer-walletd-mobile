@@ -110,6 +110,8 @@ const EN = {
   "home.bnbChain": "BNB Smart Chain",
   "home.depositBnb": "Deposit BNB",
   "home.bnbBalanceLabel": "Your BNB balance",
+  "home.bnbWhat":
+    "Your wallet's own BNB address — created from the same recovery phrase as your EXFER, so there's nothing extra to back up. Top it up to swap EXFER ⇄ BNB and to provide liquidity.",
   "home.depositBnbBody":
     "Note: deposit on the BNB Smart Chain (BSC) network only — other networks will lose the funds.",
   "home.withdrawBnb": "Withdraw BNB",
@@ -723,6 +725,8 @@ const ZH: Record<MsgKey, string> = {
   "home.bnbChain": "BNB 智能链",
   "home.depositBnb": "充值 BNB",
   "home.bnbBalanceLabel": "你的 BNB 余额",
+  "home.bnbWhat":
+    "这是你钱包自带的 BNB 地址——和你的 EXFER 用同一份助记词,自动生成,不用单独备份。往这里转入 BNB,即可用来兑换 EXFER ⇄ BNB、以及提供流动性。",
   "home.depositBnbBody":
     "请注意：必须用 BNB 智能链（BSC）网络转入，用其他网络会丢币。",
   "home.withdrawBnb": "提出 BNB",
