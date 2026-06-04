@@ -403,13 +403,13 @@ export function Home({
           alt=""
           aria-hidden="true"
           draggable={false}
+          className="brand-backdrop"
           style={{
             position: "absolute",
             top: -86,
             right: -96,
             width: 360,
             height: 360,
-            opacity: 0.13,
             pointerEvents: "none",
             userSelect: "none",
             zIndex: 0,
