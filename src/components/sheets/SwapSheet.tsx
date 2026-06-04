@@ -290,32 +290,21 @@ export function SwapSheet({
   const sendUnit = sell ? "EXFER" : "BNB";
   const recvUnit = sell ? "BNB" : "EXFER";
 
-  // Indicative rate line: 1 EXFER ≈ {mid} BNB · ≈ ${usd}. USD only when we have
-  // the EXFER spot price; otherwise show the BNB ratio alone.
-  const rateLine = poolInfo
-    ? price
-      ? t("swap.indicativeRate", { bnb: sigFmt(poolInfo.mid), usd: sigFmt(price.usd) })
-      : t("swap.indicativeRateNoUsd", { bnb: sigFmt(poolInfo.mid) })
-    : null;
-
   // Live client-side estimate of the output as the user types (the real quote
-  // still happens on Review). For sell: EXFER→BNB = amount * mid. For buy:
-  // BNB→EXFER = amount / mid.
-  const estLine = (() => {
+  // still happens on Review). Sell: EXFER→BNB = amount * mid. Buy: BNB→EXFER =
+  // amount / mid. Kept as raw numbers so the quote card can render them with
+  // proper typographic hierarchy (big figure + unit + USD), not a flat string.
+  const estOut = (() => {
     if (!poolInfo || !amountValid || poolInfo.mid <= 0) return null;
     const a = Number(amount);
     if (!isFinite(a) || a <= 0) return null;
-    const est = sell ? a * poolInfo.mid : a / poolInfo.mid;
-    // USD value of the trade (EXFER side × spot) — meaningful even when the BNB
-    // figure is tiny. Sell: input EXFER; buy: output EXFER.
-    const exferAmt = sell ? a : est;
-    if (price) {
-      const usd = exferAmt * price.usd;
-      const usdStr = usd < 1 ? usd.toFixed(4) : usd.toFixed(2);
-      return t("swap.estOutUsd", { est: sigFmt(est, 6), unit: recvUnit, usd: usdStr });
-    }
-    return t("swap.estOut", { est: sigFmt(est, 6), unit: recvUnit });
+    return sell ? a * poolInfo.mid : a / poolInfo.mid;
   })();
+  // USD value of the trade (the EXFER side × spot) — meaningful even when the
+  // BNB figure is tiny. Sell: input EXFER; buy: output EXFER.
+  const estExfer = estOut == null ? null : sell ? Number(amount) : estOut;
+  const estUsd = estExfer != null && price ? estExfer * price.usd : null;
+  const fmtUsd = (u: number) => (u < 1 ? u.toFixed(4) : u.toFixed(2));
 
   // Max the pool can fill right now, in input units — the smaller of the
   // per-swap size cap (input side) and what keeps the output within the
@@ -600,20 +589,49 @@ export function SwapSheet({
             </button>
           )}
         </div>
-        {/* Live client-side estimate of the output as you type, then the
-            indicative pool rate — both subtle helper lines. A reserved
-            min-height keeps the rate line's async arrival from shoving the rest
-            of the form down (the "jump" on first open). */}
-        <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2, minHeight: 17 }}>
-          {/* Estimate is the primary helper (brighter, larger — it's the answer
-              to "what do I get?"); the indicative rate is secondary. */}
-          {estLine && (
-            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{estLine}</span>
-          )}
-          {rateLine && (
-            <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{rateLine}</span>
-          )}
-        </div>
+        {/* Quote card — the price is the most important thing on this screen, so
+            give it a real panel: a large Geist figure (what you get, or the
+            EXFER price before an amount is typed), its USD value, and the
+            conversion rate on a divided footer. */}
+        {poolInfo && (
+          <div className="quote-card">
+            {estOut != null ? (
+              <>
+                <div className="quote-label">{t("swap.youGet")}</div>
+                <div className="quote-figure">
+                  {sigFmt(estOut, 6)}
+                  <span className="quote-unit">{recvUnit}</span>
+                </div>
+                {estUsd != null && <div className="quote-usd">≈ ${fmtUsd(estUsd)}</div>}
+              </>
+            ) : (
+              <>
+                <div className="quote-label">{t("swap.priceTitle")}</div>
+                <div className="quote-figure">
+                  {price ? (
+                    <>
+                      <span className="quote-cur">$</span>
+                      {sigFmt(price.usd, 4)}
+                    </>
+                  ) : (
+                    <>
+                      {sigFmt(poolInfo.mid, 4)}
+                      <span className="quote-unit">BNB</span>
+                    </>
+                  )}
+                  <span className="quote-per">{t("swap.perExfer")}</span>
+                </div>
+              </>
+            )}
+            <div className="quote-rate">
+              <span>{t("swap.rate")}</span>
+              <span className="mono">
+                1 EXFER ≈ {sigFmt(poolInfo.mid)} BNB
+                {price ? ` · $${sigFmt(price.usd)}` : ""}
+              </span>
+            </div>
+          </div>
+        )}
         {overLimit && (
           <div
             className="banner banner-warn"
