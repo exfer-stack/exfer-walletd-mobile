@@ -151,7 +151,9 @@ body {
 .tabbar {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Auto-fit however many tabs in ONE row (was hardcoded to 3 → the 4th wrapped). */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: center;
   padding: 9px 14px calc(14px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--bg) 86%, transparent);

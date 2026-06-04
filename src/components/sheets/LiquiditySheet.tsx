@@ -221,15 +221,15 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
         </div>
         <div className="quote-card" style={{ marginTop: 6 }}>
           <div className="quote-label">{t("lp.youProvide")}</div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14, marginTop: 4 }}>
             <span>{amountValid ? sig(amtNum) : "0"} EXFER</span>
-            <span className={enoughExfer ? "" : "banner-warn"} style={{ color: enoughExfer ? "var(--text)" : "#fbbf24" }}>{enoughExfer ? "✓" : t("lp.short")}</span>
+            {amountValid && !enoughExfer && <span style={{ color: "#fbbf24", fontSize: 12 }}>{t("lp.short")}</span>}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginTop: 6 }}>
-            <span>+ {sig(bnbNeeded, 6)} BNB</span>
-            <span style={{ color: enoughBnb ? "var(--text)" : "#fbbf24" }}>{enoughBnb ? "✓" : t("lp.short")}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14, marginTop: 6 }}>
+            <span>+ {amountValid ? sig(bnbNeeded, 6) : "0"} BNB</span>
+            {amountValid && !enoughBnb && <span style={{ color: "#fbbf24", fontSize: 12 }}>{t("lp.short")}</span>}
           </div>
-          <div className="quote-sub" style={{ marginTop: 8 }}>≈ ${usd(addUsd)} · {t("lp.matchRatio")}</div>
+          <div className="quote-sub" style={{ marginTop: 8 }}>≈ ${amountValid ? usd(addUsd) : "0"} · {t("lp.matchRatio")}</div>
         </div>
         <div className="banner banner-info" style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5 }}>{t("lp.custodialNote")}</div>
         {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</div>}
