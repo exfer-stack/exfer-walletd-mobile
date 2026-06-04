@@ -447,6 +447,34 @@ async fn get_market_price() -> Result<String, String> {
     resp.text().await.map_err(|e| format!("reading price body: {e}"))
 }
 
+/// Fetch OHLC candles for the EXFER market (price chart). Returns the raw JSON
+/// (`{items:[{t,o,h,l,c,v}]}`); the frontend maps it to candlesticks. Read-only.
+#[tauri::command]
+async fn get_market_klines(interval: String, limit: u32) -> Result<String, String> {
+    let limit = limit.clamp(1, 500);
+    // Only allow simple interval tokens (e.g. 1d, 1h, 15m) into the URL.
+    let interval = if !interval.is_empty()
+        && interval.len() <= 4
+        && interval.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        interval
+    } else {
+        "1d".to_string()
+    };
+    let url = format!(
+        "https://archeotc.com/api/coins/klines?coinId=EXFER&interval={interval}&limit={limit}"
+    );
+    let resp = public_https_client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("klines request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("klines endpoint returned {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| format!("reading klines body: {e}"))
+}
+
 /// Fetch the BNB/USDT spot price from Binance's public API. Returns the raw
 /// JSON (`{"symbol":"BNBUSDT","price":"612.30"}`); the frontend reads `price`.
 /// This is the independent USD anchor for BNB, so the EXFER price can be derived
@@ -569,6 +597,7 @@ pub fn run() {
             import_wallet_key,
             restore_from_mnemonic,
             get_market_price,
+            get_market_klines,
             get_bnb_price,
             check_latest_release,
         ])

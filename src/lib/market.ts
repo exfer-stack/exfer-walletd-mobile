@@ -97,6 +97,42 @@ export function usePrice(): MarketPrice | null {
   return price;
 }
 
+// ── candlesticks (price history) ─────────────────────────────────────────
+export interface Candle {
+  time: number; // unix seconds (UTC)
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+/** OHLC candles for the EXFER market, for the price chart. Same network rule as
+ *  getMarketPrice (Rust command in the app, /__price proxy in dev). Empty array
+ *  on any failure — the chart just shows its empty state. */
+export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]> {
+  try {
+    let raw: string;
+    if (devmock.isActive()) {
+      const r = await fetch(`/__price/api/coins/klines?coinId=EXFER&interval=${interval}&limit=${limit}`);
+      if (!r.ok) return [];
+      raw = await r.text();
+    } else {
+      raw = await invoke<string>("get_market_klines", { interval, limit });
+    }
+    const items = (JSON.parse(raw) as { items?: { t: string; o: string; h: string; l: string; c: string }[] }).items;
+    if (!Array.isArray(items)) return [];
+    return items
+      .map((it) => ({
+        time: Math.floor(new Date(it.t).getTime() / 1000),
+        open: Number(it.o), high: Number(it.h), low: Number(it.l), close: Number(it.c),
+      }))
+      .filter((c) => isFinite(c.time) && isFinite(c.open) && isFinite(c.close))
+      .sort((a, b) => a.time - b.time);
+  } catch {
+    return [];
+  }
+}
+
 // ── BNB/USD spot ─────────────────────────────────────────────────────────
 // The independent USD anchor for BNB, so the EXFER price can be derived from
 // the live pool ratio (EXFER/USD = pool BNB-per-EXFER × BNB/USD) instead of a

@@ -36,6 +36,7 @@ const EN = {
   "swapTab.cta": "Swap EXFER ⇄ BNB",
   "swapTab.ctaSub": "Sell or buy at the live pool rate",
   "swapTab.priceLine": "1 EXFER ≈ ${usd} · sell or buy",
+  "swapTab.noChart": "No price history yet",
 
   // welcome
   "welcome.h1a": "Transfers that",
@@ -595,6 +596,7 @@ const ZH: Record<MsgKey, string> = {
   "swapTab.cta": "兑换 EXFER ⇄ BNB",
   "swapTab.ctaSub": "按池子实时价卖出或买入",
   "swapTab.priceLine": "1 EXFER ≈ ${usd} · 卖出或买入",
+  "swapTab.noChart": "暂无价格数据",
 
   "welcome.h1a": "转账",
   "welcome.h1b": "快如闪电。",

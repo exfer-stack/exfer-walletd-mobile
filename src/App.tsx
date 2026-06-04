@@ -246,6 +246,7 @@ function Shell() {
             )}
             {tab === "swap" && (
               <SwapTab
+                theme={theme}
                 onSwap={() => setOverlay({ type: "swap" })}
                 onResumeSwap={(swapId) => setOverlay({ type: "swap", resumeSwapId: swapId })}
                 onLiquidity={() => setOverlay({ type: "liquidity" })}
