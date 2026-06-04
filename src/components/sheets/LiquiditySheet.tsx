@@ -50,7 +50,12 @@ function usd(n: number): string {
 function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* unsupported */ } }
 
 function ExferMark({ size = 26 }: { size?: number }) {
-  return <img src={tokenLogo} alt="" width={size} height={size} style={{ borderRadius: 999, display: "block", flex: "0 0 auto" }} />;
+  // The brand mark on a dark coin with a white ring, to match the BNB coin.
+  return (
+    <span style={{ width: size, height: size, borderRadius: 999, flex: "0 0 auto", display: "grid", placeItems: "center", background: "#0b0e13", border: "1.5px solid rgba(255,255,255,0.92)", overflow: "hidden" }}>
+      <img src={tokenLogo} alt="" width={size - 7} height={size - 7} style={{ display: "block" }} />
+    </span>
+  );
 }
 
 /** One row of a token pair: logo · name · right-aligned amount. */
@@ -264,7 +269,7 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
           <div style={{ fontSize: 18, fontWeight: 700 }}>{heading}</div>
           {(k === "added" || k === "removed") && result.exfer && (
             <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>
-              {sig(Number(result.exfer))} EXFER + {sig(Number(result.bnb), 6)} BNB
+              {sig(Number(result.exfer))} EXFER + {sig(Number(result.bnb), 4)} BNB
             </div>
           )}
           <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5, padding: "0 12px" }}>
@@ -310,10 +315,13 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
     return (
       <Sheet title={t("lp.removeTitle")} onClose={onClose} onBack={() => setStep("overview")}
         footer={<button className="btn btn-block btn-danger" disabled={busy} onClick={confirmWithdraw}>{busy ? <Spinner /> : t("lp.removeConfirm")}</button>}>
-        <div className="quote-card">
+        <div className="quote-card" style={{ padding: "12px 14px 4px" }}>
           <div className="quote-label">{t("lp.youReceiveBack")}</div>
-          <div className="quote-figure" style={{ fontSize: 22 }}>{sig(Number(pos.value_exfer))}<span className="quote-unit">EXFER</span></div>
-          <div className="quote-sub">+ {sig(Number(pos.value_bnb), 6)} BNB</div>
+          <div style={{ marginTop: 6 }}>
+            <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))} />
+            <div style={{ height: 1, background: "var(--border)" }} />
+            <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)} />
+          </div>
         </div>
         <div className="banner banner-info" style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5 }}>{t("lp.removeNote")}</div>
         {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</div>}
