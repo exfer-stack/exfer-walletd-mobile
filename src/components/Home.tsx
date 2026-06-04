@@ -121,6 +121,14 @@ function fmtAmt(s: string, dp = 4): string {
   return frac ? `${w}.${frac}` : w;
 }
 
+// Module-level cache for the BNB asset (address + balance + mid price). Home
+// unmounts on every tab switch, so without this the BNB card refetches from
+// scratch each time and visibly pops in a beat late. Seeding initial state from
+// the cache makes the card render immediately with the last-known values while
+// the fresh poll runs in the background.
+let bnbCache: { addr: string; wei: string } | null = null;
+let bnbMidCache: number | null = null;
+
 /** Map a walletd swap status to its localized label. */
 function swapStatusText(t: (k: MsgKey) => string, status: string): string {
   switch (status) {
@@ -185,10 +193,10 @@ export function Home({
   // The user's BNB lives at an in-wallet BSC address. Surface it as a first-class
   // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
   // can't see it assumes their money is gone). No-ops when swap isn't configured.
-  const [bnb, setBnb] = useState<{ addr: string; wei: string } | null>(null);
+  const [bnb, setBnb] = useState<{ addr: string; wei: string } | null>(bnbCache);
   // Pool mid price (BNB per EXFER) — lets us derive an implied BNB/USD value
   // (EXFER/USD ÷ BNB-per-EXFER) so the BNB card can show ≈$ like every other row.
-  const [bnbMid, setBnbMid] = useState<number | null>(null);
+  const [bnbMid, setBnbMid] = useState<number | null>(bnbMidCache);
   const [depositOpen, setDepositOpen] = useState(false);
   // BNB withdraw form (inside the BNB modal): toggle + fields.
   const [bnbWithdraw, setBnbWithdraw] = useState(false);
@@ -230,13 +238,18 @@ export function Home({
           rpc<{ address: string }>("bsc_get_address"),
           rpc<{ bnb_wei: string }>("bsc_get_balances"),
         ]);
-        if (!cancelled) setBnb({ addr: a.address, wei: b.bnb_wei });
+        bnbCache = { addr: a.address, wei: b.bnb_wei };
+        if (!cancelled) setBnb(bnbCache);
         try {
           const p = await rpc<{ mid_price_bnb_per_exfer: number | null }>("swap_pool_info");
-          if (!cancelled) setBnbMid(p?.mid_price_bnb_per_exfer ?? null);
+          bnbMidCache = p?.mid_price_bnb_per_exfer ?? null;
+          if (!cancelled) setBnbMid(bnbMidCache);
         } catch { /* preview is best-effort */ }
       } catch {
-        if (!cancelled) setBnb(null); // engine off / not configured
+        // Engine off / not configured. Keep any cached card rather than
+        // blanking it on a transient failure; only the very first load (no
+        // cache) shows nothing.
+        if (!cancelled && !bnbCache) setBnb(null);
       }
     };
     load();
@@ -266,7 +279,11 @@ export function Home({
       try {
         const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
         if (cancelled) return;
-        setBnb((prev) => (prev ? { ...prev, wei: b.bnb_wei } : prev));
+        setBnb((prev) => {
+          const next = prev ? { ...prev, wei: b.bnb_wei } : prev;
+          if (next) bnbCache = next;
+          return next;
+        });
         const now = BigInt(b.bnb_wei);
         const prev = lastBnbWeiRef.current;
         if (prev != null && now > prev) {

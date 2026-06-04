@@ -18,7 +18,9 @@ import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
-import { Sheet, CopyButton, Spinner } from "../ui";
+import { addrName } from "../../lib/format";
+import type { WalletEntry } from "../../lib/types";
+import { Sheet, CopyButton, Spinner, AddrAvatar } from "../ui";
 import { Qr } from "../Qr";
 import { usePrice } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
@@ -295,6 +297,18 @@ export function SwapSheet({
   })();
   const overLimit = amountValid && maxIn > 0 && Number(amount) > maxIn;
 
+  // Buy-side Max: the spendable BNB, less a small reserve to cover the lock
+  // transaction's gas (BNB is also the gas token), capped at what the pool can
+  // fill right now so tapping Max never immediately trips the over-limit warn.
+  const buyMax = (() => {
+    if (sell || !bscBal) return 0;
+    let bnbHuman = 0;
+    try { bnbHuman = Number(BigInt(bscBal.bnb)) / 1e18; } catch { return 0; }
+    const GAS_RESERVE = 0.002; // ample for a BSC HTLC lock (gas is ~0.0001 BNB)
+    const avail = Math.max(0, bnbHuman - GAS_RESERVE);
+    return maxIn > 0 ? Math.min(avail, maxIn) : avail;
+  })();
+
   async function getQuote() {
     if (!amountValid) {
       setErr(t("swap.amountInvalid"));
@@ -542,6 +556,15 @@ export function SwapSheet({
               {t("swap.max")}
             </button>
           )}
+          {!sell && buyMax > 0 && (
+            <button
+              className="btn-ghost btn-sm"
+              style={{ padding: "4px 10px", color: "var(--accent)" }}
+              onClick={() => setAmount(sigFmt(buyMax, 8))}
+            >
+              {t("swap.max")}
+            </button>
+          )}
         </div>
         {/* Live client-side estimate of the output as you type, then the
             indicative pool rate — both subtle helper lines. */}
@@ -568,18 +591,7 @@ export function SwapSheet({
         )}
 
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
-        <select
-          className="field"
-          value={fromAddr}
-          onChange={(e) => setFrom(e.target.value)}
-          style={{ width: "100%", marginBottom: 14 }}
-        >
-          {pickList.map((a) => (
-            <option key={a.address} value={a.address}>
-              {shortAddress(a.address)}
-            </option>
-          ))}
-        </select>
+        <AddrPicker items={pickList} value={fromAddr} onChange={setFrom} />
 
         {/* When already funded, the deposit card sits below the amount. */}
         {!needsFunding && depositCard}
@@ -823,6 +835,102 @@ export function SwapSheet({
         {live?.error && <div style={{ color: "#f87171", fontSize: 13, textAlign: "center" }}>{live.error}</div>}
       </div>
     </Sheet>
+  );
+}
+
+/** A branded account picker — replaces the raw native <select> (which rendered
+ *  as the OS dropdown, the ugliest element on the sheet). Shows the selected
+ *  account with its identicon, name and short address, and expands an inline
+ *  list of the same. Each row carries the avatar so the choice reads as "which
+ *  of my accounts", not "a string". */
+function AddrPicker({
+  items,
+  value,
+  onChange,
+}: {
+  items: WalletEntry[];
+  value: string;
+  onChange: (a: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const sel = items.find((a) => a.address === value) ?? items[0];
+  if (!sel) return null;
+  return (
+    <div style={{ position: "relative", marginBottom: 14 }}>
+      <button
+        type="button"
+        className="field"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          cursor: "pointer",
+          textAlign: "left",
+          ...(open ? { borderColor: "var(--accent)" } : null),
+        }}
+      >
+        <AddrAvatar address={sel.address} size={30} />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {addrName(sel)}
+          </span>
+          <span className="mono" style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>
+            {shortAddress(sel.address)}
+          </span>
+        </span>
+        <svg
+          width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)"
+          strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+          style={{ flex: "0 0 auto", transition: "transform .18s", transform: open ? "rotate(180deg)" : "none" }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          className="card"
+          style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 5,
+            padding: 4, maxHeight: 240, overflowY: "auto",
+            background: "var(--elevated)", boxShadow: "var(--shadow)",
+          }}
+        >
+          {items.map((a) => {
+            const active = a.address === sel.address;
+            return (
+              <button
+                key={a.address}
+                type="button"
+                className="tap"
+                onClick={() => { onChange(a.address); setOpen(false); }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 8px", borderRadius: 10, border: 0, cursor: "pointer",
+                  textAlign: "left", font: "inherit", color: "var(--text)",
+                  background: active ? "var(--surface-2)" : "none",
+                }}
+              >
+                <AddrAvatar address={a.address} size={28} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {addrName(a)}
+                  </span>
+                  <span className="mono" style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)" }}>
+                    {shortAddress(a.address)}
+                  </span>
+                </span>
+                {active && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

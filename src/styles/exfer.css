@@ -330,7 +330,12 @@ body {
 .scrim {
   position: absolute; inset: 0; z-index: 60;
   background: var(--scrim);
-  backdrop-filter: blur(2px);
+  /* Static blur — animating backdrop-filter per frame forces a full-screen
+     re-rasterize that reads as the background "wiping" top-to-bottom on open.
+     We animate only opacity (see scrimIn/scrimOut), which the compositor can
+     run on the GPU with no relayout. */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .sheet {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 61;
@@ -370,8 +375,8 @@ body {
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes sheetDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
-@keyframes scrimIn { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(8px); } }
-@keyframes scrimOut { from { opacity: 1; backdrop-filter: blur(8px); } to { opacity: 0; backdrop-filter: blur(0); } }
+@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scrimOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
