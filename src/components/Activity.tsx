@@ -220,9 +220,10 @@ export function Activity() {
         <AppBar
           large
           title={t("act.title")}
-          subtitle={t(visibleItems.length === 1 ? "act.transfer1" : "act.transferN", {
-            n: visibleItems.length,
-          })}
+          subtitle={(() => {
+            const n = visibleItems.length + swaps.length; // swaps + transfers
+            return t(n === 1 ? "act.item1" : "act.itemN", { n });
+          })()}
           right={
             <button
               className="icon-btn"
@@ -463,15 +464,10 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <code
                   className="mono"
-                  style={{
-                    flex: 1,
-                    fontSize: 12,
-                    wordBreak: "break-all",
-                    color: "var(--text-dim)",
-                    lineHeight: 1.5,
-                  }}
+                  style={{ flex: 1, fontSize: 12.5, color: "var(--text-dim)" }}
                 >
-                  {r.value}
+                  {/* Truncate like addresses elsewhere; copy yields the full hash. */}
+                  {shortAddress(r.value.replace(/^0x/, ""), 10, 8)}
                 </code>
                 <CopyButton text={r.value} label="Copied" />
               </div>

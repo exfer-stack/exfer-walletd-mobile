@@ -359,6 +359,17 @@ export function SwapSheet({
   // automatically past the deadline; this gives the user an explicit lever).
   async function manualRefund() {
     if (!watchId) return;
+    // A reclaim broadcasts a spend from the unlocked keystore — gate it behind
+    // biometrics too, exactly like Confirm, so it's consistent (no money-moving
+    // action on the unlocked phone is un-authed).
+    const bio = await biometricStatus();
+    if (bio.available) {
+      const ok = await biometricUnlock(t("swap.refundNow"));
+      if (!ok) {
+        toast.error(t("swap.notConfirmedTitle"), t("swap.notConfirmedBody"));
+        return;
+      }
+    }
     setBusy(true);
     try {
       const r = await rpc<SwapRec>("swap_refund", { swap_id: watchId });

@@ -471,7 +471,17 @@ export function Home({
             </span>
             <span style={{ textAlign: "right" }}>
               <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>
-                <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
+                <Masked dots="••••">
+                  {(() => {
+                    const [w, f = ""] = fmtBnbWei(bnb.wei).split(".");
+                    return (
+                      <>
+                        {w}
+                        {f && <span style={{ color: "var(--text-faint)", fontWeight: 500 }}>.{f}</span>}
+                      </>
+                    );
+                  })()}
+                </Masked>
               </span>
               {(() => {
                 if (!price || !bnbMid || bnbMid <= 0) return null;
