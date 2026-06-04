@@ -160,6 +160,15 @@ export function SwapSheet({
 
   useEffect(() => suspendPolling(), [suspendPolling]);
 
+  // The amount field used to use `autoFocus`. But the sheet mounts at
+  // translateY(100%) (off the bottom) and slides up over ~300ms, so the default
+  // focus fires a scrollIntoView while the input is still below the viewport —
+  // the browser scrolls the background `.screen` down to "reveal" it, then it
+  // snaps back as the sheet settles. That yank IS the top-to-bottom twitch /
+  // skew behind the frosted glass. We focus manually with preventScroll AFTER
+  // the slide finishes, so the background never moves.
+  const amountRef = useRef<HTMLInputElement>(null);
+
   const entries = balance?.entries ?? [];
   const visible = entries.filter((a) => !isHidden(a.address));
   const fundable = visible.filter((a) => a.balance > 0);
@@ -234,6 +243,17 @@ export function SwapSheet({
   useEffect(() => {
     if (direction === "bnb_to_exfer") refreshBsc();
   }, [direction, refreshBsc]);
+
+  // Focus the amount field once the sheet has slid into place, WITHOUT
+  // scrolling the page (see amountRef above). Only on the build step, sell
+  // direction or a funded buy — never when we're leading with the deposit card.
+  useEffect(() => {
+    if (step !== 1 || needsFunding) return;
+    const id = window.setTimeout(() => {
+      amountRef.current?.focus({ preventScroll: true });
+    }, 320); // just past the .3s sheetUp slide
+    return () => window.clearTimeout(id);
+  }, [step, needsFunding]);
 
   // Auto-poll the BNB balance while the buy deposit UI is visible (step 1, buy
   // direction). When it increases vs. the last seen value, celebrate with a
@@ -547,9 +567,9 @@ export function SwapSheet({
           }}
         >
           <input
+            ref={amountRef}
             className="field"
             inputMode="decimal"
-            autoFocus={!needsFunding}
             placeholder="0.0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
