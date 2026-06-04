@@ -13,8 +13,10 @@ import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
 import { usePrice, useBnbUsd } from "../../lib/market";
-import { Sheet, Spinner } from "../ui";
+import { Sheet, Spinner, BnbMark } from "../ui";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
+import tokenLogo from "../../assets/exfer-mark.png";
+import { Icon } from "../../lib/icons";
 
 const FEE_RATE = 1; // exfers/byte, matches SendSheet
 // The BNB leg is swept from a per-request address that pays its own BSC gas, so
@@ -45,6 +47,21 @@ function usd(n: number): string {
   return n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 3, useGrouping: false });
 }
 function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* unsupported */ } }
+
+function ExferMark({ size = 26 }: { size?: number }) {
+  return <img src={tokenLogo} alt="" width={size} height={size} style={{ borderRadius: 999, display: "block", flex: "0 0 auto" }} />;
+}
+
+/** One row of a token pair: logo · name · right-aligned amount. */
+function TokenRow({ kind, amount }: { kind: "exfer" | "bnb"; amount: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0" }}>
+      {kind === "exfer" ? <ExferMark /> : <BnbMark size={26} />}
+      <span style={{ flex: 1, fontWeight: 600, fontSize: 14.5 }}>{kind === "exfer" ? "EXFER" : "BNB"}</span>
+      <span style={{ fontWeight: 600, fontSize: 14.5, fontVariantNumeric: "tabular-nums" }}>{amount}</span>
+    </div>
+  );
+}
 
 /** Tinted result badge, same visual language as the swap result screen. */
 function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
@@ -263,24 +280,21 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
           <input className="field" inputMode="decimal" autoFocus placeholder="0.0" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ flex: 1, fontSize: 22, fontWeight: 600 }} />
           <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>EXFER</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px 2px" }}>
           <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.balance")}: {formatBalanceCompact(exferBal)}</span>
-          {minExfer > 0 && <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{t("lp.minHint", { n: sig(Math.ceil(minExfer), 2) })}</span>}
+          {minExfer > 0 && <span style={{ fontSize: 11.5, color: belowMin ? "#fbbf24" : "var(--text-faint)" }}>{t("lp.minHint", { n: sig(Math.ceil(minExfer), 2) })}</span>}
         </div>
-        <div className="quote-card" style={{ marginTop: 6 }}>
-          <div className="quote-label">{t("lp.youProvide")}</div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14, marginTop: 4 }}>
-            <span>{amountValid ? sig(amtNum) : "0"} EXFER</span>
-            {amountValid && !enoughExfer && <span style={{ color: "#fbbf24", fontSize: 12 }}>{t("lp.short")}</span>}
+        <div className="quote-card" style={{ marginTop: 10, padding: "4px 14px" }}>
+          <TokenRow kind="exfer" amount={amountValid ? sig(amtNum) : "0"} />
+          <div style={{ height: 1, background: "var(--border)" }} />
+          <TokenRow kind="bnb" amount={amountValid ? sig(bnbNeeded, 4) : "0"} />
+          <div style={{ height: 1, background: "var(--border)" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", fontSize: 13.5 }}>
+            <span style={{ color: "var(--text-faint)" }}>{t("lp.total")}</span>
+            <span style={{ fontWeight: 700 }}>≈ ${amountValid ? usd(addUsd) : "0"}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14, marginTop: 6 }}>
-            <span>+ {amountValid ? sig(bnbNeeded, 6) : "0"} BNB</span>
-            {amountValid && !enoughBnb && <span style={{ color: "#fbbf24", fontSize: 12 }}>{t("lp.short")}</span>}
-          </div>
-          <div className="quote-sub" style={{ marginTop: 8 }}>≈ ${amountValid ? usd(addUsd) : "0"} · {t("lp.matchRatio")}</div>
         </div>
         {belowMin && <div className="banner banner-warn" style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.5 }}>{t("lp.belowMin", { n: sig(Math.ceil(minExfer), 2) })}</div>}
-        <div className="banner banner-info" style={{ marginTop: 12, fontSize: 12, lineHeight: 1.5 }}>{t("lp.custodialNote")}</div>
         {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</div>}
       </Sheet>
     );
@@ -307,23 +321,41 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title={t("lp.title")} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="quote-card">
-          <div className="quote-label">{t("lp.yourPosition")}</div>
-          {pos?.has_position ? (
-            <>
-              <div className="quote-figure" style={{ fontSize: 26 }}><span className="quote-cur">$</span>{usd(posValueUsd)}</div>
-              <div className="quote-sub">{sig(Number(pos.value_exfer))} EXFER + {sig(Number(pos.value_bnb), 6)} BNB · {sig(pos.pool_share_pct, 3)}% {t("lp.ofPool")}</div>
-            </>
-          ) : (
-            <div style={{ fontSize: 14, color: "var(--text-dim)", marginTop: 4 }}>{t("lp.noPosition")}</div>
-          )}
-        </div>
+        {pos?.has_position ? (
+          <div className="quote-card" style={{ padding: "16px 14px 2px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span className="quote-label">{t("lp.yourPosition")}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 14%, transparent)", padding: "2px 8px", borderRadius: 999 }}>
+                {sig(pos.pool_share_pct, 3)}% {t("lp.ofPool")}
+              </span>
+            </div>
+            <div className="quote-figure" style={{ fontSize: 30, marginTop: 4 }}><span className="quote-cur">$</span>{usd(posValueUsd)}</div>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ height: 1, background: "var(--border)" }} />
+              <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))} />
+              <div style={{ height: 1, background: "var(--border)" }} />
+              <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)} />
+            </div>
+          </div>
+        ) : (
+          <div className="quote-card" style={{ textAlign: "center", padding: "26px 18px" }}>
+            <div style={{ width: 46, height: 46, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
+              <Icon name="spark" size={22} />
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{t("lp.emptyHeading")}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("lp.emptySub")}</div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setAmount(""); setStep("add"); }}>{t("lp.add")}</button>
           {pos?.has_position && <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setStep("withdraw"); }}>{t("lp.remove")}</button>}
         </div>
-        <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.55 }}>{t("lp.earnNote")}</div>
-        <div style={{ fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.5 }}>{t("lp.poolReserves", { exfer: sig(Number(pool.reserves.exfer)), bnb: sig(Number(pool.reserves.bnb), 6) })}</div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: "var(--text-faint)", padding: "0 2px" }}>
+          <span>{t("lp.feeChip")}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{t("lp.poolChip", { exfer: sig(Number(pool.reserves.exfer), 5), bnb: sig(Number(pool.reserves.bnb), 3) })}</span>
+        </div>
       </div>
     </Sheet>
   );

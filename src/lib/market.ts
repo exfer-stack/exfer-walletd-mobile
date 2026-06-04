@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { devmock } from "./devmock";
+import { rpc } from "./rpc";
 
 export interface MarketPrice {
   /** USD per 1 EXFER. */
@@ -106,10 +107,28 @@ export interface Candle {
   close: number;
 }
 
-/** OHLC candles for the EXFER market, for the price chart. Same network rule as
- *  getMarketPrice (Rust command in the app, /__price proxy in dev). Empty array
- *  on any failure — the chart just shows its empty state. */
+type RawCandle = { t: string; o: number | string; h: number | string; l: number | string; c: number | string };
+function mapCandles(items: RawCandle[]): Candle[] {
+  return items
+    .map((it) => ({
+      time: Math.floor(new Date(it.t).getTime() / 1000),
+      open: Number(it.o), high: Number(it.h), low: Number(it.l), close: Number(it.c),
+    }))
+    .filter((c) => isFinite(c.time) && isFinite(c.open) && isFinite(c.close))
+    .sort((a, b) => a.time - b.time);
+}
+
+/** OHLC candles for the chart. Prefer THIS pool's own price history
+ *  (swap_price_klines: seeded from OTC, then grown from the pool's mid). Falls
+ *  back to the OTC feed directly if the pool has no data. Empty array on total
+ *  failure — the chart shows its empty state. */
 export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]> {
+  // 1) The pool's own candles (via walletd).
+  try {
+    const res = await rpc<{ items?: RawCandle[] }>("swap_price_klines", { interval, limit });
+    if (Array.isArray(res?.items) && res.items.length) return mapCandles(res.items);
+  } catch { /* fall back to OTC */ }
+  // 2) OTC feed directly (Rust command in the app, /__price proxy in dev).
   try {
     let raw: string;
     if (devmock.isActive()) {
@@ -119,15 +138,8 @@ export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]>
     } else {
       raw = await invoke<string>("get_market_klines", { interval, limit });
     }
-    const items = (JSON.parse(raw) as { items?: { t: string; o: string; h: string; l: string; c: string }[] }).items;
-    if (!Array.isArray(items)) return [];
-    return items
-      .map((it) => ({
-        time: Math.floor(new Date(it.t).getTime() / 1000),
-        open: Number(it.o), high: Number(it.h), low: Number(it.l), close: Number(it.c),
-      }))
-      .filter((c) => isFinite(c.time) && isFinite(c.open) && isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
+    const items = (JSON.parse(raw) as { items?: RawCandle[] }).items;
+    return Array.isArray(items) ? mapCandles(items) : [];
   } catch {
     return [];
   }
