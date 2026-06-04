@@ -103,7 +103,7 @@ const EN = {
   "home.depositBnb": "Deposit BNB",
   "home.bnbBalanceLabel": "Your BNB balance",
   "home.depositBnbBody":
-    "Use the BNB Smart Chain (BSC / BEP20) network only. Sending via another network (ERC20 / Ethereum, Polygon, opBNB) will lose the funds.",
+    "Note: deposit on the BNB Smart Chain (BSC) network only — other networks will lose the funds.",
   "home.withdrawBnb": "Withdraw BNB",
   "home.bnbAddress": "BNB address",
   "home.exportBnbKey": "Export BNB private key",
@@ -693,7 +693,7 @@ const ZH: Record<MsgKey, string> = {
   "home.depositBnb": "充值 BNB",
   "home.bnbBalanceLabel": "你的 BNB 余额",
   "home.depositBnbBody":
-    "只用 BNB 智能链（BSC / BEP20）网络。走其他网络（ERC20／以太坊、Polygon、opBNB）会丢币。",
+    "请注意：必须用 BNB 智能链（BSC）网络转入，用其他网络会丢币。",
   "home.withdrawBnb": "提出 BNB",
   "home.bnbAddress": "BNB 地址",
   "home.exportBnbKey": "导出 BNB 私钥",
