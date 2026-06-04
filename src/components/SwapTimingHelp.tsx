@@ -32,16 +32,16 @@ export function SwapTimingHelp({ size = 16 }: { size?: number }) {
           onClose={() => setOpen(false)}
           footer={<button className="btn btn-block" onClick={() => setOpen(false)}>{t("swap.whyOk")}</button>}
         >
-          <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gap: 14, textAlign: "left" }}>
             {points.map((p, i) => (
               <div key={i} style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
                 <span style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: 999, background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)", fontSize: 12, fontWeight: 700, display: "grid", placeItems: "center", marginTop: 1 }}>
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--text-dim)" }}>{p}</span>
+                <span style={{ flex: 1, minWidth: 0, textAlign: "left", fontSize: 13.5, lineHeight: 1.55, color: "var(--text)" }}>{p}</span>
               </div>
             ))}
-            <div className="banner banner-info" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.55 }}>
+            <div className="banner banner-info" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.55, textAlign: "left" }}>
               {t("swap.whySafe")}
             </div>
           </div>
