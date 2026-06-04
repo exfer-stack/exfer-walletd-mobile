@@ -93,7 +93,7 @@ function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
   );
 }
 
-export function LiquiditySheet({ onClose }: { onClose: () => void }) {
+export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; resumeAddId?: string }) {
   const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
   const { t } = useT();
@@ -154,6 +154,40 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
     if (step !== "add") return;
     rpc<{ bnb_wei: string }>("bsc_get_balances").then((b) => { if (b?.bnb_wei) setBnbWei(b.bnb_wei); }).catch(() => {});
   }, [step]);
+
+  // Resume an in-progress add: tapping the "processing" row in the in-progress
+  // list reopens the sheet straight onto THIS deposit's progress (was wrongly
+  // dropping the user on the overview). Poll it to completion like confirmAdd.
+  useEffect(() => {
+    if (!resumeAddId) return;
+    let cancelled = false;
+    setStep("progress"); setStage(1);
+    (async () => {
+      try {
+        const status = await pollDeposit(resumeAddId);
+        if (cancelled) return;
+        removeLpOp(resumeAddId);
+        await load(); await refresh();
+        if (status === "completed") {
+          const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
+          buzz([0, 30, 40, 30]);
+          setResult({ kind: "added", exfer: pp?.value_exfer, bnb: pp?.value_bnb });
+        } else {
+          buzz(60);
+          setResult({ kind: "refunded" });
+        }
+        setStep("done");
+      } catch (e) {
+        if (cancelled) return;
+        buzz(60);
+        setErr(humanizeError(e));
+        setResult({ kind: "failed" });
+        setStep("done");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeAddId]);
 
   // Guard the EXFER reserve: if a transient node hiccup makes the pool report 0,
   // bnb/0 = Infinity poisons every downstream number into NaN. Treat it as

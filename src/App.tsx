@@ -42,7 +42,7 @@ type Overlay =
   | { type: "receive" }
   | { type: "send"; from?: string }
   | { type: "swap"; from?: string; resumeSwapId?: string }
-  | { type: "liquidity" }
+  | { type: "liquidity"; resumeAddId?: string }
   | { type: "address"; address: string }
   | null;
 
@@ -249,7 +249,7 @@ function Shell() {
                 theme={theme}
                 onSwap={() => setOverlay({ type: "swap" })}
                 onResumeSwap={(swapId) => setOverlay({ type: "swap", resumeSwapId: swapId })}
-                onLiquidity={() => setOverlay({ type: "liquidity" })}
+                onLiquidity={(resumeAddId?: string) => setOverlay({ type: "liquidity", resumeAddId })}
               />
             )}
             {tab === "activity" && <Activity />}
@@ -297,7 +297,7 @@ function Shell() {
               />
             )}
             {overlay?.type === "liquidity" && (
-              <LiquiditySheet onClose={() => setOverlay(null)} />
+              <LiquiditySheet onClose={() => setOverlay(null)} resumeAddId={overlay.resumeAddId} />
             )}
             {overlay?.type === "address" && (
               <AddressSheet

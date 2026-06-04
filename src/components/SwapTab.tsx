@@ -88,7 +88,7 @@ export function SwapTab({
 }: {
   onSwap: () => void;
   onResumeSwap: (swapId: string) => void;
-  onLiquidity: () => void;
+  onLiquidity: (resumeAddId?: string) => void;
   theme: "dark" | "light";
 }) {
   const { t } = useT();
@@ -216,7 +216,7 @@ export function SwapTab({
 
         {/* Liquidity entry — a feature, kept above the transient in-flight list. */}
         {lpAvailable && (
-          <button onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
+          <button onClick={() => onLiquidity()} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
             <CoinPair badge="add" />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("lp.title")}</span>
@@ -243,7 +243,7 @@ export function SwapTab({
               </button>
             ))}
             {lpOps.map((op) => (
-              <button key={op.id} onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
+              <button key={op.id} onClick={() => onLiquidity(op.kind === "add" ? op.id : undefined)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
                 <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}><Spinner size={18} /></span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
