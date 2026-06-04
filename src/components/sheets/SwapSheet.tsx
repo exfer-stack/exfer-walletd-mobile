@@ -509,11 +509,13 @@ export function SwapSheet({
         {/* Live client-side estimate of the output as you type, then the
             indicative pool rate — both subtle helper lines. */}
         <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
+          {/* Estimate is the primary helper (brighter); the indicative rate is
+              secondary (smaller + dimmer) so the two don't read as one gray block. */}
           {estLine && (
-            <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{estLine}</span>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-dim)" }}>{estLine}</span>
           )}
           {rateLine && (
-            <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{rateLine}</span>
+            <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{rateLine}</span>
           )}
         </div>
 
@@ -704,24 +706,29 @@ export function SwapSheet({
                   ) : active ? (
                     <Spinner size={14} />
                   ) : (
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+                    <span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />
                   )}
                 </div>
               );
               if (i === 2) return node;
               const connDone = i + 1 < doneCount;
               const connActive = i + 1 === doneCount;
+              // One connector language — chevrons throughout: green where done,
+              // animated cyan into the active step, dim where still ahead.
               const conn = (
-                <div key={`c${i}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 2 }}>
-                  {connActive ? (
-                    <div className="swap-flow" style={{ display: "flex", gap: 1, color: "var(--accent)" }}>
-                      {[0, 1, 2].map((k) => (
-                        <svg key={k} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ width: "100%", height: 2, borderRadius: 2, background: connDone ? "#34d399" : "var(--surface-2)" }} />
-                  )}
+                <div key={`c${i}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 30 }}>
+                  <div
+                    className={connActive ? "swap-flow" : undefined}
+                    style={{
+                      display: "flex", gap: 1,
+                      color: connDone ? "#34d399" : connActive ? "var(--accent)" : "var(--text-faint)",
+                      opacity: connDone || connActive ? 1 : 0.35,
+                    }}
+                  >
+                    {[0, 1, 2].map((k) => (
+                      <svg key={k} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                    ))}
+                  </div>
                 </div>
               );
               return [node, conn];

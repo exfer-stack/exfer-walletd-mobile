@@ -449,9 +449,9 @@ export function Home({
           >
             <span
               style={{
-                width: 34, height: 34, borderRadius: 999, flex: "0 0 auto",
-                display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700,
-                background: "color-mix(in srgb, #f3ba2f 22%, transparent)", color: "#f3ba2f",
+                width: 36, height: 36, borderRadius: 11, flex: "0 0 auto",
+                display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700,
+                background: "color-mix(in srgb, #f3ba2f 18%, transparent)", color: "#f3ba2f",
               }}
             >
               BNB
@@ -462,14 +462,12 @@ export function Home({
                 {t("home.bnbChain")}
               </span>
             </span>
-            <span style={{ textAlign: "right" }}>
-              <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>
-                <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
-              </span>
-              <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)" }}>
-                {t("home.depositBnb")}
-              </span>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>
+              <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
             </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+              <path d="M9 6l6 6-6 6" />
+            </svg>
           </button>
         )}
 
