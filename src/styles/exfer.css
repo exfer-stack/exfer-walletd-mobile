@@ -289,7 +289,10 @@ body {
 .banner { border-radius: var(--radius-sm); padding: 13px 15px; font-size: 13.5px; line-height: 1.55; }
 .banner-warn   { background: color-mix(in srgb, #fbbf24 12%, transparent); color: #fcd34d; border: 1px solid color-mix(in srgb, #fbbf24 28%, transparent); }
 .banner-danger { background: color-mix(in srgb, #f87171 11%, transparent); color: #fca5a5; border: 1px solid color-mix(in srgb, #f87171 26%, transparent); }
-.banner-info   { background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
+/* Cyan tint + border for the "info" affordance, but body text stays near-white:
+   the cyan accent is for actions, and full-cyan multi-line body copy reads
+   poorly on dark. */
+.banner-info   { background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--text-dim); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
 /* ── toasts ─────────────────────────────────────────────────────── */
 .toast-host {

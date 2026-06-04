@@ -535,20 +535,26 @@ export function SwapSheet({
         {/* Live client-side estimate of the output as you type, then the
             indicative pool rate — both subtle helper lines. */}
         <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
-          {/* Estimate is the primary helper (brighter); the indicative rate is
-              secondary (smaller + dimmer) so the two don't read as one gray block. */}
+          {/* Estimate is the primary helper (brighter, larger — it's the answer
+              to "what do I get?"); the indicative rate is secondary. */}
           {estLine && (
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-dim)" }}>{estLine}</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{estLine}</span>
           )}
           {rateLine && (
             <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{rateLine}</span>
           )}
-          {overLimit && (
-            <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
-              {t("swap.overLimit", { max: `${sigFmt(maxIn, 4)} ${sendUnit}` })}
-            </span>
-          )}
         </div>
+        {overLimit && (
+          <div
+            className="banner banner-warn"
+            style={{ margin: "0 0 14px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: 1 }}>
+              <path d="M12 9v4M12 17h.01M10.3 3.9l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z" />
+            </svg>
+            <span>{t("swap.overLimit", { max: `${sigFmt(maxIn, 4)} ${sendUnit}` })}</span>
+          </div>
+        )}
 
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <select

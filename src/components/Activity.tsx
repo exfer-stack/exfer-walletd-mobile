@@ -363,7 +363,6 @@ function SkeletonRow() {
 function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
   const { t } = useT();
   const sell = s.direction === "exfer_to_bnb";
-  const inUnit = sell ? "EXFER" : "BNB";
   const outUnit = sell ? "BNB" : "EXFER";
   const pill = swapPill(s.status);
   const when = relTime(new Date(s.created_at * 1000).toISOString());
@@ -381,6 +380,9 @@ function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
         width: "100%",
       }}
     >
+      {/* Same row anatomy as transfer rows: icon + title/time on the left,
+          a signed amount + status pill stacked on the right. The full X→Y pair
+          lives in the detail sheet. */}
       <div className="h-row">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span
@@ -393,14 +395,20 @@ function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
           </span>
           <div>
             <div style={{ fontWeight: 600, fontSize: 14.5 }}>
-              {t("act.swapped", { in: `${fmtA(s.amount_in)} ${inUnit}`, out: `${fmtA(s.amount_out)} ${outUnit}` })}
+              {sell ? t("act.soldExfer") : t("act.boughtExfer")}
             </div>
             <div className="faint" style={{ fontSize: 11.5 }}>{when}</div>
           </div>
         </div>
-        <span className={"pill " + pill.cls} style={{ padding: "3px 9px", fontSize: 11 }}>
-          {t(pill.key)}
-        </span>
+        <div style={{ textAlign: "right" }}>
+          <div className="mono" style={{ fontWeight: 600, fontSize: 15, color: "#34d399" }}>
+            +{fmtA(s.amount_out)}
+            <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {outUnit}</span>
+          </div>
+          <span className={"pill " + pill.cls} style={{ marginTop: 6, padding: "3px 9px", fontSize: 11 }}>
+            {t(pill.key)}
+          </span>
+        </div>
       </div>
     </button>
   );
