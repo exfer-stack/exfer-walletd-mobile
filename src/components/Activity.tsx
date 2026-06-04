@@ -11,7 +11,7 @@ import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
 import { formatExfer, formatBalanceCompact, rpc } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
-import { addrName, EXPLORER } from "../lib/format";
+import { addrName, EXPLORER, txExplorerUrl } from "../lib/format";
 import { useT, tStatic, type MsgKey } from "../lib/i18n";
 import {
   buildActivityFeed,
@@ -420,7 +420,21 @@ function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
  *  TxSheet's eyebrow + mono-code styling. */
 function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
   const { t } = useT();
+  const toast = useToast();
   const sell = s.direction === "exfer_to_bnb";
+
+  // Jump to the right explorer for a leg — BscScan for the BNB (0x) tx, the
+  // EXFER explorer otherwise. Falls back to copying the URL if the webview
+  // blocks window.open.
+  function openRef(txid: string) {
+    const url = txExplorerUrl(txid);
+    try {
+      window.open(url, "_blank", "noopener");
+    } catch {
+      navigator.clipboard?.writeText(url);
+      toast.info(t("act.explorerCopied"), url);
+    }
+  }
   const inUnit = sell ? "EXFER" : "BNB";
   const outUnit = sell ? "BNB" : "EXFER";
   const pill = swapPill(s.status);
@@ -461,14 +475,26 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
               <div className="eyebrow" style={{ marginBottom: 6 }}>
                 {t(r.key)}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <code
-                  className="mono"
-                  style={{ flex: 1, fontSize: 12.5, color: "var(--text-dim)" }}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* Full hash, tappable — opens the right explorer (BscScan for
+                    the BNB leg, the EXFER explorer otherwise). */}
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => openRef(r.value)}
+                  style={{
+                    flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8,
+                    background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left",
+                  }}
                 >
-                  {/* Truncate like addresses elsewhere; copy yields the full hash. */}
-                  {shortAddress(r.value.replace(/^0x/, ""), 10, 8)}
-                </code>
+                  <code
+                    className="mono"
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, wordBreak: "break-all", color: "var(--accent)", lineHeight: 1.5 }}
+                  >
+                    {r.value}
+                  </code>
+                  <Icon name="share" size={14} />
+                </button>
                 <CopyButton text={r.value} label="Copied" />
               </div>
             </div>
