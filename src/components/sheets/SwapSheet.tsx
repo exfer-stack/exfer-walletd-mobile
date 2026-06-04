@@ -590,9 +590,10 @@ export function SwapSheet({
           )}
         </div>
         {/* Quote card — the price is the most important thing on this screen, so
-            give it a real panel: a large Geist figure (what you get, or the
-            EXFER price before an amount is typed), its USD value, and the
-            conversion rate on a divided footer. */}
+            give it a flat panel with a large Geist figure and one supporting
+            line. Each value appears once: before an amount is typed it's the
+            EXFER price (USD figure, BNB rate beneath); after, it's the estimated
+            output (figure) with its USD value beneath. */}
         {poolInfo && (
           <div className="quote-card">
             {estOut != null ? (
@@ -602,34 +603,29 @@ export function SwapSheet({
                   {sigFmt(estOut, 6)}
                   <span className="quote-unit">{recvUnit}</span>
                 </div>
-                {estUsd != null && <div className="quote-usd">≈ ${fmtUsd(estUsd)}</div>}
+                {estUsd != null && <div className="quote-sub">≈ ${fmtUsd(estUsd)}</div>}
               </>
             ) : (
               <>
                 <div className="quote-label">{t("swap.priceTitle")}</div>
-                <div className="quote-figure">
-                  {price ? (
-                    <>
+                {price ? (
+                  <>
+                    <div className="quote-figure">
                       <span className="quote-cur">$</span>
                       {sigFmt(price.usd, 4)}
-                    </>
-                  ) : (
-                    <>
-                      {sigFmt(poolInfo.mid, 4)}
-                      <span className="quote-unit">BNB</span>
-                    </>
-                  )}
-                  <span className="quote-per">{t("swap.perExfer")}</span>
-                </div>
+                      <span className="quote-per">{t("swap.perExfer")}</span>
+                    </div>
+                    <div className="quote-sub">≈ {sigFmt(poolInfo.mid)} BNB</div>
+                  </>
+                ) : (
+                  <div className="quote-figure">
+                    {sigFmt(poolInfo.mid, 4)}
+                    <span className="quote-unit">BNB</span>
+                    <span className="quote-per">{t("swap.perExfer")}</span>
+                  </div>
+                )}
               </>
             )}
-            <div className="quote-rate">
-              <span>{t("swap.rate")}</span>
-              <span className="mono">
-                1 EXFER ≈ {sigFmt(poolInfo.mid)} BNB
-                {price ? ` · $${sigFmt(price.usd)}` : ""}
-              </span>
-            </div>
           </div>
         )}
         {overLimit && (

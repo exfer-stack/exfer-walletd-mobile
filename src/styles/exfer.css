@@ -287,16 +287,15 @@ body {
 
 /* ── swap quote card ────────────────────────────────────────────── */
 /* The price/conversion is the most important thing on the swap screen, so it
-   gets a real panel: a faint accent-tinted gradient, a large Geist figure, and
-   a divided footer for the rate. */
+   gets a flat panel with a large Geist figure and one supporting line — each
+   value shown once, no gradient. */
 .quote-card {
   margin: 2px 0 14px;
   padding: 14px 16px;
   border-radius: 16px;
-  min-height: 92px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--surface-2)) 0%, var(--surface-2) 72%);
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  min-height: 80px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
 }
 .quote-label {
   font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
@@ -311,14 +310,7 @@ body {
 .quote-cur { font-size: 21px; font-weight: 500; color: var(--text-dim); margin-right: -2px; }
 .quote-unit { font-size: 15px; font-weight: 500; letter-spacing: .04em; color: var(--text-faint); }
 .quote-per { font-size: 13px; font-weight: 500; color: var(--text-faint); letter-spacing: .01em; }
-.quote-usd { margin-top: 6px; font-size: 14px; font-weight: 500; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.quote-rate {
-  margin-top: 11px; padding-top: 11px;
-  border-top: 1px solid var(--border-soft);
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  font-size: 12.5px; color: var(--text-dim);
-}
-.quote-rate .mono { font-size: 12px; color: var(--text-dim); }
+.quote-sub { margin-top: 7px; font-size: 13.5px; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
 /* ── banners ────────────────────────────────────────────────────── */
 .banner { border-radius: var(--radius-sm); padding: 13px 15px; font-size: 13.5px; line-height: 1.55; }
