@@ -87,8 +87,12 @@ function CoinPair({ badge }: { badge: "swap" | "add" }) {
 }
 
 const INTERVALS: { key: string; label: string; tv: boolean }[] = [
+  { key: "5m", label: "5M", tv: true },
+  { key: "15m", label: "15M", tv: true },
   { key: "1h", label: "1H", tv: true },
+  { key: "4h", label: "4H", tv: true },
   { key: "1d", label: "1D", tv: false },
+  { key: "1w", label: "1W", tv: false },
 ];
 
 export function SwapTab({
@@ -210,29 +214,29 @@ export function SwapTab({
                 <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text-dim)", marginRight: 1 }}>$</span>{usdStr}
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-              {price && <ChangePill pct={price.change24h} />}
-              <div style={{ display: "flex", gap: 4 }}>
-                {INTERVALS.map((iv) => (
-                  <button
-                    key={iv.key}
-                    onClick={() => setInterval(iv.key)}
-                    style={{
-                      border: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600,
-                      padding: "3px 9px", borderRadius: 7,
-                      background: interval === iv.key ? "var(--surface-2)" : "transparent",
-                      color: interval === iv.key ? "var(--accent)" : "var(--text-faint)",
-                    }}
-                  >
-                    {iv.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {price && <ChangePill pct={price.change24h} />}
+          </div>
+          {/* Interval toggle — its own full-width row so it has room for many
+              timeframes; scrolls horizontally if it ever overflows. */}
+          <div style={{ display: "flex", gap: 4, marginTop: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv.key}
+                onClick={() => setInterval(iv.key)}
+                style={{
+                  border: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600,
+                  padding: "4px 11px", borderRadius: 7, flex: "0 0 auto",
+                  background: interval === iv.key ? "var(--surface-2)" : "transparent",
+                  color: interval === iv.key ? "var(--accent)" : "var(--text-faint)",
+                }}
+              >
+                {iv.label}
+              </button>
+            ))}
           </div>
           <div style={{ marginTop: 8, minHeight: 200 }}>
             {candles.length > 0 ? (
-              <PriceChart candles={candles} theme={theme} height={200} timeVisible={interval !== "1d"} />
+              <PriceChart candles={candles} theme={theme} height={200} timeVisible={INTERVALS.find((i) => i.key === interval)?.tv ?? true} />
             ) : (
               <div style={{ height: 200, display: "grid", placeItems: "center", color: "var(--text-faint)", fontSize: 13 }}>
                 {loadingChart ? <Spinner size={20} /> : t("swapTab.noChart")}
