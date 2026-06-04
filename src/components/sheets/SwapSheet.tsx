@@ -185,6 +185,7 @@ export function SwapSheet({
   const [quote, setQuote] = useState<SwapRec | null>(null);
   // Gate: a high-impact trade must be explicitly confirmed on the review step.
   const [showImpactConfirm, setShowImpactConfirm] = useState(false);
+  const [feeOpen, setFeeOpen] = useState(false);
   const [live, setLive] = useState<SwapRec | null>(null);
 
   // BSC funding info (buy direction only).
@@ -644,19 +645,26 @@ export function SwapSheet({
                   {sigFmt(estOut, 6)}
                   <span className="quote-unit">{recvUnit}</span>
                 </div>
-                {/* Effective rate for THIS trade (moves with the amount, since it
-                    includes slippage) + the price impact, like a real swap app. */}
-                <div className="quote-sub">
-                  1 EXFER ≈ {effUsd != null ? `$${sigFmt(effUsd, 4)} · ` : ""}{sigFmt(effRate ?? poolInfo.mid)} BNB
-                </div>
-                {priceImpact > 0 && (
-                  <div
-                    className="quote-sub"
-                    style={{ marginTop: 2, color: highImpact ? "#fbbf24" : "var(--text-faint)" }}
-                  >
-                    {t("swap.priceImpact")} {(priceImpact * 100).toFixed(2)}%
+                {/* Effective unit price for THIS trade (moves with the amount,
+                    since it includes slippage) + the price impact — clean
+                    labeled rows, like a real swap app. */}
+                <div className="quote-detail">
+                  <div className="quote-row">
+                    <span className="quote-row-k">{t("swap.unitPrice")}</span>
+                    <span className="quote-row-v">
+                      {effUsd != null ? `$${sigFmt(effUsd, 4)}` : `${sigFmt(effRate ?? poolInfo.mid)} BNB`}
+                      <small>/ EXFER</small>
+                    </span>
                   </div>
-                )}
+                  {priceImpact > 0 && (
+                    <div className="quote-row">
+                      <span className="quote-row-k">{t("swap.priceImpact")}</span>
+                      <span className="quote-row-v" style={{ color: highImpact ? "#fbbf24" : undefined }}>
+                        {(priceImpact * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -678,6 +686,23 @@ export function SwapSheet({
                   </div>
                 )}
               </>
+            )}
+          </div>
+        )}
+        {poolInfo && (
+          <div style={{ marginTop: -4, marginBottom: 4 }}>
+            <button
+              type="button"
+              onClick={() => setFeeOpen((o) => !o)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, color: "var(--text-faint)" }}
+            >
+              {t("swap.feeChip", { pct: sigFmt(poolInfo.feeBps / 100, 2) })}
+              <span style={{ display: "inline-grid", placeItems: "center", width: 14, height: 14, borderRadius: 999, border: "1px solid var(--text-faint)", fontSize: 9.5, fontWeight: 700, lineHeight: 1 }}>?</span>
+            </button>
+            {feeOpen && (
+              <div style={{ fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.5, marginTop: 6 }}>
+                {t("swap.feeInfo", { pct: sigFmt(poolInfo.feeBps / 100, 2) })}
+              </div>
             )}
           </div>
         )}

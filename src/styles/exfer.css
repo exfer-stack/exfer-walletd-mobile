@@ -348,6 +348,14 @@ body {
 .quote-per { font-size: 13px; font-weight: 500; color: var(--text-faint); letter-spacing: .01em; }
 .quote-sub { margin-top: 7px; font-size: 13.5px; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
+/* Labeled detail rows under the big figure (rate / price impact) — readable
+   label-value rows instead of a cramped grey sub-line. */
+.quote-detail { margin-top: 13px; border-top: 1px solid var(--border-soft); }
+.quote-row { display: flex; justify-content: space-between; align-items: baseline; padding-top: 9px; }
+.quote-row-k { font-size: 13px; font-weight: 500; color: var(--text-faint); }
+.quote-row-v { font-size: 15.5px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.quote-row-v small { font-size: 12px; font-weight: 500; color: var(--text-faint); margin-left: 4px; }
+
 /* ── banners ────────────────────────────────────────────────────── */
 .banner { border-radius: var(--radius-sm); padding: 13px 15px; font-size: 13.5px; line-height: 1.55; }
 .banner-warn   { background: color-mix(in srgb, #fbbf24 12%, transparent); color: #fcd34d; border: 1px solid color-mix(in srgb, #fbbf24 28%, transparent); }
