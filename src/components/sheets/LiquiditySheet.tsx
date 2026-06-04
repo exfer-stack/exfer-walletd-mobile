@@ -1,11 +1,9 @@
 // Liquidity (LP) — self-serve add / remove against the swap pool. Wired to the
-// walletd LP proxy RPCs (lp_pool_info / lp_position / lp_deposit_start /
-// lp_deposit_status / lp_withdraw_self). The pool's shares are an off-chain
-// ledger (Exfer has no VM), so this is a CUSTODIAL position — surfaced honestly.
+// walletd LP proxy RPCs. Shares are an off-chain ledger (Exfer has no VM).
 //
-// Add: open a deposit intent → app sends EXFER (transfer) + BNB (bsc_send_bnb)
-// to the per-request deposit addresses → poll until the pool credits shares.
-// Remove: lp_withdraw_self → the pool auto-pays both legs back to the wallet.
+// Flow mirrors the swap sheet's shape: a build step, a staged progress step, and
+// a result screen (added / refunded / removed) with a toast — so LP feels like
+// the rest of the app, not a bolt-on.
 
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../../lib/wallet";
@@ -19,6 +17,10 @@ import { Sheet, Spinner } from "../ui";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
 const FEE_RATE = 1; // exfers/byte, matches SendSheet
+// The BNB leg is swept from a per-request address that pays its own BSC gas, so
+// it must clear a safe gas floor (a few × the typical 21000-gas cost). Below
+// this the pool would auto-refund the deposit, so we block it up front instead.
+const MIN_BNB_LEG = 0.00001;
 
 interface PoolInfo {
   total_shares: string;
@@ -33,6 +35,7 @@ interface Position {
   value_bnb: string;
   value_exfer: string;
 }
+type ResultKind = "added" | "refunded" | "removed" | "failed";
 
 function sig(n: number, d = 6): string {
   if (!isFinite(n) || n === 0) return "0";
@@ -40,6 +43,18 @@ function sig(n: number, d = 6): string {
 }
 function usd(n: number): string {
   return n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 3, useGrouping: false });
+}
+function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* unsupported */ } }
+
+/** Tinted result badge, same visual language as the swap result screen. */
+function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
+  const color = kind === "success" ? "#34d399" : kind === "refunded" ? "#fbbf24" : "#f87171";
+  const path = kind === "success" ? "M5 13l4 4L19 7" : kind === "refunded" ? "M9 14l-4-4 4-4M5 10h8a6 6 0 0 1 0 12h-1" : "M6 6l12 12M18 6L6 18";
+  return (
+    <div style={{ width: 64, height: 64, borderRadius: 999, background: `color-mix(in srgb, ${color} 16%, transparent)`, display: "grid", placeItems: "center" }}>
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>
+    </div>
+  );
 }
 
 export function LiquiditySheet({ onClose }: { onClose: () => void }) {
@@ -53,28 +68,25 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
 
   const visible = (balance?.entries ?? []).filter((a) => !isHidden(a.address));
   const funded = visible.filter((a) => a.balance > 0);
-  // LP identity = a stable funded EXFER address (the position is keyed by it).
   const exferAddr = funded[0]?.address ?? visible[0]?.address ?? "";
   const exferBal = funded[0]?.balance ?? 0;
 
-  const [step, setStep] = useState<"overview" | "add" | "withdraw" | "progress">("overview");
+  const [step, setStep] = useState<"overview" | "add" | "withdraw" | "progress" | "done">("overview");
   const [pool, setPool] = useState<PoolInfo | null>(null);
   const [pos, setPos] = useState<Position | null>(null);
   const [bscAddr, setBscAddr] = useState<string>("");
   const [bnbWei, setBnbWei] = useState<string>("0");
   const [unavailable, setUnavailable] = useState(false);
-  const [amount, setAmount] = useState(""); // EXFER amount to add
+  const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [progressMsg, setProgressMsg] = useState("");
+  const [stage, setStage] = useState(0); // 0 send, 1 sweep, 2 credit
+  const [result, setResult] = useState<{ kind: ResultKind; bnb?: string; exfer?: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
       const p = await rpc<PoolInfo>("lp_pool_info");
-      if ((p as unknown as { error?: string })?.error || !p.genesis_done) {
-        setUnavailable(true);
-        return;
-      }
+      if ((p as unknown as { error?: string })?.error || !p.genesis_done) { setUnavailable(true); return; }
       setPool(p);
       const [a, b] = await Promise.all([
         rpc<{ address: string }>("bsc_get_address").catch(() => ({ address: "" })),
@@ -86,68 +98,69 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
         const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
         if (pp) setPos(pp);
       }
-    } catch {
-      setUnavailable(true);
-    }
+    } catch { setUnavailable(true); }
   }, [exferAddr]);
 
   useEffect(() => { void load(); }, [load]);
 
-  // BNB:EXFER ratio from reserves; matching BNB for a given EXFER amount.
   const mid = pool ? Number(pool.reserves.bnb) / Number(pool.reserves.exfer) : 0; // BNB per EXFER
   const bnbHuman = Number(BigInt(bnbWei || "0")) / 1e18;
   const amtNum = Number(amount);
   const bnbNeeded = mid > 0 && isFinite(amtNum) ? amtNum * mid : 0;
   const exferUsd = mid > 0 && bnbUsd ? mid * bnbUsd : price?.usd ?? 0;
-  const addUsd = isFinite(amtNum) ? amtNum * exferUsd * 2 : 0; // both legs ≈ 2× the EXFER value
+  const addUsd = isFinite(amtNum) ? amtNum * exferUsd * 2 : 0;
+  const minExfer = mid > 0 ? MIN_BNB_LEG / mid : 0; // min EXFER so the BNB leg clears gas
   const amountValid = isFinite(amtNum) && amtNum > 0;
   const enoughExfer = amountValid && parseExferAmount(amount || "0") <= exferBal;
   const enoughBnb = bnbNeeded <= bnbHuman;
+  const belowMin = amountValid && minExfer > 0 && amtNum < minExfer;
+  const canAdd = amountValid && enoughExfer && enoughBnb && !belowMin;
 
   async function confirmAdd() {
-    if (!pool || !amountValid) return;
-    if (!enoughExfer) { setErr(t("lp.needExfer")); return; }
-    if (!enoughBnb) { setErr(t("lp.needBnb", { bnb: sig(bnbNeeded, 4) })); return; }
+    if (!pool || !canAdd) return;
     const bio = await biometricStatus();
     if (bio.available && !(await biometricUnlock(t("lp.addTitle")))) {
-      toast.error(t("swap.notConfirmedTitle"), "");
-      return;
+      toast.error(t("swap.notConfirmedTitle"), ""); return;
     }
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setStage(0); setStep("progress");
     try {
-      setStep("progress"); setProgressMsg(t("lp.opening"));
       const intent = await rpc<{ id: string; deposit_exfer_address: string; deposit_bsc_address: string }>(
-        "lp_deposit_start", { exfer_address: exferAddr, bsc_address: bscAddr },
-      );
-      // Send both legs from the user's wallet to the per-request addresses.
-      setProgressMsg(t("lp.sendingExfer"));
+        "lp_deposit_start", { exfer_address: exferAddr, bsc_address: bscAddr });
+      setStage(0);
       await rpc("transfer", { from: exferAddr, outputs: [{ to: intent.deposit_exfer_address, amount: parseExferAmount(amount) }], fee_rate: FEE_RATE });
-      setProgressMsg(t("lp.sendingBnb"));
       await rpc("bsc_send_bnb", { to: intent.deposit_bsc_address, amount: sig(bnbNeeded, 8) });
-      // Poll until the pool credits shares.
-      setProgressMsg(t("lp.crediting"));
-      await pollDeposit(intent.id);
-      toast.success(t("lp.addedTitle"), t("lp.addedBody"));
+      setStage(1);
+      const status = await pollDeposit(intent.id);
       await load(); await refresh();
-      setStep("overview"); setAmount("");
+      if (status === "completed") {
+        const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
+        buzz([0, 30, 40, 30]);
+        setResult({ kind: "added", exfer: pp?.value_exfer, bnb: pp?.value_bnb });
+        toast.success(t("lp.addedTitle"), t("lp.addedBody"));
+      } else {
+        buzz(60);
+        setResult({ kind: "refunded" });
+        toast.info(t("lp.refundedTitle"), t("lp.refundedBody"));
+      }
+      setStep("done"); setAmount("");
     } catch (e) {
+      buzz(60);
       setErr(humanizeError(e));
-      setStep("add");
-    } finally {
-      setBusy(false);
-    }
+      setResult({ kind: "failed" });
+      setStep("done");
+    } finally { setBusy(false); }
   }
 
-  function pollDeposit(id: string): Promise<void> {
+  function pollDeposit(id: string): Promise<"completed" | "expired"> {
     return new Promise((resolve, reject) => {
       const t0 = Date.now();
       const tick = async () => {
         try {
           const s = await rpc<{ status: string }>("lp_deposit_status", { id });
-          if (s.status === "completed") return resolve();
-          if (s.status === "expired") return reject(new Error("deposit expired/refunded"));
+          if (s.status === "completed") { setStage(2); return resolve("completed"); }
+          if (s.status === "expired") return resolve("expired");
         } catch { /* transient */ }
-        if (Date.now() - t0 > 5 * 60_000) return reject(new Error("timed out — check back shortly"));
+        if (Date.now() - t0 > 5 * 60_000) return reject(new Error(t("lp.timedOut")));
         window.setTimeout(tick, 4000);
       };
       tick();
@@ -158,49 +171,83 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
     if (!pos?.has_position) return;
     const bio = await biometricStatus();
     if (bio.available && !(await biometricUnlock(t("lp.removeTitle")))) {
-      toast.error(t("swap.notConfirmedTitle"), "");
-      return;
+      toast.error(t("swap.notConfirmedTitle"), ""); return;
     }
+    const owed = { exfer: pos.value_exfer, bnb: pos.value_bnb };
     setBusy(true); setErr(null);
     try {
       await rpc("lp_withdraw_self", { exfer_address: exferAddr, shares: "all" });
-      toast.success(t("lp.removeQueuedTitle"), t("lp.removeQueuedBody"));
       await load(); await refresh();
-      setStep("overview");
+      buzz([0, 30, 40, 30]);
+      setResult({ kind: "removed", exfer: owed.exfer, bnb: owed.bnb });
+      toast.success(t("lp.removeQueuedTitle"), t("lp.removeQueuedBody"));
+      setStep("done");
     } catch (e) {
       setErr(humanizeError(e));
-    } finally {
-      setBusy(false);
-    }
+      setStep("withdraw");
+    } finally { setBusy(false); }
   }
 
-  // ── unavailable (pool not LP-enabled) ──
+  // ── unavailable ──
   if (unavailable) {
     return (
       <Sheet title={t("lp.title")} onClose={onClose} footer={<button className="btn btn-block" onClick={onClose}>{t("swap.done")}</button>}>
-        <div style={{ padding: "28px 8px", textAlign: "center", color: "var(--text-dim)", lineHeight: 1.6 }}>
-          {t("lp.unavailable")}
+        <div style={{ padding: "28px 8px", textAlign: "center", color: "var(--text-dim)", lineHeight: 1.6 }}>{t("lp.unavailable")}</div>
+      </Sheet>
+    );
+  }
+  if (!pool) {
+    return <Sheet title={t("lp.title")} onClose={onClose}><div style={{ padding: 40, display: "grid", placeItems: "center" }}><Spinner size={22} /></div></Sheet>;
+  }
+
+  // ── progress (staged) ──
+  if (step === "progress") {
+    const steps = [t("lp.stepSend"), t("lp.stepSweep"), t("lp.stepCredit")];
+    return (
+      <Sheet title={t("lp.addTitle")} onClose={onClose}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "10px 0 6px" }}>
+          <div style={{ textAlign: "center", fontSize: 15, fontWeight: 700 }}>{t("lp.progressHeading")}</div>
+          <div style={{ display: "flex", alignItems: "center", padding: "0 6px" }}>
+            {steps.map((_, i) => {
+              const done = i < stage, active = i === stage;
+              const node = (
+                <div key={`n${i}`} style={{ width: 30, height: 30, borderRadius: 999, flex: "0 0 auto", display: "grid", placeItems: "center", background: done ? "#34d399" : active ? "var(--accent)" : "var(--surface-2)", border: done || active ? "none" : "1px solid var(--border)", color: done || active ? "var(--accent-ink)" : "var(--text-faint)" }}>
+                  {done ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg> : active ? <Spinner size={14} /> : <span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />}
+                </div>
+              );
+              if (i === steps.length - 1) return node;
+              return [node, <div key={`c${i}`} style={{ flex: 1, height: 2, margin: "0 6px", background: i < stage ? "#34d399" : "var(--border)" }} />];
+            })}
+          </div>
+          <div style={{ display: "flex" }}>
+            {steps.map((label, i) => (
+              <span key={i} style={{ flex: 1, fontSize: 11.5, textAlign: i === 0 ? "left" : i === steps.length - 1 ? "right" : "center", fontWeight: i === stage ? 700 : 500, color: i === stage ? "var(--accent)" : i < stage ? "var(--text)" : "var(--text-faint)" }}>{label}</span>
+            ))}
+          </div>
+          <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>{t("lp.progressHint")}</div>
         </div>
       </Sheet>
     );
   }
 
-  if (!pool) {
+  // ── result (added / refunded / removed / failed) ──
+  if (step === "done" && result) {
+    const k = result.kind;
+    const badge = k === "added" || k === "removed" ? "success" : k === "refunded" ? "refunded" : "failed";
+    const heading = k === "added" ? t("lp.addedHeading") : k === "removed" ? t("lp.removedHeading") : k === "refunded" ? t("lp.refundedTitle") : t("lp.failedHeading");
     return (
-      <Sheet title={t("lp.title")} onClose={onClose}>
-        <div style={{ padding: 40, display: "grid", placeItems: "center" }}><Spinner size={22} /></div>
-      </Sheet>
-    );
-  }
-
-  // ── progress ──
-  if (step === "progress") {
-    return (
-      <Sheet title={t("lp.addTitle")} onClose={onClose}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "32px 0" }}>
-          <Spinner size={26} />
-          <div style={{ fontSize: 14, color: "var(--text-dim)" }}>{progressMsg}</div>
-          <div style={{ fontSize: 12, color: "var(--text-faint)", textAlign: "center", lineHeight: 1.5 }}>{t("lp.progressHint")}</div>
+      <Sheet title={t("lp.title")} onClose={onClose} footer={<button className="btn btn-block" onClick={() => { setResult(null); setStep("overview"); }}>{t("swap.done")}</button>}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "22px 0" }}>
+          <ResultBadge kind={badge} />
+          <div style={{ fontSize: 18, fontWeight: 700 }}>{heading}</div>
+          {(k === "added" || k === "removed") && result.exfer && (
+            <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>
+              {sig(Number(result.exfer))} EXFER + {sig(Number(result.bnb), 6)} BNB
+            </div>
+          )}
+          <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5, padding: "0 12px" }}>
+            {k === "added" ? t("lp.addedDoneBody") : k === "removed" ? t("lp.removeQueuedBody") : k === "refunded" ? t("lp.refundedBody") : (err || t("lp.failedBody"))}
+          </div>
         </div>
       </Sheet>
     );
@@ -210,14 +257,15 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
   if (step === "add") {
     return (
       <Sheet title={t("lp.addTitle")} onClose={onClose} onBack={() => { setStep("overview"); setErr(null); }}
-        footer={<button className="btn btn-block" disabled={busy || !amountValid} onClick={confirmAdd}>{busy ? <Spinner /> : t("lp.addConfirm")}</button>}>
+        footer={<button className="btn btn-block" disabled={busy || !canAdd} onClick={confirmAdd}>{busy ? <Spinner /> : t("lp.addConfirm")}</button>}>
         <label className="eyebrow">{t("lp.addExferAmount")}</label>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input className="field" inputMode="decimal" placeholder="0.0" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ flex: 1, fontSize: 22, fontWeight: 600 }} />
+          <input className="field" inputMode="decimal" autoFocus placeholder="0.0" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ flex: 1, fontSize: 22, fontWeight: 600 }} />
           <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>EXFER</span>
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--text-faint)", margin: "8px 2px" }}>
-          {t("lp.balance")}: {formatBalanceCompact(exferBal)}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px" }}>
+          <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.balance")}: {formatBalanceCompact(exferBal)}</span>
+          {minExfer > 0 && <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{t("lp.minHint", { n: sig(Math.ceil(minExfer), 2) })}</span>}
         </div>
         <div className="quote-card" style={{ marginTop: 6 }}>
           <div className="quote-label">{t("lp.youProvide")}</div>
@@ -231,13 +279,14 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
           </div>
           <div className="quote-sub" style={{ marginTop: 8 }}>≈ ${amountValid ? usd(addUsd) : "0"} · {t("lp.matchRatio")}</div>
         </div>
-        <div className="banner banner-info" style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5 }}>{t("lp.custodialNote")}</div>
+        {belowMin && <div className="banner banner-warn" style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.5 }}>{t("lp.belowMin", { n: sig(Math.ceil(minExfer), 2) })}</div>}
+        <div className="banner banner-info" style={{ marginTop: 12, fontSize: 12, lineHeight: 1.5 }}>{t("lp.custodialNote")}</div>
         {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</div>}
       </Sheet>
     );
   }
 
-  // ── withdraw confirm ──
+  // ── withdraw ──
   if (step === "withdraw" && pos?.has_position) {
     return (
       <Sheet title={t("lp.removeTitle")} onClose={onClose} onBack={() => setStep("overview")}
@@ -269,20 +318,12 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
             <div style={{ fontSize: 14, color: "var(--text-dim)", marginTop: 4 }}>{t("lp.noPosition")}</div>
           )}
         </div>
-
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setStep("add"); }}>{t("lp.add")}</button>
-          {pos?.has_position && (
-            <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setStep("withdraw"); }}>{t("lp.remove")}</button>
-          )}
+          <button className="btn btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setAmount(""); setStep("add"); }}>{t("lp.add")}</button>
+          {pos?.has_position && <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setStep("withdraw"); }}>{t("lp.remove")}</button>}
         </div>
-
-        <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.55 }}>
-          {t("lp.earnNote")}
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.5 }}>
-          {t("lp.poolReserves", { exfer: sig(Number(pool.reserves.exfer)), bnb: sig(Number(pool.reserves.bnb), 6) })}
-        </div>
+        <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.55 }}>{t("lp.earnNote")}</div>
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.5 }}>{t("lp.poolReserves", { exfer: sig(Number(pool.reserves.exfer)), bnb: sig(Number(pool.reserves.bnb), 6) })}</div>
       </div>
     </Sheet>
   );

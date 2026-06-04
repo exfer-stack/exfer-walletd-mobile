@@ -175,7 +175,21 @@ export function SwapTab({
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
         </button>
 
-        {/* In-flight swaps. */}
+        {/* Liquidity entry — a feature, kept above the transient in-flight list. */}
+        {lpAvailable && (
+          <button onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
+            <span style={{ width: 42, height: 42, borderRadius: 13, flex: "0 0 auto", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
+              <Icon name="spark" size={21} />
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("lp.title")}</span>
+              <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2 }}>{t("lp.entrySub")}</span>
+            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+        )}
+
+        {/* In-flight swaps (transient status, last). */}
         {inflight.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swap.inflightTitle")}</div>
@@ -192,20 +206,6 @@ export function SwapTab({
               </button>
             ))}
           </div>
-        )}
-
-        {/* Liquidity entry — only when the pool supports self-serve LP. */}
-        {lpAvailable && (
-          <button onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", textAlign: "left" }}>
-            <span style={{ width: 36, height: 36, borderRadius: 11, flex: "0 0 auto", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
-              <Icon name="spark" size={18} />
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("lp.title")}</span>
-              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>{t("lp.entrySub")}</span>
-            </span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
-          </button>
         )}
       </div>
     </div>
