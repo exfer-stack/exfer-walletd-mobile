@@ -44,6 +44,7 @@ function sig(n: number, d = 6): string {
   return n.toLocaleString("en-US", { maximumSignificantDigits: d, useGrouping: false });
 }
 function usd(n: number): string {
+  if (!isFinite(n)) return "0"; // a transient 0 reserve must never render "$NaN"
   return n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 3, useGrouping: false });
 }
 function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* unsupported */ } }
@@ -120,7 +121,11 @@ export function LiquiditySheet({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const mid = pool ? Number(pool.reserves.bnb) / Number(pool.reserves.exfer) : 0; // BNB per EXFER
+  // Guard the EXFER reserve: if a transient node hiccup makes the pool report 0,
+  // bnb/0 = Infinity poisons every downstream number into NaN. Treat it as
+  // "unknown ratio" and fall back to the OTC spot price for USD figures.
+  const exferReserve = pool ? Number(pool.reserves.exfer) : 0;
+  const mid = pool && exferReserve > 0 ? Number(pool.reserves.bnb) / exferReserve : 0; // BNB per EXFER
   const bnbHuman = Number(BigInt(bnbWei || "0")) / 1e18;
   const amtNum = Number(amount);
   const bnbNeeded = mid > 0 && isFinite(amtNum) ? amtNum * mid : 0;
