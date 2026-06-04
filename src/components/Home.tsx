@@ -1,6 +1,6 @@
 // Home — balance hero, Receive/Send, address list, New-address menu.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import tokenLogo from "../assets/exfer-mark.png";
 import { useWallet } from "../lib/wallet";
@@ -17,7 +17,7 @@ import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
-import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton } from "./ui";
+import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner } from "./ui";
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
@@ -104,11 +104,18 @@ function fmtBnbWei(wei: string | undefined, frac = 5): string {
   }
 }
 
-/** Trim a human decimal string to ≤4 fractional digits (drops trailing zeros). */
+/** Trim a human decimal string to ≤4 fractional digits (drops trailing zeros).
+ *  Tiny values (e.g. ~1e-6 BNB) fall back to significant digits, never "0". */
 function fmtAmt(s: string, dp = 4): string {
   if (!s) return s;
   const [w, f = ""] = s.split(".");
   const frac = f.slice(0, dp).replace(/0+$/, "");
+  if (!frac && w === "0") {
+    const n = Number(s);
+    if (isFinite(n) && n !== 0) {
+      return n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+    }
+  }
   return frac ? `${w}.${frac}` : w;
 }
 
@@ -143,6 +150,7 @@ export function Home({
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
   const { t } = useT();
+  const toast = useToast();
 
   // Surface swaps that are still settling (or recently terminal) so money in
   // motion is never invisible after the app is reopened. Queries the walletd
@@ -197,12 +205,49 @@ export function Home({
       window.clearInterval(id);
     };
   }, []);
+
+  // While the Deposit BNB modal is open, poll faster (~5s) and celebrate when
+  // the BNB balance increases — so a fresh deposit is never silent. Cleans up
+  // when the modal closes / unmounts.
+  const lastBnbWeiRef = useRef<bigint | null>(null);
+  useEffect(() => {
+    if (!depositOpen) {
+      lastBnbWeiRef.current = null;
+      return;
+    }
+    try {
+      lastBnbWeiRef.current = bnb ? BigInt(bnb.wei) : null;
+    } catch {
+      lastBnbWeiRef.current = null;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
+        if (cancelled) return;
+        setBnb((prev) => (prev ? { ...prev, wei: b.bnb_wei } : prev));
+        const now = BigInt(b.bnb_wei);
+        const prev = lastBnbWeiRef.current;
+        if (prev != null && now > prev) {
+          toast.success(t("swap.bnbReceived"), t("swap.bnbReceivedBody", { delta: fmtBnbWei((now - prev).toString()) }));
+        }
+        lastBnbWeiRef.current = now;
+      } catch {
+        /* transient / engine off; keep polling */
+      }
+    };
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [depositOpen, bnb, toast, t]);
+
   // `balance` is null until the first successful load. Show skeletons while
   // it's loading, but if that first load FAILED show an error+retry instead
   // of an infinite skeleton (and never a misleading "0 / No addresses").
   const firstLoad = balance === null && !error;
   const loadError = balance === null && !!error;
-  const toast = useToast();
   const { toggle } = useBalanceMask();
   const [showHidden, setShowHidden] = useState(false);
   // Create-address modal (the primary path: generate + name in one step).
@@ -688,6 +733,15 @@ export function Home({
               <span className="mono">{shortAddress(bnb.addr)}</span>
               <CopyButton text={bnb.addr} />
             </div>
+            {(() => {
+              let zero = false;
+              try { zero = BigInt(bnb.wei) === 0n; } catch { zero = false; }
+              return zero ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12.5 }}>
+                  <Spinner size={13} /> {t("swap.waitingBnb")}
+                </div>
+              ) : null;
+            })()}
             <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
               {t("home.depositBnbBody")}
             </div>

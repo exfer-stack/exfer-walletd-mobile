@@ -30,19 +30,29 @@ interface SwapRow {
   status: string;
   amount_in: string;
   amount_out: string;
+  fee_bps?: number;
   created_at: number;
   updated_at: number;
   // The swap's own EXFER-leg tx ids, so we can hide them from the raw transfer
   // feed (a swap shows once as a unified record, not twice).
   user_lock_tx?: string | null;
+  pool_lock_ref?: string | null;
   claim_tx?: string | null;
   refund_tx?: string | null;
+  error?: string | null;
 }
 
 function fmtA(s: string, dp = 4): string {
   if (!s) return s;
   const [w, f = ""] = s.split(".");
   const frac = f.slice(0, dp).replace(/0+$/, "");
+  if (!frac && w === "0") {
+    // Tiny value (e.g. ~1e-6 BNB) — show significant digits, not "0".
+    const n = Number(s);
+    if (isFinite(n) && n !== 0) {
+      return n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+    }
+  }
   return frac ? `${w}.${frac}` : w;
 }
 
@@ -102,6 +112,7 @@ export function Activity() {
   const [refreshing, setRefreshing] = useState(false);
   const [indexerOk, setIndexerOk] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  const [openSwap, setOpenSwap] = useState<string | null>(null);
 
   // Cross-chain swaps live in walletd's journal, not the EXFER chain feed —
   // surface them as their own labeled records (both legs + status). No-ops when
@@ -236,7 +247,9 @@ export function Activity() {
           <div style={{ marginBottom: 18 }}>
             <div className="eyebrow" style={{ margin: "0 2px 9px" }}>{t("act.swaps")}</div>
             <div style={{ display: "grid", gap: 11 }}>
-              {swaps.map((s) => <SwapActivityRow key={s.swap_id} s={s} />)}
+              {swaps.map((s) => (
+                <SwapActivityRow key={s.swap_id} s={s} onOpen={() => setOpenSwap(s.swap_id)} />
+              ))}
             </div>
           </div>
         )}
@@ -292,6 +305,11 @@ export function Activity() {
           onClose={() => setOpen(null)}
         />
       )}
+
+      {openSwap && (() => {
+        const s = swaps.find((x) => x.swap_id === openSwap);
+        return s ? <SwapDetailSheet s={s} onClose={() => setOpenSwap(null)} /> : null;
+      })()}
     </div>
   );
 }
@@ -342,7 +360,7 @@ function SkeletonRow() {
   );
 }
 
-function SwapActivityRow({ s }: { s: SwapRow }) {
+function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
   const { t } = useT();
   const sell = s.direction === "exfer_to_bnb";
   const inUnit = sell ? "EXFER" : "BNB";
@@ -350,10 +368,13 @@ function SwapActivityRow({ s }: { s: SwapRow }) {
   const pill = swapPill(s.status);
   const when = relTime(new Date(s.created_at * 1000).toISOString());
   return (
-    <div
-      className="card"
+    <button
+      className="card tap"
+      onClick={onOpen}
       style={{
         padding: "14px 15px",
+        textAlign: "left",
+        cursor: "pointer",
         border: "1px solid var(--border-soft)",
         background: "var(--surface)",
         display: "block",
@@ -381,7 +402,78 @@ function SwapActivityRow({ s }: { s: SwapRow }) {
           {t(pill.key)}
         </span>
       </div>
-    </div>
+    </button>
+  );
+}
+
+/** Detail sheet for a single swap — amounts, status, fee, time, and the
+ *  on-chain references (only those present), each copyable. Mirrors the
+ *  TxSheet's eyebrow + mono-code styling. */
+function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
+  const { t } = useT();
+  const sell = s.direction === "exfer_to_bnb";
+  const inUnit = sell ? "EXFER" : "BNB";
+  const outUnit = sell ? "BNB" : "EXFER";
+  const pill = swapPill(s.status);
+  const created = new Date(s.created_at * 1000).toLocaleString();
+
+  const refs: { key: MsgKey; value: string }[] = [];
+  if (s.user_lock_tx) refs.push({ key: "swap.refUserLock", value: s.user_lock_tx });
+  if (s.pool_lock_ref) refs.push({ key: "swap.refPoolLock", value: s.pool_lock_ref });
+  if (s.claim_tx) refs.push({ key: "swap.refClaim", value: s.claim_tx });
+  if (s.refund_tx) refs.push({ key: "swap.refRefund", value: s.refund_tx });
+
+  return (
+    <Sheet title={t("swap.detailTitle")} subtitle={created} onClose={onClose} height="90%">
+      <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>
+          {fmtA(s.amount_in)} {inUnit} → {fmtA(s.amount_out)} {outUnit}
+        </div>
+        <span className={"pill " + pill.cls} style={{ marginTop: 10 }}>
+          {t(pill.key)}
+        </span>
+      </div>
+
+      <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
+        {typeof s.fee_bps === "number" && (
+          <RvRow label={t("swap.detailFee")} value={`${s.fee_bps / 100}%`} mono />
+        )}
+        <RvRow label={t("swap.detailCreated")} value={created} last />
+      </div>
+
+      {refs.length > 0 && (
+        <div className="card card-2" style={{ padding: "12px 14px", marginBottom: 16 }}>
+          {refs.map((r, i) => (
+            <div key={r.key} style={{ marginTop: i === 0 ? 0 : 14 }}>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>
+                {t(r.key)}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <code
+                  className="mono"
+                  style={{
+                    flex: 1,
+                    fontSize: 12,
+                    wordBreak: "break-all",
+                    color: "var(--text-dim)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {r.value}
+                </code>
+                <CopyButton text={r.value} label="Copied" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {s.error && (
+        <div style={{ color: "#f87171", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
+          {s.error}
+        </div>
+      )}
+    </Sheet>
   );
 }
 

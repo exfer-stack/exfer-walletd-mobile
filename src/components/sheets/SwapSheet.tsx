@@ -20,14 +20,22 @@ import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
 import { Sheet, CopyButton, Spinner } from "../ui";
 import { Qr } from "../Qr";
+import { usePrice } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
 /** Trim a human decimal string to at most `dp` fractional digits (drops
- *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals. */
+ *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals.
+ *  For very small values that would round to "0" at `dp` (e.g. ~1e-6 BNB at
+ *  the real EXFER price), fall back to significant digits so the amount never
+ *  reads as a misleading "0". */
 function fmtAmt(s: string | undefined, dp = 4): string {
   if (!s) return s ?? "";
   const [w, f = ""] = s.split(".");
   const frac = f.slice(0, dp).replace(/0+$/, "");
+  if (!frac && w === "0") {
+    const n = Number(s);
+    if (isFinite(n) && n !== 0) return sigFmt(n, 4);
+  }
   return frac ? `${w}.${frac}` : w;
 }
 
@@ -98,8 +106,20 @@ interface SwapRec {
     | "failed";
   amount_in: string;
   amount_out: string;
+  fee_bps?: number;
   our_bsc_address?: string | null;
   error?: string | null;
+}
+
+/** Trim a number to ~`sig` significant digits as a plain decimal — never
+ *  scientific notation (tiny BNB amounts like 7.6e-7 must read as
+ *  "0.000000764", not "7.63858e-7"). */
+function sigFmt(n: number, sig = 4): string {
+  if (!isFinite(n) || n === 0) return "0";
+  return n.toLocaleString("en-US", {
+    maximumSignificantDigits: sig,
+    useGrouping: false,
+  });
 }
 
 const AMOUNT_RE = /^\d+(\.\d{1,18})?$/;
@@ -120,6 +140,7 @@ export function SwapSheet({
   const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
   const { t } = useT();
+  const price = usePrice();
 
   useEffect(() => suspendPolling(), [suspendPolling]);
 
@@ -141,12 +162,32 @@ export function SwapSheet({
   const [bscBal, setBscBal] = useState<{ bnb: string } | null>(null);
   const [bscBusy, setBscBusy] = useState(false);
 
+  // Indicative pool rate (BNB per 1 EXFER), fetched once on open. May be absent
+  // when the swap engine is off — the preview simply hides.
+  const [poolInfo, setPoolInfo] = useState<{ mid: number; feeBps: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    rpc<{ mid_price_bnb_per_exfer: number; fee_bps: number }>("swap_pool_info")
+      .then((p) => {
+        if (!cancelled) setPoolInfo({ mid: p.mid_price_bnb_per_exfer, feeBps: p.fee_bps });
+      })
+      .catch(() => {
+        /* engine off — hide the preview */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const sell = direction === "exfer_to_bnb";
   // For sell we lock EXFER from a funded address; for buy we receive EXFER to one.
   const pickList = sell ? fundable : visible;
   const fromAddr = from || pickList[0]?.address || "";
   const sendBal = pickList.find((a) => a.address === fromAddr)?.balance ?? 0;
   const bnbZero = bscBal != null && (() => { try { return BigInt(bscBal.bnb) === 0n; } catch { return false; } })();
+  // Buy with no BNB yet: lead with the deposit step and de-emphasize the amount
+  // field so the order of operations is obvious (1. Add BNB → 2. Enter amount).
+  const needsFunding = direction === "bnb_to_exfer" && bnbZero;
 
   const refreshBsc = useCallback(async () => {
     setBscBusy(true);
@@ -166,9 +207,67 @@ export function SwapSheet({
     if (direction === "bnb_to_exfer") refreshBsc();
   }, [direction, refreshBsc]);
 
+  // Auto-poll the BNB balance while the buy deposit UI is visible (step 1, buy
+  // direction). When it increases vs. the last seen value, celebrate with a
+  // toast so a fresh deposit is never silent.
+  const lastBnbRef = useRef<bigint | null>(null);
+  useEffect(() => {
+    if (step !== 1 || direction !== "bnb_to_exfer") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
+        if (cancelled) return;
+        setBscBal({ bnb: b.bnb_wei });
+        const now = BigInt(b.bnb_wei);
+        const prev = lastBnbRef.current;
+        if (prev != null && now > prev) {
+          const delta = fmtUnits((now - prev).toString(), 18, 5);
+          toast.success(t("swap.bnbReceived"), t("swap.bnbReceivedBody", { delta }));
+        }
+        lastBnbRef.current = now;
+      } catch {
+        /* transient / engine off; keep polling */
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [step, direction, toast, t]);
+
   const amountValid = AMOUNT_RE.test(amount.trim()) && Number(amount) > 0;
   const sendUnit = sell ? "EXFER" : "BNB";
   const recvUnit = sell ? "BNB" : "EXFER";
+
+  // Indicative rate line: 1 EXFER ≈ {mid} BNB · ≈ ${usd}. USD only when we have
+  // the EXFER spot price; otherwise show the BNB ratio alone.
+  const rateLine = poolInfo
+    ? price
+      ? t("swap.indicativeRate", { bnb: sigFmt(poolInfo.mid), usd: sigFmt(price.usd) })
+      : t("swap.indicativeRateNoUsd", { bnb: sigFmt(poolInfo.mid) })
+    : null;
+
+  // Live client-side estimate of the output as the user types (the real quote
+  // still happens on Review). For sell: EXFER→BNB = amount * mid. For buy:
+  // BNB→EXFER = amount / mid.
+  const estLine = (() => {
+    if (!poolInfo || !amountValid || poolInfo.mid <= 0) return null;
+    const a = Number(amount);
+    if (!isFinite(a) || a <= 0) return null;
+    const est = sell ? a * poolInfo.mid : a / poolInfo.mid;
+    // USD value of the trade (EXFER side × spot) — meaningful even when the BNB
+    // figure is tiny. Sell: input EXFER; buy: output EXFER.
+    const exferAmt = sell ? a : est;
+    if (price) {
+      const usd = exferAmt * price.usd;
+      const usdStr = usd < 1 ? usd.toFixed(4) : usd.toFixed(2);
+      return t("swap.estOutUsd", { est: sigFmt(est, 6), unit: recvUnit, usd: usdStr });
+    }
+    return t("swap.estOut", { est: sigFmt(est, 6), unit: recvUnit });
+  })();
 
   async function getQuote() {
     if (!amountValid) {
@@ -300,6 +399,45 @@ export function SwapSheet({
     if (s === "refunded" || s === "failed") buzz(60);
   }, [step, live?.status, onDone, onClose]);
 
+  // The BNB deposit card (buy direction). Reused in both layout orders — leads
+  // the screen when there's no BNB yet, otherwise sits below the amount field.
+  const depositCard =
+    !sell && bscAddr ? (
+      <div
+        style={{
+          marginBottom: 14,
+          padding: 12,
+          borderRadius: 12,
+          background: "var(--surface-2, rgba(127,127,127,0.08))",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <div className="eyebrow">{needsFunding ? t("swap.fundStep") : t("swap.bscAddress")}</div>
+        <Qr value={bscAddr} size={150} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+          <span style={{ fontFamily: "monospace" }}>{shortAddress(bscAddr)}</span>
+          <CopyButton text={bscAddr} />
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12 }}>
+          <span>BNB: {fmtUnits(bscBal?.bnb, 18, 4)}</span>
+          <button className="btn-ghost btn-sm" disabled={bscBusy} onClick={refreshBsc}>
+            {bscBusy ? "…" : "↻"}
+          </button>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)", textAlign: "center" }}>
+          {t("swap.fundHint")}
+        </div>
+        {bnbZero && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12 }}>
+            <Spinner size={12} /> {t("swap.waitingBnb")}
+          </div>
+        )}
+      </div>
+    ) : null;
+
   // ---------- step 1: build ----------
   if (step === 1) {
     return (
@@ -329,12 +467,24 @@ export function SwapSheet({
           </button>
         </div>
 
-        <label className="eyebrow">{t("swap.youSend")}</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Buy with no BNB: lead with the deposit step so the order of
+            operations reads top-to-bottom (1. Add BNB → 2. Enter amount). */}
+        {needsFunding && depositCard}
+
+        <label className="eyebrow">{needsFunding ? t("swap.amountStep") : t("swap.youSend")}</label>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            // De-emphasize the amount field until there's BNB to swap.
+            opacity: needsFunding ? 0.5 : 1,
+          }}
+        >
           <input
             className="field"
             inputMode="decimal"
-            autoFocus
+            autoFocus={!needsFunding}
             placeholder="0.0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -342,7 +492,7 @@ export function SwapSheet({
           />
           <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>{sendUnit}</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 2px 4px" }}>
           <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>
             {t("swap.balance")}: {sell ? formatBalanceCompact(sendBal) : `${fmtUnits(bscBal?.bnb, 18, 4)} BNB`}
           </span>
@@ -354,6 +504,16 @@ export function SwapSheet({
             >
               {t("swap.max")}
             </button>
+          )}
+        </div>
+        {/* Live client-side estimate of the output as you type, then the
+            indicative pool rate — both subtle helper lines. */}
+        <div style={{ margin: "0 2px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
+          {estLine && (
+            <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{estLine}</span>
+          )}
+          {rateLine && (
+            <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{rateLine}</span>
           )}
         </div>
 
@@ -371,37 +531,8 @@ export function SwapSheet({
           ))}
         </select>
 
-        {!sell && bscAddr && (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: 12,
-              borderRadius: 12,
-              background: "var(--surface-2, rgba(127,127,127,0.08))",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <div className="eyebrow">{t("swap.bscAddress")}</div>
-            <Qr value={bscAddr} size={150} />
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-              <span style={{ fontFamily: "monospace" }}>{shortAddress(bscAddr)}</span>
-              <CopyButton text={bscAddr} />
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12 }}>
-              <span>BNB: {fmtUnits(bscBal?.bnb, 18, 4)}</span>
-              <button className="btn-ghost btn-sm" disabled={bscBusy} onClick={refreshBsc}>
-                {bscBusy ? "…" : "↻"}
-              </button>
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--text-faint)", textAlign: "center" }}>
-              {t("swap.fundHint")}
-            </div>
-            {bnbZero && <div style={{ color: "#fbbf24", fontSize: 12 }}>{t("swap.needBnb")}</div>}
-          </div>
-        )}
+        {/* When already funded, the deposit card sits below the amount. */}
+        {!needsFunding && depositCard}
 
         {sell && (
           <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
@@ -436,6 +567,14 @@ export function SwapSheet({
             if (!a || !b) return null;
             return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${(b / a).toPrecision(4)} ${recvUnit}`} />;
           })()}
+          {typeof quote.fee_bps === "number" && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "var(--text-faint)", fontSize: 13 }}>
+                {t("swap.fee", { pct: sigFmt(quote.fee_bps / 100) })}
+              </span>
+              <span style={{ color: "var(--text-faint)", fontSize: 12 }}>{t("swap.feeIncluded")}</span>
+            </div>
+          )}
           <Row label={t("swap.from")} value={shortAddress(fromAddr)} />
           <div className="banner banner-info" style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.55 }}>
             {t("swap.safetyNote")}
@@ -486,10 +625,13 @@ export function SwapSheet({
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "24px 0" }}>
           <ResultBadge kind={kind} />
+          {s === "completed" && (
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{t("swap.completedHeading")}</div>
+          )}
           {amounts && <div style={{ fontSize: 16, fontWeight: 700 }}>{amounts}</div>}
           {s === "completed" && (
             <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
-              {t("swap.completedBody", { amt: `${fmtAmt(live?.amount_out ?? "")} ${outUnit}` })}
+              {t("swap.completedReceived", { amt: `${fmtAmt(live?.amount_out ?? "")} ${outUnit}` })}
             </div>
           )}
           {s === "refunded" && (
