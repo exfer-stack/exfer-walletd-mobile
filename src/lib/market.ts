@@ -57,7 +57,9 @@ export async function getMarketPrice(): Promise<MarketPrice | null> {
 }
 
 /** Live EXFER price. `null` until the first successful fetch (and stays at the
- *  last good value if a later refresh fails). Refreshes every 3 minutes. */
+ *  last good value if a later refresh fails). Refreshes every 60s to match the
+ *  pool's price sampler (mid × BNB/USD sampled into candles each minute), so the
+ *  displayed price tracks BNB moves as promptly as the chart does. */
 export function usePrice(): MarketPrice | null {
   // Seed from the cached price so the line shows immediately on launch.
   const [price, setPrice] = useState<MarketPrice | null>(readCachedPrice);
@@ -68,7 +70,7 @@ export function usePrice(): MarketPrice | null {
         if (alive && p) setPrice(p);
       });
     void tick();
-    const id = window.setInterval(tick, 180_000);
+    const id = window.setInterval(tick, 60_000);
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -178,14 +180,15 @@ export async function getBnbUsd(): Promise<number | null> {
   }
 }
 
-/** Live BNB/USD spot. Seeded from cache, refreshes every 3 minutes. */
+/** Live BNB/USD spot. Seeded from cache, refreshes every 60s (BNB is the price
+ *  anchor — EXFER/USD = pool mid × BNB/USD — so keep it as fresh as the chart). */
 export function useBnbUsd(): number | null {
   const [v, setV] = useState<number | null>(readCachedBnbUsd);
   useEffect(() => {
     let alive = true;
     const tick = () => getBnbUsd().then((p) => { if (alive && p) setV(p); });
     void tick();
-    const id = window.setInterval(tick, 180_000);
+    const id = window.setInterval(tick, 60_000);
     return () => {
       alive = false;
       window.clearInterval(id);
