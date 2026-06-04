@@ -24,6 +24,7 @@ import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark } from "../ui";
 import { Qr } from "../Qr";
 import { usePrice } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
+import { recordSwapUsd } from "../../lib/swapPrice";
 
 /** Trim a human decimal string to at most `dp` fractional digits (drops
  *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals.
@@ -375,6 +376,9 @@ export function SwapSheet({
     setErr(null);
     try {
       const r = await rpc<SwapRec>("swap_execute", { swap_id: quote.swap_id });
+      // Snapshot the EXFER/USD spot now, so the record can later show what this
+      // swap was worth at execution time (walletd stores no fiat).
+      if (price) recordSwapUsd(quote.swap_id, price.usd);
       setLive(r);
       setStep(3);
       toast.success(t("swap.started"), t("swap.startedBody"));

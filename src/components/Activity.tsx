@@ -12,6 +12,7 @@ import { useWallet } from "../lib/wallet";
 import { formatExfer, formatBalanceCompact, rpc } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER, txExplorerUrl } from "../lib/format";
+import { getSwapUsd } from "../lib/swapPrice";
 import { useT, tStatic, type MsgKey } from "../lib/i18n";
 import {
   buildActivityFeed,
@@ -440,6 +441,17 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
   const pill = swapPill(s.status);
   const created = new Date(s.created_at * 1000).toLocaleString();
 
+  // Price/value at the time of the swap. The executed rate is exact (derived
+  // from the on-chain amounts); the USD anchor is the EXFER/USD spot we
+  // snapshotted at execute time (per-device, may be absent for old swaps).
+  const exferAmt = sell ? Number(s.amount_in) : Number(s.amount_out);
+  const bnbAmt = sell ? Number(s.amount_out) : Number(s.amount_in);
+  const rate = exferAmt > 0 && isFinite(bnbAmt) ? bnbAmt / exferAmt : null; // BNB per EXFER
+  const usdThen = getSwapUsd(s.swap_id);
+  const valueThen = usdThen != null && exferAmt > 0 ? exferAmt * usdThen : null;
+  const sig = (n: number) => n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+  const usd = (u: number) => (u >= 1 ? u.toFixed(2) : u.toLocaleString("en-US", { maximumSignificantDigits: 3, useGrouping: false }));
+
   const refs: { key: MsgKey; value: string }[] = [];
   if (s.user_lock_tx) refs.push({ key: "swap.refUserLock", value: s.user_lock_tx });
   if (s.pool_lock_ref) refs.push({ key: "swap.refPoolLock", value: s.pool_lock_ref });
@@ -462,6 +474,15 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
       </div>
 
       <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
+        {rate != null && (
+          <RvRow label={t("swap.detailRate")} value={`1 EXFER ≈ ${sig(rate)} BNB`} mono />
+        )}
+        {usdThen != null && (
+          <RvRow label={t("swap.detailPriceThen")} value={`≈ $${usd(usdThen)}`} mono />
+        )}
+        {valueThen != null && (
+          <RvRow label={t("swap.detailValueThen")} value={`≈ $${usd(valueThen)}`} mono strong />
+        )}
         {typeof s.fee_bps === "number" && (
           <RvRow label={t("swap.detailFee")} value={`${s.fee_bps / 100}%`} mono />
         )}
