@@ -125,7 +125,10 @@ fn scope_for_method(method: &str) -> Scope {
         // Cross-chain swap: quoting reserves a preimage, execute/refund move
         // funds across both legs; bsc_send_bnb withdraws BNB — all Spend.
         | "swap_get_quote" | "swap_execute" | "swap_refund"
-        | "bsc_send_bnb" => Scope::Spend,
+        | "bsc_send_bnb"
+        // LP cash-out triggers a pool payout — Spend. (lp_pool_info / lp_position
+        // / lp_deposit_start / lp_deposit_status are reads → default Read.)
+        | "lp_withdraw_self" => Scope::Spend,
         // import_private_key/import_mnemonic add a key (Manage, like
         // generate_*). import_private_key was previously missing here and
         // fell through to Read, which walletd rejects with -32001.

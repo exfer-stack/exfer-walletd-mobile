@@ -150,12 +150,14 @@ export function Home({
   onSend,
   onSwap,
   onResumeSwap,
+  onLiquidity,
   onOpenAddress,
 }: {
   onReceive: () => void;
   onSend: () => void;
   onSwap: () => void;
   onResumeSwap: (swapId: string) => void;
+  onLiquidity: () => void;
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, error, refresh } = useWallet();
@@ -202,6 +204,8 @@ export function Home({
   const [depositOpen, setDepositOpen] = useState(false);
   // BNB private-key export modal (password + biometric gated).
   const [exportKey, setExportKey] = useState(false);
+  // Whether the pool supports self-serve liquidity (genesis done) → show the entry.
+  const [lpAvailable, setLpAvailable] = useState(false);
   // BNB withdraw form (inside the BNB modal): toggle + fields.
   const [bnbWithdraw, setBnbWithdraw] = useState(false);
   const [wto, setWto] = useState("");
@@ -249,6 +253,10 @@ export function Home({
           bnbMidCache = p?.mid_price_bnb_per_exfer ?? null;
           if (!cancelled) setBnbMid(bnbMidCache);
         } catch { /* preview is best-effort */ }
+        try {
+          const lp = await rpc<{ genesis_done?: boolean; error?: string }>("lp_pool_info");
+          if (!cancelled) setLpAvailable(!lp?.error && !!lp?.genesis_done);
+        } catch { /* LP not available on this pool */ }
       } catch {
         // Engine off / not configured. Keep any cached card rather than
         // blanking it on a transient failure; only the very first load (no
@@ -548,6 +556,26 @@ export function Home({
                   </span>
                 );
               })()}
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+        )}
+
+        {/* Earn / liquidity entry — only when the pool supports self-serve LP. */}
+        {lpAvailable && (
+          <button
+            onClick={onLiquidity}
+            className="card"
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", marginBottom: 14, textAlign: "left" }}
+          >
+            <span style={{ width: 36, height: 36, borderRadius: 11, flex: "0 0 auto", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
+              <Icon name="refresh" size={18} />
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("lp.title")}</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>{t("lp.entrySub")}</span>
             </span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
               <path d="M9 6l6 6-6 6" />

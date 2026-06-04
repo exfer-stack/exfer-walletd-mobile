@@ -31,6 +31,7 @@ import { Settings } from "./components/Settings";
 import { ReceiveSheet } from "./components/sheets/ReceiveSheet";
 import { SendSheet } from "./components/sheets/SendSheet";
 import { SwapSheet } from "./components/sheets/SwapSheet";
+import { LiquiditySheet } from "./components/sheets/LiquiditySheet";
 import { AddressSheet } from "./components/sheets/AddressSheet";
 import { SwapWatcher } from "./components/SwapWatcher";
 
@@ -40,6 +41,7 @@ type Overlay =
   | { type: "receive" }
   | { type: "send"; from?: string }
   | { type: "swap"; from?: string; resumeSwapId?: string }
+  | { type: "liquidity" }
   | { type: "address"; address: string }
   | null;
 
@@ -240,6 +242,7 @@ function Shell() {
                 onSend={() => setOverlay({ type: "send" })}
                 onSwap={() => setOverlay({ type: "swap" })}
                 onResumeSwap={(swapId) => setOverlay({ type: "swap", resumeSwapId: swapId })}
+                onLiquidity={() => setOverlay({ type: "liquidity" })}
                 onOpenAddress={(address) => setOverlay({ type: "address", address })}
               />
             )}
@@ -285,6 +288,9 @@ function Shell() {
                   if (t) setTab(t);
                 }}
               />
+            )}
+            {overlay?.type === "liquidity" && (
+              <LiquiditySheet onClose={() => setOverlay(null)} />
             )}
             {overlay?.type === "address" && (
               <AddressSheet

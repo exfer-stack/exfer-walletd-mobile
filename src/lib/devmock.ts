@@ -122,6 +122,7 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "swap_execute" ||
     method === "swap_refund" ||
     method === "bsc_send_bnb" ||
+    method === "lp_withdraw_self" ||
     method === "htlc_lock" ||
     method === "htlc_claim" ||
     method === "htlc_reclaim"
