@@ -427,7 +427,11 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
     <Sheet title={t("swap.detailTitle")} subtitle={created} onClose={onClose} height="90%">
       <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>
-          {fmtA(s.amount_in)} {inUnit} → {fmtA(s.amount_out)} {outUnit}
+          {fmtA(s.amount_in)}
+          <span className="dim" style={{ fontSize: 14, fontWeight: 500 }}> {inUnit}</span>
+          {" → "}
+          {fmtA(s.amount_out)}
+          <span className="dim" style={{ fontSize: 14, fontWeight: 500 }}> {outUnit}</span>
         </div>
         <span className={"pill " + pill.cls} style={{ marginTop: 10 }}>
           {t(pill.key)}

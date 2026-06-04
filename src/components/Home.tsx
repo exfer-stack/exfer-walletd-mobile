@@ -184,6 +184,9 @@ export function Home({
   // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
   // can't see it assumes their money is gone). No-ops when swap isn't configured.
   const [bnb, setBnb] = useState<{ addr: string; wei: string } | null>(null);
+  // Pool mid price (BNB per EXFER) — lets us derive an implied BNB/USD value
+  // (EXFER/USD ÷ BNB-per-EXFER) so the BNB card can show ≈$ like every other row.
+  const [bnbMid, setBnbMid] = useState<number | null>(null);
   const [depositOpen, setDepositOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -194,6 +197,10 @@ export function Home({
           rpc<{ bnb_wei: string }>("bsc_get_balances"),
         ]);
         if (!cancelled) setBnb({ addr: a.address, wei: b.bnb_wei });
+        try {
+          const p = await rpc<{ mid_price_bnb_per_exfer: number | null }>("swap_pool_info");
+          if (!cancelled) setBnbMid(p?.mid_price_bnb_per_exfer ?? null);
+        } catch { /* preview is best-effort */ }
       } catch {
         if (!cancelled) setBnb(null); // engine off / not configured
       }
@@ -462,8 +469,22 @@ export function Home({
                 {t("home.bnbChain")}
               </span>
             </span>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>
-              <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
+            <span style={{ textAlign: "right" }}>
+              <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>
+                <Masked dots="••••">{fmtBnbWei(bnb.wei)}</Masked>
+              </span>
+              {(() => {
+                if (!price || !bnbMid || bnbMid <= 0) return null;
+                const bnbHuman = Number(BigInt(bnb.wei)) / 1e18;
+                const usd = (bnbHuman * price.usd) / bnbMid;
+                if (!isFinite(usd)) return null;
+                const s = usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2);
+                return (
+                  <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>
+                    <Masked dots="••">≈ ${s}</Masked>
+                  </span>
+                );
+              })()}
             </span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
               <path d="M9 6l6 6-6 6" />
