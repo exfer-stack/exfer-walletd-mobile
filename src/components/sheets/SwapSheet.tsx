@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
-import { rpc, formatExfer, formatBalanceCompact } from "../../lib/rpc";
+import { rpc, formatExfer, formatBalanceCompact, splitBalanceCompact } from "../../lib/rpc";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
@@ -898,11 +898,30 @@ export function SwapSheet({
   );
 }
 
+/** The EXFER balance of an account, right-aligned (whole bold + faint frac +
+ *  small EXFER tag) — so each picker entry shows how much it holds, like the
+ *  Home address list. */
+function BalCell({ bal }: { bal: number }) {
+  const { whole, frac } = splitBalanceCompact(bal);
+  return (
+    <span style={{ textAlign: "right", flex: "0 0 auto" }}>
+      <span
+        className="mono"
+        style={{ display: "block", fontSize: 13, fontWeight: 600, color: bal > 0 ? "var(--text)" : "var(--text-faint)" }}
+      >
+        {whole}
+        {frac && <span style={{ color: "var(--text-faint)", fontWeight: 500 }}>.{frac}</span>}
+      </span>
+      <span style={{ display: "block", fontSize: 10, color: "var(--text-faint)", letterSpacing: ".06em" }}>EXFER</span>
+    </span>
+  );
+}
+
 /** A branded account picker — replaces the raw native <select> (which rendered
  *  as the OS dropdown, the ugliest element on the sheet). Shows the selected
- *  account with its identicon, name and short address, and expands an inline
- *  list of the same. Each row carries the avatar so the choice reads as "which
- *  of my accounts", not "a string". */
+ *  account with its identicon, name, short address and EXFER balance, and
+ *  expands an inline list of the same. Each row carries the avatar so the
+ *  choice reads as "which of my accounts", not "a string". */
 function AddrPicker({
   items,
   value,
@@ -939,6 +958,7 @@ function AddrPicker({
             {shortAddress(sel.address)}
           </span>
         </span>
+        <BalCell bal={sel.balance} />
         <svg
           width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)"
           strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
@@ -980,11 +1000,14 @@ function AddrPicker({
                     {shortAddress(a.address)}
                   </span>
                 </span>
-                {active && (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
-                    <path d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                <BalCell bal={a.balance} />
+                <span style={{ width: 16, flex: "0 0 auto", display: "inline-flex", justifyContent: "center" }}>
+                  {active && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
               </button>
             );
           })}
