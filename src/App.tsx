@@ -32,10 +32,11 @@ import { ReceiveSheet } from "./components/sheets/ReceiveSheet";
 import { SendSheet } from "./components/sheets/SendSheet";
 import { SwapSheet } from "./components/sheets/SwapSheet";
 import { LiquiditySheet } from "./components/sheets/LiquiditySheet";
+import { SwapTab } from "./components/SwapTab";
 import { AddressSheet } from "./components/sheets/AddressSheet";
 import { SwapWatcher } from "./components/SwapWatcher";
 
-type Tab = "wallet" | "activity" | "settings";
+type Tab = "wallet" | "swap" | "activity" | "settings";
 
 type Overlay =
   | { type: "receive" }
@@ -240,10 +241,14 @@ function Shell() {
               <Home
                 onReceive={() => setOverlay({ type: "receive" })}
                 onSend={() => setOverlay({ type: "send" })}
+                onOpenAddress={(address) => setOverlay({ type: "address", address })}
+              />
+            )}
+            {tab === "swap" && (
+              <SwapTab
                 onSwap={() => setOverlay({ type: "swap" })}
                 onResumeSwap={(swapId) => setOverlay({ type: "swap", resumeSwapId: swapId })}
                 onLiquidity={() => setOverlay({ type: "liquidity" })}
-                onOpenAddress={(address) => setOverlay({ type: "address", address })}
               />
             )}
             {tab === "activity" && <Activity />}
@@ -263,6 +268,7 @@ function Shell() {
 
             <nav className="tabbar">
               <TabButton id="wallet" icon="wallet" labelKey="nav.wallet" active={tab} onClick={setTab} />
+              <TabButton id="swap" icon="refresh" labelKey="nav.swap" active={tab} onClick={setTab} />
               <TabButton id="activity" icon="activity" labelKey="nav.activity" active={tab} onClick={setTab} />
               <TabButton id="settings" icon="settings" labelKey="nav.settings" active={tab} onClick={setTab} />
             </nav>

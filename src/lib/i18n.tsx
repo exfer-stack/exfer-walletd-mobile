@@ -30,8 +30,12 @@ export function persistLang(l: Lang) {
 const EN = {
   // nav / common
   "nav.wallet": "Wallet",
+  "nav.swap": "Swap",
   "nav.activity": "Activity",
   "nav.settings": "Settings",
+  "swapTab.cta": "Swap EXFER ⇄ BNB",
+  "swapTab.ctaSub": "Sell or buy at the live pool rate",
+  "swapTab.priceLine": "1 EXFER ≈ ${usd} · sell or buy",
 
   // welcome
   "welcome.h1a": "Transfers that",
@@ -585,8 +589,12 @@ export type MsgKey = keyof typeof EN;
 
 const ZH: Record<MsgKey, string> = {
   "nav.wallet": "钱包",
+  "nav.swap": "兑换",
   "nav.activity": "动态",
   "nav.settings": "设置",
+  "swapTab.cta": "兑换 EXFER ⇄ BNB",
+  "swapTab.ctaSub": "按池子实时价卖出或买入",
+  "swapTab.priceLine": "1 EXFER ≈ ${usd} · 卖出或买入",
 
   "welcome.h1a": "转账",
   "welcome.h1b": "快如闪电。",

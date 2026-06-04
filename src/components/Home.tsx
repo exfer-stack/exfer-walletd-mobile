@@ -13,7 +13,7 @@ import {
   revealEvmPrivateKey,
 } from "../lib/rpc";
 import { usePrice, usdValue, useBnbUsd } from "../lib/market";
-import { useT, type MsgKey } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
@@ -86,14 +86,6 @@ function PrimaryAction({
   );
 }
 
-interface InflightSwap {
-  swap_id: string;
-  direction: "exfer_to_bnb" | "bnb_to_exfer";
-  status: string;
-  amount_in: string;
-  amount_out: string;
-}
-
 /** Format native BNB wei (18 dp) to a short human string. */
 function fmtBnbWei(wei: string | undefined, frac = 5): string {
   if (!wei) return "0";
@@ -107,21 +99,6 @@ function fmtBnbWei(wei: string | undefined, frac = 5): string {
   }
 }
 
-/** Trim a human decimal string to ≤4 fractional digits (drops trailing zeros).
- *  Tiny values (e.g. ~1e-6 BNB) fall back to significant digits, never "0". */
-function fmtAmt(s: string, dp = 4): string {
-  if (!s) return s;
-  const [w, f = ""] = s.split(".");
-  const frac = f.slice(0, dp).replace(/0+$/, "");
-  if (!frac && w === "0") {
-    const n = Number(s);
-    if (isFinite(n) && n !== 0) {
-      return n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
-    }
-  }
-  return frac ? `${w}.${frac}` : w;
-}
-
 // Module-level cache for the BNB asset (address + balance + mid price). Home
 // unmounts on every tab switch, so without this the BNB card refetches from
 // scratch each time and visibly pops in a beat late. Seeding initial state from
@@ -130,34 +107,13 @@ function fmtAmt(s: string, dp = 4): string {
 let bnbCache: { addr: string; wei: string } | null = null;
 let bnbMidCache: number | null = null;
 
-/** Map a walletd swap status to its localized label. */
-function swapStatusText(t: (k: MsgKey) => string, status: string): string {
-  switch (status) {
-    case "quoted": return t("swap.statusQuoted");
-    case "user_locked": return t("swap.statusUserLocked");
-    case "pool_locked": return t("swap.statusPoolLocked");
-    case "claiming": return t("swap.statusClaiming");
-    case "completed": return t("swap.statusCompleted");
-    case "refunding": return t("swap.statusRefunding");
-    case "refunded": return t("swap.statusRefunded");
-    case "failed": return t("swap.statusFailed");
-    default: return status;
-  }
-}
-
 export function Home({
   onReceive,
   onSend,
-  onSwap,
-  onResumeSwap,
-  onLiquidity,
   onOpenAddress,
 }: {
   onReceive: () => void;
   onSend: () => void;
-  onSwap: () => void;
-  onResumeSwap: (swapId: string) => void;
-  onLiquidity: () => void;
   onOpenAddress: (address: string) => void;
 }) {
   const { balance, error, refresh } = useWallet();
@@ -165,34 +121,6 @@ export function Home({
   const bnbUsd = useBnbUsd();
   const { t } = useT();
   const toast = useToast();
-
-  // Surface swaps that are still settling (or recently terminal) so money in
-  // motion is never invisible after the app is reopened. Queries the walletd
-  // swap journal; no-ops silently when the swap engine isn't configured.
-  const [inflight, setInflight] = useState<InflightSwap[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const all = await rpc<InflightSwap[]>("swap_list");
-        if (cancelled) return;
-        // "quoted" is a draft — no funds have moved — so it is NOT in progress.
-        // Only surface swaps where the user's leg is actually on-chain.
-        const live = (all ?? []).filter(
-          (s) => !["quoted", "completed", "refunded", "failed"].includes(s.status),
-        );
-        setInflight(live);
-      } catch {
-        if (!cancelled) setInflight([]); // engine off / not configured
-      }
-    };
-    load();
-    const id = window.setInterval(load, 15_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
 
   // The user's BNB lives at an in-wallet BSC address. Surface it as a first-class
   // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
@@ -204,8 +132,6 @@ export function Home({
   const [depositOpen, setDepositOpen] = useState(false);
   // BNB private-key export modal (password + biometric gated).
   const [exportKey, setExportKey] = useState(false);
-  // Whether the pool supports self-serve liquidity (genesis done) → show the entry.
-  const [lpAvailable, setLpAvailable] = useState(false);
   // BNB withdraw form (inside the BNB modal): toggle + fields.
   const [bnbWithdraw, setBnbWithdraw] = useState(false);
   const [wto, setWto] = useState("");
@@ -253,10 +179,6 @@ export function Home({
           bnbMidCache = p?.mid_price_bnb_per_exfer ?? null;
           if (!cancelled) setBnbMid(bnbMidCache);
         } catch { /* preview is best-effort */ }
-        try {
-          const lp = await rpc<{ genesis_done?: boolean; error?: string }>("lp_pool_info");
-          if (!cancelled) setLpAvailable(!lp?.error && !!lp?.genesis_done);
-        } catch { /* LP not available on this pool */ }
       } catch {
         // Engine off / not configured. Keep any cached card rather than
         // blanking it on a transient failure; only the very first load (no
@@ -501,8 +423,7 @@ export function Home({
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />
-          <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="secondary" />
-          <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="primary" />
+          <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
 
         {/* BNB asset card — BNB lives at an in-wallet BSC address; show it as a
@@ -561,66 +482,6 @@ export function Home({
               <path d="M9 6l6 6-6 6" />
             </svg>
           </button>
-        )}
-
-        {/* Earn / liquidity entry — only when the pool supports self-serve LP. */}
-        {lpAvailable && (
-          <button
-            onClick={onLiquidity}
-            className="card"
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", marginBottom: 14, textAlign: "left" }}
-          >
-            <span style={{ width: 36, height: 36, borderRadius: 11, flex: "0 0 auto", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
-              <Icon name="refresh" size={18} />
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("lp.title")}</span>
-              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>{t("lp.entrySub")}</span>
-            </span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
-        )}
-
-        {inflight.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swap.inflightTitle")}</div>
-            {inflight.map((s) => (
-              <button
-                key={s.swap_id}
-                onClick={() => onResumeSwap(s.swap_id)}
-                className="card"
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "11px 13px",
-                  marginBottom: 6,
-                  gap: 11,
-                  textAlign: "left",
-                }}
-              >
-                {/* Spinning accent ring — makes "in progress" actually read as
-                    moving/loading, not a static row. */}
-                <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}>
-                  <Spinner size={18} />
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
-                    {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} →{" "}
-                    {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
-                  </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>
-                    {swapStatusText(t, s.status)}
-                  </span>
-                </span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              </button>
-            ))}
-          </div>
         )}
 
         <div className="h-row" style={{ marginBottom: 11 }}>
