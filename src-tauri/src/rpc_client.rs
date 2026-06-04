@@ -123,9 +123,9 @@ fn scope_for_method(method: &str) -> Scope {
         // to Read and walletd rejected with -32001.)
         | "htlc_lock" | "htlc_claim" | "htlc_reclaim"
         // Cross-chain swap: quoting reserves a preimage, execute/refund move
-        // funds across both legs; bsc_send_usdt withdraws funds — all Spend.
+        // funds across both legs; bsc_send_bnb withdraws BNB — all Spend.
         | "swap_get_quote" | "swap_execute" | "swap_refund"
-        | "bsc_send_usdt" => Scope::Spend,
+        | "bsc_send_bnb" => Scope::Spend,
         // import_private_key/import_mnemonic add a key (Manage, like
         // generate_*). import_private_key was previously missing here and
         // fell through to Read, which walletd rejects with -32001.

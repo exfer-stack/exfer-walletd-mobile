@@ -115,7 +115,15 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "export_vault" ||
     method === "export_address" ||
     method === "import_vault" ||
-    method === "delete_address"
+    method === "delete_address" ||
+    // Cross-chain swap + BNB withdrawal move funds — Spend.
+    method === "swap_get_quote" ||
+    method === "swap_execute" ||
+    method === "swap_refund" ||
+    method === "bsc_send_bnb" ||
+    method === "htlc_lock" ||
+    method === "htlc_claim" ||
+    method === "htlc_reclaim"
   )
     return "spend";
   if (

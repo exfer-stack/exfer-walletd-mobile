@@ -21,6 +21,8 @@ import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner } from "
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
+import { biometricStatus, biometricUnlock } from "../lib/biometric";
+import { humanizeError } from "../lib/errors";
 
 /** 24h change pill — green ▲ for up, red ▼ for down, muted for flat. */
 function ChangePill({ pct }: { pct: number }) {
@@ -188,6 +190,38 @@ export function Home({
   // (EXFER/USD ÷ BNB-per-EXFER) so the BNB card can show ≈$ like every other row.
   const [bnbMid, setBnbMid] = useState<number | null>(null);
   const [depositOpen, setDepositOpen] = useState(false);
+  // BNB withdraw form (inside the BNB modal): toggle + fields.
+  const [bnbWithdraw, setBnbWithdraw] = useState(false);
+  const [wto, setWto] = useState("");
+  const [wamt, setWamt] = useState("");
+  const [wbusy, setWbusy] = useState(false);
+
+  async function withdrawBnb() {
+    const to = wto.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to)) {
+      toast.error(t("home.wdBadAddr"), "");
+      return;
+    }
+    const bio = await biometricStatus();
+    if (bio.available) {
+      const ok = await biometricUnlock(t("home.wdConfirm"));
+      if (!ok) return;
+    }
+    setWbusy(true);
+    try {
+      // Empty/"max" → walletd sends the whole balance minus a gas reserve.
+      const amount = wamt.trim();
+      const r = await rpc<{ txhash: string }>("bsc_send_bnb", { to, amount });
+      toast.success(t("home.wdSent"), shortAddress(r.txhash));
+      setBnbWithdraw(false);
+      setWto("");
+      setWamt("");
+    } catch (e) {
+      toast.error(t("home.wdFailed"), humanizeError(e));
+    } finally {
+      setWbusy(false);
+    }
+  }
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -752,29 +786,79 @@ export function Home({
         <ImportKeyFileModal onClose={() => setImpKey(false)} onImported={refresh} />
       )}
       {depositOpen && bnb && (
-        <Modal title={t("home.depositBnb")} onClose={() => setDepositOpen(false)}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "4px 0" }}>
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
-              {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
+        <Modal
+          title={bnbWithdraw ? t("home.withdrawBnb") : t("home.depositBnb")}
+          onClose={() => { setDepositOpen(false); setBnbWithdraw(false); }}
+        >
+          {bnbWithdraw ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "2px 0" }}>
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+                {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
+              </div>
+              <label className="eyebrow">{t("home.wdTo")}</label>
+              <input
+                className="field mono"
+                placeholder="0x…"
+                value={wto}
+                onChange={(e) => setWto(e.target.value)}
+                style={{ fontSize: 13 }}
+              />
+              <label className="eyebrow">{t("home.wdAmount")}</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  className="field"
+                  inputMode="decimal"
+                  placeholder="0.0"
+                  value={wamt}
+                  onChange={(e) => setWamt(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>BNB</span>
+                <button
+                  className="btn-ghost btn-sm"
+                  style={{ padding: "4px 10px", color: "var(--accent)" }}
+                  onClick={() => setWamt("max")}
+                >
+                  {t("snd.max")}
+                </button>
+              </div>
+              <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                {t("home.wdNote")}
+              </div>
+              <button className="btn btn-block" disabled={wbusy || !wto.trim()} onClick={withdrawBnb}>
+                {wbusy ? <Spinner /> : t("home.wdSend")}
+              </button>
+              <button className="btn-ghost btn-block" onClick={() => setBnbWithdraw(false)}>
+                {t("home.wdBackDeposit")}
+              </button>
             </div>
-            <Qr value={bnb.addr} size={170} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
-              <span className="mono">{shortAddress(bnb.addr)}</span>
-              <CopyButton text={bnb.addr} />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "4px 0" }}>
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+                {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
+              </div>
+              <Qr value={bnb.addr} size={170} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                <span className="mono">{shortAddress(bnb.addr)}</span>
+                <CopyButton text={bnb.addr} />
+              </div>
+              {(() => {
+                let zero = false;
+                try { zero = BigInt(bnb.wei) === 0n; } catch { zero = false; }
+                return zero ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12.5 }}>
+                    <Spinner size={13} /> {t("swap.waitingBnb")}
+                  </div>
+                ) : null;
+              })()}
+              <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+                {t("home.depositBnbBody")}
+              </div>
+              <button className="btn btn-secondary btn-block" onClick={() => setBnbWithdraw(true)}>
+                {t("home.withdrawBnb")}
+              </button>
             </div>
-            {(() => {
-              let zero = false;
-              try { zero = BigInt(bnb.wei) === 0n; } catch { zero = false; }
-              return zero ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-faint)", fontSize: 12.5 }}>
-                  <Spinner size={13} /> {t("swap.waitingBnb")}
-                </div>
-              ) : null;
-            })()}
-            <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-              {t("home.depositBnbBody")}
-            </div>
-          </div>
+          )}
         </Modal>
       )}
     </div>
