@@ -596,9 +596,6 @@ export function SwapSheet({
             </button>
           )}
         </div>
-        {!sell && buyMax > 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--text-faint)", margin: "-2px 2px 4px", lineHeight: 1.4 }}>{t("swap.maxGasNote")}</div>
-        )}
         {/* Quote card — the price is the most important thing on this screen, so
             give it a flat panel with a large Geist figure and one supporting
             line. Each value appears once: before an amount is typed it's the
@@ -677,7 +674,7 @@ export function SwapSheet({
               </span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtUnits(bscBal?.bnb, 18, 4)} BNB</span>
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.5, margin: "0 2px 14px" }}>
+            <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>
               {t("swap.payFromHint")}
             </div>
           </>
@@ -725,6 +722,13 @@ export function SwapSheet({
             </div>
           )}
           <Row label={t("swap.from")} value={shortAddress(fromAddr)} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.etaLabel")}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 500 }}>
+              {t("swap.etaValue")}
+              <SwapTimingHelp />
+            </span>
+          </div>
           <div className="banner banner-info" style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.55 }}>
             {t("swap.safetyNote")}
           </div>
