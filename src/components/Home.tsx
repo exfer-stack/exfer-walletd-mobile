@@ -17,7 +17,7 @@ import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
-import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner } from "./ui";
+import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner, BnbMark } from "./ui";
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
@@ -91,24 +91,6 @@ interface InflightSwap {
   status: string;
   amount_in: string;
   amount_out: string;
-}
-
-/** The native Binance BNB coin mark — gold disc (#F3BA2F) with the official
- *  white diamond glyph. Official logo geometry (viewBox 126.61), symbol scaled
- *  to ~62% so it sits inside the disc with padding. */
-function BnbMark({ size = 36 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 126.61 126.61" style={{ flex: "0 0 auto", display: "block" }} aria-hidden="true">
-      <circle cx="63.3" cy="63.3" r="63.3" fill="#F3BA2F" />
-      <g fill="#fff" transform="translate(63.3 63.3) scale(0.62) translate(-63.3 -63.3)">
-        <path d="M38.73 53.2 63.32 28.62 87.92 53.22 102.22 38.91 63.32 0 24.42 38.9z" />
-        <path d="M0 63.31 14.3 49l14.31 14.31L14.3 77.61z" />
-        <path d="M38.73 73.41 63.32 98l24.6-24.6 14.31 14.29-.01.01-38.9 38.91-38.91-38.88-.02-.02z" />
-        <path d="M98 63.31 112.3 49l14.31 14.3-14.31 14.32z" />
-        <path d="M77.83 63.3 63.32 48.78 52.59 59.51l-1.24 1.23-2.54 2.54-.02.02.02.03 14.51 14.5z" />
-      </g>
-    </svg>
-  );
 }
 
 /** Format native BNB wei (18 dp) to a short human string. */

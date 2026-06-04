@@ -20,7 +20,7 @@ import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
 import { addrName } from "../../lib/format";
 import type { WalletEntry } from "../../lib/types";
-import { Sheet, CopyButton, Spinner, AddrAvatar } from "../ui";
+import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark } from "../ui";
 import { Qr } from "../Qr";
 import { usePrice } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
@@ -629,8 +629,32 @@ export function SwapSheet({
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <AddrPicker items={pickList} value={fromAddr} onChange={setFrom} />
 
-        {/* When already funded, the deposit card sits below the amount. */}
-        {!needsFunding && depositCard}
+        {/* Funded buy: the BNB already in the wallet IS the payment, so show the
+            wallet as the source rather than a redundant deposit QR. The QR only
+            appears (above) when there's no BNB yet and the user must top up. */}
+        {!sell && !needsFunding && bscAddr && (
+          <>
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: 11,
+                padding: "11px 13px", borderRadius: 12,
+                background: "var(--surface-2)", marginBottom: 8,
+              }}
+            >
+              <BnbMark size={30} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>{t("swap.payFrom")}</span>
+                <span className="mono" style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)" }}>
+                  {shortAddress(bscAddr)}
+                </span>
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtUnits(bscBal?.bnb, 18, 4)} BNB</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.5, margin: "0 2px 14px" }}>
+              {t("swap.payFromHint")}
+            </div>
+          </>
+        )}
 
         {sell && (
           <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
