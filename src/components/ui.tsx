@@ -472,6 +472,85 @@ export function Spinner({ size = 18 }: { size?: number }) {
   );
 }
 
+/** Horizontal staged progress stepper: N nodes joined by chevron connectors that
+ *  flow into the active stage. `doneCount` = number of completed steps; the node
+ *  at index `doneCount` is the active (spinner) one, the rest ahead are muted.
+ *  Shared by the swap and liquidity progress screens so they read identically. */
+export function StagedStepper({ labels, doneCount }: { labels: string[]; doneCount: number }) {
+  const last = labels.length - 1;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", padding: "0 4px" }}>
+        {labels.map((_, i) => {
+          const done = i < doneCount;
+          const active = i === doneCount;
+          const node = (
+            <div
+              key={`n${i}`}
+              className={active ? "swap-node-active" : undefined}
+              style={{
+                width: 30, height: 30, borderRadius: 999, flex: "0 0 auto",
+                display: "grid", placeItems: "center",
+                background: done ? "#34d399" : active ? "var(--accent)" : "var(--surface-2)",
+                border: done || active ? "none" : "1px solid var(--border)",
+                color: done || active ? "var(--accent-ink)" : "var(--text-faint)",
+              }}
+            >
+              {done ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+              ) : active ? (
+                <Spinner size={14} />
+              ) : (
+                <span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />
+              )}
+            </div>
+          );
+          if (i === last) return node;
+          const connDone = i + 1 < doneCount;
+          const connActive = i + 1 === doneCount;
+          const conn = (
+            <div key={`c${i}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 30 }}>
+              <div
+                className={connActive ? "swap-flow" : undefined}
+                style={{
+                  display: "flex", gap: 1,
+                  color: connDone ? "#34d399" : connActive ? "var(--accent)" : "var(--text-faint)",
+                  opacity: connDone || connActive ? 1 : 0.35,
+                }}
+              >
+                {[0, 1, 2].map((k) => (
+                  <svg key={k} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                ))}
+              </div>
+            </div>
+          );
+          return [node, conn];
+        })}
+      </div>
+      <div style={{ display: "flex", marginTop: 8 }}>
+        {labels.map((label, i) => {
+          const isActive = i === doneCount;
+          const isDone = i < doneCount;
+          return (
+            <span
+              key={i}
+              style={{
+                flex: 1,
+                fontSize: 11.5,
+                textAlign: i === 0 ? "left" : i === last ? "right" : "center",
+                fontWeight: isActive ? 700 : isDone ? 600 : 500,
+                color: isActive ? "var(--accent)" : isDone ? "var(--text)" : "var(--text-faint)",
+              }}
+            >
+              {label}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SettingRow({
   icon,
   label,

@@ -20,7 +20,7 @@ import { isHidden } from "../../lib/hidden";
 import { shortAddress } from "../../lib/labels";
 import { addrName } from "../../lib/format";
 import type { WalletEntry } from "../../lib/types";
-import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark } from "../ui";
+import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark, StagedStepper } from "../ui";
 import { Qr } from "../Qr";
 import { usePrice, useBnbUsd } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
@@ -826,81 +826,8 @@ export function SwapSheet({
           {amounts && <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>}
         </div>
 
-        {/* horizontal staged stepper: 3 nodes with chevrons flowing into the
-            active stage, so the wait reads as visible forward motion. */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", padding: "0 4px" }}>
-            {[0, 1, 2].map((i) => {
-              const done = i < doneCount;
-              const active = i === doneCount;
-              const node = (
-                <div
-                  key={`n${i}`}
-                  className={active ? "swap-node-active" : undefined}
-                  style={{
-                    width: 30, height: 30, borderRadius: 999, flex: "0 0 auto",
-                    display: "grid", placeItems: "center",
-                    background: done ? "#34d399" : active ? "var(--accent)" : "var(--surface-2)",
-                    border: done || active ? "none" : "1px solid var(--border)",
-                    color: done || active ? "var(--accent-ink)" : "var(--text-faint)",
-                  }}
-                >
-                  {done ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                  ) : active ? (
-                    <Spinner size={14} />
-                  ) : (
-                    <span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--text-faint)", opacity: 0.5 }} />
-                  )}
-                </div>
-              );
-              if (i === 2) return node;
-              const connDone = i + 1 < doneCount;
-              const connActive = i + 1 === doneCount;
-              // One connector language — chevrons throughout: green where done,
-              // animated cyan into the active step, dim where still ahead.
-              const conn = (
-                <div key={`c${i}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: 30 }}>
-                  <div
-                    className={connActive ? "swap-flow" : undefined}
-                    style={{
-                      display: "flex", gap: 1,
-                      color: connDone ? "#34d399" : connActive ? "var(--accent)" : "var(--text-faint)",
-                      opacity: connDone || connActive ? 1 : 0.35,
-                    }}
-                  >
-                    {[0, 1, 2].map((k) => (
-                      <svg key={k} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
-                    ))}
-                  </div>
-                </div>
-              );
-              return [node, conn];
-            })}
-          </div>
-          <div style={{ display: "flex", marginTop: 8 }}>
-            {stepLabels.map((label, i) => {
-              const isActive = i === doneCount;
-              const isDone = i < doneCount;
-              return (
-                <span
-                  key={i}
-                  style={{
-                    flex: 1,
-                    fontSize: 11.5,
-                    textAlign: i === 0 ? "left" : i === 2 ? "right" : "center",
-                    // Active step is the brightest (it's where the eye should
-                    // land); done is normal text; ahead is muted.
-                    fontWeight: isActive ? 700 : isDone ? 600 : 500,
-                    color: isActive ? "var(--accent)" : isDone ? "var(--text)" : "var(--text-faint)",
-                  }}
-                >
-                  {label}
-                </span>
-              );
-            })}
-          </div>
-        </div>
+        {/* horizontal staged stepper — shared with the liquidity flow */}
+        <StagedStepper labels={stepLabels} doneCount={doneCount} />
 
         <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
           {t("swap.etaHint")}
