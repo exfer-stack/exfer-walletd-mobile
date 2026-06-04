@@ -22,6 +22,8 @@ import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner, BnbMark
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
+import { CreateBnbWalletSheet } from "./sheets/CreateBnbWalletSheet";
+import { useBscWallet } from "../lib/bscWallet";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { humanizeError } from "../lib/errors";
 
@@ -104,6 +106,11 @@ function fmtBnbWei(wei: string | undefined, frac = 5): string {
 // scratch each time and visibly pops in a beat late. Seeding initial state from
 // the cache makes the card render immediately with the last-known values while
 // the fresh poll runs in the background.
+//
+// The cache stores the address it belongs to so it can NEVER leak across a
+// wallet switch / lock: after a switch the authoritative address (from
+// useBscWallet) differs, and we drop any cache that doesn't match it instead of
+// showing the previous wallet's BNB address + balance.
 let bnbCache: { addr: string; wei: string } | null = null;
 let bnbMidCache: number | null = null;
 
@@ -121,6 +128,20 @@ export function Home({
   const bnbUsd = useBnbUsd();
   const { t } = useT();
   const toast = useToast();
+
+  // The wallet's BNB key as a first-class identity. Seedless wallets (every
+  // in-app create + vault import) start with NO BNB key — `created` is false
+  // until the user sets one up, which routes the BNB card to a "Set up" CTA
+  // instead of a dead/blank control.
+  const bsc = useBscWallet();
+  const [createBnbOpen, setCreateBnbOpen] = useState(false);
+
+  // Drop any cached BNB balance that belongs to a DIFFERENT address than the
+  // wallet's current BNB key (a wallet switch / lock leaves a stale cache).
+  if (bnbCache && bsc.address && bnbCache.addr !== bsc.address) {
+    bnbCache = null;
+    bnbMidCache = null;
+  }
 
   // The user's BNB lives at an in-wallet BSC address. Surface it as a first-class
   // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
@@ -164,15 +185,20 @@ export function Home({
       setWbusy(false);
     }
   }
+  const bscAddr = bsc.address;
   useEffect(() => {
+    // No BNB key yet → nothing to poll; the card renders the "Set up" CTA. Drop
+    // any leftover balance so a freshly-created/switched wallet starts clean.
+    if (!bscAddr) {
+      bnbCache = null;
+      setBnb(null);
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       try {
-        const [a, b] = await Promise.all([
-          rpc<{ address: string }>("bsc_get_address"),
-          rpc<{ bnb_wei: string }>("bsc_get_balances"),
-        ]);
-        bnbCache = { addr: a.address, wei: b.bnb_wei };
+        const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
+        bnbCache = { addr: bscAddr, wei: b.bnb_wei };
         if (!cancelled) setBnb(bnbCache);
         try {
           const p = await rpc<{ mid_price_bnb_per_exfer: number | null }>("swap_pool_info");
@@ -182,8 +208,10 @@ export function Home({
       } catch {
         // Engine off / not configured. Keep any cached card rather than
         // blanking it on a transient failure; only the very first load (no
-        // cache) shows nothing.
-        if (!cancelled && !bnbCache) setBnb(null);
+        // cache for THIS address) shows just the address with no balance.
+        if (!cancelled && (!bnbCache || bnbCache.addr !== bscAddr)) {
+          setBnb({ addr: bscAddr, wei: "0" });
+        }
       }
     };
     load();
@@ -192,7 +220,7 @@ export function Home({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [bscAddr]);
 
   // While the Deposit BNB modal is open, poll faster (~5s) and celebrate when
   // the BNB balance increases — so a fresh deposit is never silent. Cleans up
@@ -426,10 +454,50 @@ export function Home({
           <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
 
-        {/* BNB asset card — BNB lives at an in-wallet BSC address; show it as a
-            real holding so deposited/received BNB is never invisible. Tap to
-            see the deposit address. Only renders when swap is configured. */}
-        {bnb && (
+        {/* BNB — three states:
+            1. No key yet (seedless wallet, created=false): a "Set up your BNB
+               wallet" CTA so the control is never dead/blank.
+            2. Key exists (created=true): the BNB asset card with balance.
+            3. While the key state is still loading: render nothing (no flash).
+            Surfaced as a first-class asset so deposited/received BNB is never
+            invisible. */}
+        {!bsc.loading && !bsc.created && (
+          <button
+            onClick={() => setCreateBnbOpen(true)}
+            className="card"
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 12,
+              padding: "13px 14px", marginBottom: 14, textAlign: "left",
+            }}
+          >
+            <BnbMark size={36} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>
+                {t("bnb.notCreatedTitle")}
+              </span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)", lineHeight: 1.4, marginTop: 2 }}>
+                {t("bnb.notCreatedBody")}
+              </span>
+            </span>
+            <span
+              style={{
+                flex: "0 0 auto",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: "color-mix(in srgb, var(--accent) 15%, transparent)",
+                color: "var(--accent)",
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              <Icon name="plus" size={14} />
+            </span>
+          </button>
+        )}
+        {bsc.created && bnb && (
           <button
             onClick={() => setDepositOpen(true)}
             className="card"
@@ -792,6 +860,16 @@ export function Home({
         </Modal>
       )}
       {exportKey && <ExportBnbKeyModal onClose={() => setExportKey(false)} />}
+      {createBnbOpen && (
+        <CreateBnbWalletSheet
+          onClose={() => setCreateBnbOpen(false)}
+          onCreated={() => {
+            // Re-fetch the key state so the card flips to the funded view and
+            // the balance poll starts for the new address.
+            bsc.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

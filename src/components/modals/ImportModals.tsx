@@ -1,4 +1,7 @@
-// Import-address modals: 24-word recovery phrase, and encrypted wallet.key.
+// Import-address modals. Two distinct identities live here:
+//   • EXFER (ed25519): 24-word recovery phrase, and encrypted wallet.key.
+//   • BNB (secp256k1): an existing MetaMask account — private key or BIP-39
+//     phrase — imported into the wallet's independent BNB key.
 
 import { useEffect, useState } from "react";
 import { Modal, Field, Spinner } from "../ui";
@@ -11,6 +14,7 @@ import {
   type MnemonicScheme,
   type MnemonicCandidate,
 } from "../../lib/rpc";
+import { importBscKey, importBscMnemonic } from "../../lib/bscWallet";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { shortAddress } from "../../lib/labels";
@@ -337,6 +341,138 @@ export function ImportKeyFileModal({
             placeholder={t("imp.labelPlaceholder")}
           />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+type BnbImportKind = "key" | "phrase";
+
+// Import an EXISTING BNB (BSC/EVM) wallet — a MetaMask private key or BIP-39
+// phrase — into the wallet's independent secp256k1 BNB key. This is distinct
+// from the ed25519 EXFER imports above: it accepts a 0x 64-hex private key OR a
+// 12/24-word phrase and calls bsc_import_key / bsc_import_mnemonic. Use this
+// when a BNB wallet already exists elsewhere; to generate a fresh one (or pick
+// generate-vs-import), the Home/Swap/Liquidity entry points open
+// CreateBnbWalletSheet instead.
+export function ImportBnbWalletModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: (address: string) => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const { t } = useT();
+  const [kind, setKind] = useState<BnbImportKind>("key");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const trimmed = value.trim();
+  const keyValid = /^(0x)?[0-9a-fA-F]{64}$/.test(trimmed);
+  const phraseWords = trimmed.split(/\s+/).filter(Boolean);
+  const phraseValid = phraseWords.length === 12 || phraseWords.length === 24;
+  const valid = kind === "key" ? keyValid : phraseValid;
+
+  async function go() {
+    if (!valid) return;
+    setBusy(true);
+    try {
+      const r =
+        kind === "key"
+          ? await importBscKey(trimmed)
+          : await importBscMnemonic(phraseWords.join(" "));
+      await onImported(r.address);
+      toast.success(t("bnb.imported"), t("bnb.importedBody"));
+      onClose();
+    } catch (e) {
+      toast.error(t("bnb.importFail"), humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={t("bnb.importTitle")}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            className="btn btn-secondary btn-block"
+            onClick={onClose}
+            disabled={busy}
+          >
+            {t("sheet.cancel")}
+          </button>
+          <button
+            className="btn btn-block"
+            disabled={!valid || busy}
+            onClick={go}
+          >
+            {busy ? <Spinner /> : t("bnb.importAction")}
+          </button>
+        </>
+      }
+    >
+      <div className="banner banner-info" style={{ marginBottom: 14 }}>
+        {t("bnb.setupBody")}
+      </div>
+      <div style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {(["key", "phrase"] as BnbImportKind[]).map((k) => {
+            const active = kind === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setKind(k);
+                  setValue("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "9px 0",
+                  borderRadius: 11,
+                  cursor: "pointer",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  border: `1px solid ${active ? "var(--accent)" : "var(--border-soft)"}`,
+                  background: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--surface-2)",
+                  color: active ? "var(--accent)" : "var(--text)",
+                }}
+              >
+                {k === "key" ? t("bnb.tabKey") : t("bnb.tabPhrase")}
+              </button>
+            );
+          })}
+        </div>
+
+        {kind === "key" ? (
+          <Field label={t("bnb.keyLabel")} help={t("bnb.keyHelp")}>
+            <input
+              className="field mono"
+              placeholder="0x…"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              spellCheck={false}
+              autoFocus
+              style={{ fontSize: 13 }}
+            />
+          </Field>
+        ) : (
+          <Field label={t("bnb.phraseLabel", { n: phraseWords.length })} help={t("bnb.phraseHelp")}>
+            <textarea
+              className="field mono"
+              style={{ height: 88, resize: "none", fontSize: 13 }}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={t("bnb.phrasePlaceholder")}
+              spellCheck={false}
+              autoFocus
+            />
+          </Field>
+        )}
       </div>
     </Modal>
   );

@@ -270,6 +270,17 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
             </div>
           )}
 
+          {/* The BNB wallet is an independent key, not part of the EXFER vault
+              backup — restoring this file won't bring a BNB wallet back. Say so
+              up front so it isn't a surprise; setting one up (create or import a
+              MetaMask account) is a lazy, first-need step after unlocking, never
+              forced here. */}
+          {mode === "restore" && (
+            <div className="banner banner-info" style={{ fontSize: 12.5 }}>
+              {t("bnb.setupBody")}
+            </div>
+          )}
+
           <Field
             label={mode === "create" ? t("ob.password") : t("ob.newLocalPassword")}
             help={t("ob.passwordHelp")}

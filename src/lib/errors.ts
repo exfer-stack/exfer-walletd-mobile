@@ -44,6 +44,13 @@ const PATTERNS: { test: RegExp; key: MsgKey }[] = [
     key: "err.amountTooSmall",
   },
   {
+    // No BNB key on this (seedless) wallet yet. Should be unreachable once the
+    // "Set up your BNB wallet" CTA gates every BNB action, but defends against
+    // any raw path that still hits walletd without a key: friendly, not a code.
+    test: /seeded wallet|seed\.enc|requires a seeded|EvmKeyNotCreated|-32013/i,
+    key: "err.bnbWalletNeeded",
+  },
+  {
     test: /no BNB|BNB for gas|fund it before/i,
     key: "err.needBnb",
   },

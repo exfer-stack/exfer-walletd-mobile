@@ -26,6 +26,8 @@ import { usePrice, useBnbUsd } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 import { recordSwapUsd } from "../../lib/swapPrice";
 import { SwapTimingHelp } from "../SwapTimingHelp";
+import { useBscWallet } from "../../lib/bscWallet";
+import { CreateBnbWalletSheet } from "./CreateBnbWalletSheet";
 
 /** Trim a human decimal string to at most `dp` fractional digits (drops
  *  trailing zeros). Keeps big BNB amounts from rendering 18 raw decimals.
@@ -161,6 +163,14 @@ export function SwapSheet({
   const price = usePrice();
   const bnbUsd = useBnbUsd();
 
+  // The wallet's BNB (BSC) key, up front. Seedless wallets (every in-app create
+  // + vault import) have NO key — `created === false` — and BOTH directions
+  // need one (sell = BNB receive address, buy = BNB source). When it's missing
+  // we replace the whole form with a "Set up your BNB wallet" CTA before the
+  // user fills anything, instead of letting them hit a raw error on Review.
+  const bsc = useBscWallet();
+  const [showCreateBnb, setShowCreateBnb] = useState(false);
+
   useEffect(() => suspendPolling(), [suspendPolling]);
 
   // The amount field used to use `autoFocus`. But the sheet mounts at
@@ -188,8 +198,9 @@ export function SwapSheet({
   const [feeOpen, setFeeOpen] = useState(false);
   const [live, setLive] = useState<SwapRec | null>(null);
 
-  // BSC funding info (buy direction only).
-  const [bscAddr, setBscAddr] = useState<string | null>(null);
+  // BSC funding info (buy direction only). The address comes from the hook
+  // (single source of truth); only the BNB balance is fetched here.
+  const bscAddr = bsc.address;
   const [bscBal, setBscBal] = useState<{ bnb: string } | null>(null);
   const [bscBusy, setBscBusy] = useState(false);
 
@@ -232,11 +243,12 @@ export function SwapSheet({
   // field so the order of operations is obvious (1. Add BNB → 2. Enter amount).
   const needsFunding = direction === "bnb_to_exfer" && bnbZero;
 
+  // Fetch only the BNB balance — the address is owned by the hook. No-op (and
+  // no balance) when there's no BNB key yet; the CTA gate handles that case.
   const refreshBsc = useCallback(async () => {
+    if (!bsc.created) return;
     setBscBusy(true);
     try {
-      const a = await rpc<{ address: string }>("bsc_get_address");
-      setBscAddr(a.address);
       const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
       setBscBal({ bnb: b.bnb_wei });
     } catch {
@@ -244,11 +256,12 @@ export function SwapSheet({
     } finally {
       setBscBusy(false);
     }
-  }, []);
+  }, [bsc.created]);
 
   useEffect(() => {
-    // The wallet's BNB (BSC) address is shown in both directions: as the
-    // payment source when buying, and as the receive address when selling.
+    // The wallet's BNB (BSC) balance is shown in both directions: alongside the
+    // payment source when buying, and the receive address when selling. Only
+    // meaningful once a BNB key exists.
     refreshBsc();
   }, [direction, refreshBsc]);
 
@@ -268,7 +281,7 @@ export function SwapSheet({
   // toast so a fresh deposit is never silent.
   const lastBnbRef = useRef<bigint | null>(null);
   useEffect(() => {
-    if (step !== 1 || direction !== "bnb_to_exfer") return;
+    if (step !== 1 || direction !== "bnb_to_exfer" || !bsc.created) return;
     let cancelled = false;
     const tick = async () => {
       try {
@@ -292,7 +305,7 @@ export function SwapSheet({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [step, direction, toast, t]);
+  }, [step, direction, bsc.created, toast, t]);
 
   const amountValid = AMOUNT_RE.test(amount.trim()) && Number(amount) > 0;
   const sendUnit = sell ? "EXFER" : "BNB";
@@ -365,6 +378,12 @@ export function SwapSheet({
   })();
 
   async function getQuote() {
+    // Both directions need the BNB key (sell = receive address, buy = source).
+    // Never quote without it — route to setup instead of erroring on Review.
+    if (!bsc.created) {
+      setShowCreateBnb(true);
+      return;
+    }
     if (!amountValid) {
       setErr(t("swap.amountInvalid"));
       return;
@@ -557,8 +576,67 @@ export function SwapSheet({
     ) : null;
 
   // ---------- step 1: build ----------
+  // Seedless wallet with no BNB key: gate the WHOLE form behind a clear setup
+  // CTA (both directions need a BNB key). Wait for the first fetch (loading) so
+  // we don't flash the CTA before we know. Skeleton over a premature CTA.
+  const needsBnbWallet = !bsc.loading && !bsc.created;
+
   if (step === 1) {
+    if (needsBnbWallet) {
+      return (
+        <>
+          <Sheet
+            title={t("swap.title")}
+            onClose={onClose}
+            footer={
+              <button className="btn btn-block" onClick={() => setShowCreateBnb(true)}>
+                {t("bnb.createCta")}
+              </button>
+            }
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                textAlign: "center",
+                gap: 14,
+                padding: "26px 8px 12px",
+              }}
+            >
+              <span
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 16,
+                  display: "grid",
+                  placeItems: "center",
+                  background: "color-mix(in srgb, var(--accent) 14%, transparent)",
+                  color: "var(--accent)",
+                }}
+              >
+                <BnbMark size={34} />
+              </span>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>{t("bnb.notCreatedTitle")}</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--text-faint)", maxWidth: 320 }}>
+                {t("bnb.swapNeedsWallet")}
+              </div>
+            </div>
+          </Sheet>
+          {showCreateBnb && (
+            <CreateBnbWalletSheet
+              onClose={() => setShowCreateBnb(false)}
+              onCreated={() => {
+                setShowCreateBnb(false);
+                void bsc.refresh();
+              }}
+            />
+          )}
+        </>
+      );
+    }
     return (
+      <>
       <Sheet
         title={t("swap.title")}
         onClose={onClose}
@@ -756,6 +834,16 @@ export function SwapSheet({
 
         {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
       </Sheet>
+      {showCreateBnb && (
+        <CreateBnbWalletSheet
+          onClose={() => setShowCreateBnb(false)}
+          onCreated={() => {
+            setShowCreateBnb(false);
+            void bsc.refresh();
+          }}
+        />
+      )}
+      </>
     );
   }
 

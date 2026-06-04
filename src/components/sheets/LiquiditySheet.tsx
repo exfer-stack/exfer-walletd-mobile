@@ -20,6 +20,8 @@ import { Icon } from "../../lib/icons";
 import { AddrPicker } from "../AddrPicker";
 import { shortAddress } from "../../lib/labels";
 import { addLpOp, removeLpOp } from "../../lib/inflightLp";
+import { useBscWallet } from "../../lib/bscWallet";
+import { CreateBnbWalletSheet } from "./CreateBnbWalletSheet";
 
 const FEE_RATE = 1; // exfers/byte, matches SendSheet
 // The BNB leg is swept from a per-request address that pays its own BSC gas, so
@@ -99,6 +101,12 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const { t } = useT();
   const price = usePrice();
   const bnbUsd = useBnbUsd();
+  // The BNB leg of an add is funded from the wallet's BSC key. Seedless wallets
+  // start with none — `created == false` — so we gate the Add flow on it
+  // existing and route to CreateBnbWalletSheet via a clear CTA before the user
+  // fills anything, instead of rendering a blank BNB-from row / dead Max.
+  const bsc = useBscWallet();
+  const [setupOpen, setSetupOpen] = useState(false);
 
   useEffect(() => suspendPolling(), [suspendPolling]);
 
@@ -116,7 +124,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const [pool, setPool] = useState<PoolInfo | null>(poolCache);
   const [pos, setPos] = useState<Position | null>(cachedPos);
   const [posLoaded, setPosLoaded] = useState<boolean>(cachedPos != null);
-  const [bscAddr, setBscAddr] = useState<string>("");
+  // The BNB-leg source / payout address is the wallet's BSC key, owned by the
+  // hook — never an empty string scraped from a racing RPC.
+  const bscAddr = bsc.address ?? "";
   const [bnbWei, setBnbWei] = useState<string>("0");
   const [unavailable, setUnavailable] = useState(false);
   const [amount, setAmount] = useState("");
@@ -138,11 +148,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       if ((p as unknown as { error?: string })?.error || !p.genesis_done) { setUnavailable(true); return; }
       poolCache = p;
       setPool(p);
-      const [a, b] = await Promise.all([
-        rpc<{ address: string }>("bsc_get_address").catch(() => ({ address: "" })),
-        rpc<{ bnb_wei: string }>("bsc_get_balances").catch(() => ({ bnb_wei: "0" })),
-      ]);
-      setBscAddr(a.address);
+      // The BSC address comes from useBscWallet (the single source of truth);
+      // here we only need the on-chain BNB balance for the Add leg's gas check.
+      const b = await rpc<{ bnb_wei: string }>("bsc_get_balances").catch(() => ({ bnb_wei: "0" }));
       setBnbWei(b.bnb_wei);
       if (exferAddr) {
         const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
@@ -230,10 +238,17 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const enoughExfer = amountValid && parseExferAmount(amount || "0") <= exferBal;
   const enoughBnb = bnbNeeded <= bnbHuman;
   const belowMin = amountValid && minExfer > 0 && amtNum < minExfer;
-  const canAdd = amountValid && enoughExfer && enoughBnb && !belowMin;
+  // The BNB leg is funded from the BSC key — block the whole Add until it
+  // exists (seedless wallets have none). Without it there's no BNB to send and
+  // no address to sweep from, so an "add" can't complete.
+  const hasBscWallet = bsc.created && !!bscAddr;
+  const canAdd = hasBscWallet && amountValid && enoughExfer && enoughBnb && !belowMin;
 
   async function confirmAdd() {
     if (!pool || !canAdd) return;
+    // Validate the BNB leg before broadcasting the EXFER transfer — otherwise a
+    // missing BSC key would leave the deposit half-funded (EXFER sent, no BNB).
+    if (!hasBscWallet || !bscAddr) { setSetupOpen(true); return; }
     const bio = await biometricStatus();
     if (bio.available && !(await biometricUnlock(t("lp.addTitle")))) {
       toast.error(t("swap.notConfirmedTitle"), ""); return;
@@ -366,6 +381,31 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
     );
   }
 
+  // ── add: no BNB wallet yet — route to setup BEFORE any fields are filled ──
+  // The BNB leg comes from the BSC key; without one there's nothing to send, so
+  // show a single clear "Set up your BNB wallet" CTA instead of a blank
+  // BNB-from row, a misleading "top up your BNB" disabled state, or a silent 0.
+  if (step === "add" && !bsc.loading && !hasBscWallet) {
+    return (
+      <Sheet title={t("lp.addTitle")} onClose={onClose} onBack={() => { setStep("overview"); setErr(null); }}>
+        <div className="quote-card" style={{ textAlign: "center", padding: "26px 18px" }}>
+          <div style={{ width: 46, height: 46, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
+            <BnbMark size={26} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{t("bnb.notCreatedTitle")}</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("bnb.lpNeedsWallet")}</div>
+        </div>
+        <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => setSetupOpen(true)}>{t("bnb.createCta")}</button>
+        {setupOpen && (
+          <CreateBnbWalletSheet
+            onClose={() => setSetupOpen(false)}
+            onCreated={() => { setSetupOpen(false); void bsc.refresh(); void load(); }}
+          />
+        )}
+      </Sheet>
+    );
+  }
+
   // ── add ──
   if (step === "add") {
     const maxAdd = Math.min(exferBal / 1e8, mid > 0 ? bnbHuman / mid : Infinity);
@@ -460,7 +500,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5, marginTop: 7 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><BnbMark size={18} />BNB</span>
-            <span className="mono" style={{ color: "var(--text-dim)" }}>{shortAddress(bscAddr)}</span>
+            {/* The pool pays the BNB leg back to the wallet's own BSC address;
+                show a placeholder rather than a blank mono if it isn't loaded. */}
+            <span className="mono" style={{ color: "var(--text-dim)" }}>{bscAddr ? shortAddress(bscAddr) : "—"}</span>
           </div>
         </div>
         <div className="banner banner-info" style={{ marginTop: 12, fontSize: 12, lineHeight: 1.5 }}>{t("lp.removeNote")}</div>
