@@ -419,14 +419,40 @@ function DeleteAddressModal({
   // (irreversible) delete behind an explicit acknowledgement.
   const [lp, setLp] = useState<LpPosition | null>(null);
   const [lpAck, setLpAck] = useState(false);
+  // Until the probe resolves we don't know whether this address owns LP shares,
+  // so the delete must stay blocked — otherwise typing the password and hitting
+  // Enter before the probe lands would slip past the LP warning. A FAILED probe
+  // is treated as "might have LP" (fail closed): block + warn, never allow.
+  const [lpChecked, setLpChecked] = useState(false);
+  const [lpProbeFailed, setLpProbeFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    setLpChecked(false);
+    setLpProbeFailed(false);
     rpc<LpPosition>("lp_position", { address: address.toLowerCase() })
-      .then((p) => { if (!cancelled && p?.has_position && p.shares !== "0") setLp(p); })
-      .catch(() => {});
+      .then((p) => {
+        if (cancelled) return;
+        if (p?.has_position && p.shares !== "0") setLp(p);
+        setLpChecked(true);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        // "swap not configured" means there's no LP subsystem at all, so no
+        // shares can exist — treat it as a clean "no LP" and allow the delete.
+        // Any OTHER error (pool unreachable, etc.) is a real probe failure: we
+        // can't rule out an LP position, so fail closed (block + warn).
+        const msg = String((e as { message?: unknown })?.message ?? e);
+        if (!/swap not configured|swap engine|set --swap-pool/i.test(msg)) {
+          setLpProbeFailed(true);
+        }
+        setLpChecked(true);
+      });
     return () => { cancelled = true; };
   }, [address]);
   const hasLp = lp != null;
+  // The delete is blocked while the probe is in flight, while a confirmed LP
+  // position is unacknowledged, or whenever the probe failed (can't rule LP out).
+  const lpBlocks = !lpChecked || lpProbeFailed || (hasLp && !lpAck);
 
   async function go() {
     if (pw.length < 4) {
@@ -435,7 +461,10 @@ function DeleteAddressModal({
     }
     setBusy(true);
     try {
-      await rpc("delete_address", { address, passphrase: pw, force: funded && force });
+      // Pass force when overriding either guard: the on-chain funds checkbox, or
+      // the off-chain LP acknowledgement (the backend now rejects deleting an
+      // address that still owns LP shares unless force is set).
+      await rpc("delete_address", { address, passphrase: pw, force: (funded && force) || (hasLp && lpAck) });
       toast.success(t("adr.delDone"), t("adr.delDoneBody", { addr: shortAddress(address, 6, 6) }));
       await onDeleted();
       onClose();
@@ -458,7 +487,7 @@ function DeleteAddressModal({
           </button>
           <button
             className="btn btn-danger btn-block"
-            disabled={busy || pw.length < 4 || (funded && !force) || (hasLp && !lpAck)}
+            disabled={busy || pw.length < 4 || (funded && !force) || lpBlocks}
             onClick={go}
           >
             {busy ? <Spinner /> : t("adr.delCta")}
@@ -496,6 +525,11 @@ function DeleteAddressModal({
           </span>
         </label>
       )}
+      {lpProbeFailed && (
+        <div className="banner banner-danger" style={{ marginBottom: 14 }}>
+          {t("err.network")}
+        </div>
+      )}
       {hasLp && (
         <label
           style={{
@@ -531,7 +565,7 @@ function DeleteAddressModal({
           autoFocus
           value={pw}
           onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !(funded && !force) && !(hasLp && !lpAck) && go()}
+          onKeyDown={(e) => e.key === "Enter" && !(funded && !force) && !lpBlocks && go()}
         />
       </Field>
     </Modal>
