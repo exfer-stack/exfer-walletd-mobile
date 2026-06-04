@@ -863,10 +863,10 @@ export function Home({
                 {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
               </div>
               <Qr value={bnb.addr} size={170} />
-              {/* Full address (wraps) — a deposit address must be fully
-                  verifiable, not truncated. */}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, width: "100%" }}>
-                <span className="mono" style={{ flex: 1, minWidth: 0, wordBreak: "break-all", lineHeight: 1.5, textAlign: "center" }}>
+              {/* Full address (wraps) in an inset chip — a deposit address must
+                  be fully verifiable; the copy button sits centered against it. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "var(--surface-2)", borderRadius: 12, padding: "10px 12px" }}>
+                <span className="mono" style={{ flex: 1, minWidth: 0, wordBreak: "break-all", lineHeight: 1.55, fontSize: 12.5 }}>
                   {bnb.addr}
                 </span>
                 <CopyButton text={bnb.addr} />

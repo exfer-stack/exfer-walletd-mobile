@@ -501,8 +501,8 @@ export function SwapSheet({
       >
         <div className="eyebrow">{needsFunding ? t("swap.fundStep") : t("swap.bscAddress")}</div>
         <Qr value={bscAddr} size={150} />
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, width: "100%" }}>
-          <span style={{ flex: 1, minWidth: 0, fontFamily: "monospace", wordBreak: "break-all", lineHeight: 1.5, textAlign: "center" }}>{bscAddr}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, width: "100%" }}>
+          <span style={{ flex: 1, minWidth: 0, fontFamily: "monospace", wordBreak: "break-all", lineHeight: 1.55, textAlign: "center" }}>{bscAddr}</span>
           <CopyButton text={bscAddr} />
         </div>
         <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12 }}>
