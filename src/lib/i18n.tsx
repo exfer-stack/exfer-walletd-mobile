@@ -97,6 +97,8 @@ const EN = {
   "ob.errBackupPw": "Enter the backup password.",
   "ob.errNoFile":
     'No .vault file selected. Tap "Choose file & restore" and pick your backup.',
+  "ob.errVaultBad":
+    "Couldn't restore: that file isn't a valid .vault backup, or the backup password is wrong. Check both and try again.",
   "ob.toastReady": "Wallet ready",
   "ob.toastReadyBody": "Welcome to exfer.",
   "ob.toastRestored": "Wallet restored",
@@ -749,6 +751,8 @@ const ZH: Record<MsgKey, string> = {
   "ob.errMismatch": "两次输入的密码不一致。",
   "ob.errBackupPw": "请输入备份密码。",
   "ob.errNoFile": "还没有选择 .vault 文件。请点「选择文件并恢复」并选中你的备份。",
+  "ob.errVaultBad":
+    "恢复失败:该文件不是有效的 .vault 备份,或备份密码不对。请检查后重试。",
   "ob.toastReady": "钱包已就绪",
   "ob.toastReadyBody": "欢迎使用 exfer。",
   "ob.toastRestored": "钱包已恢复",

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
-import { submitPassword, importVaultFile, walletExists } from "../lib/rpc";
+import { submitPassword, pickVaultFile, importVaultBytes, walletExists } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
 import { useT } from "../lib/i18n";
 
@@ -66,27 +66,37 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       if (pw.length < 8) return setErr(t("ob.errMin"));
       if (pw !== confirm) return setErr(t("ob.errMismatch"));
       if (vaultPw.length < 4) return setErr(t("ob.errBackupPw"));
+      // Pick (and read) the .vault FIRST — before creating the wallet — so a
+      // cancelled picker or a wrong/garbage file never leaves a half-created
+      // empty wallet behind. Android can't filter by extension, so any file is
+      // selectable; importVaultBytes validates it.
+      let bytes: Uint8Array | null;
+      try {
+        bytes = await pickVaultFile();
+      } catch (e) {
+        setErr(humanizeError(e));
+        return;
+      }
+      if (!bytes) {
+        // Picker cancelled — no wallet was created, let them tap Restore again.
+        setErr(t("ob.errNoFile"));
+        return;
+      }
       setBusy(true);
       try {
-        // The .vault file is chosen via the document picker inside
-        // importVaultFile() — works on iOS + Android. n === 0 means either
-        // nothing new to restore or the picker was cancelled.
         await submitPassword(pw);
-        const n = await importVaultFile({ filePassword: vaultPw });
-        // null = the file picker was cancelled. The local password is already
-        // set, but nothing was restored — don't claim success or drop the user
-        // into an empty wallet. Let them tap Restore again and pick the file.
-        if (n === null) {
-          setErr(t("ob.errNoFile"));
-          return;
-        }
+        const n = await importVaultBytes(bytes, vaultPw);
         toast.success(
           t("ob.toastRestored"),
           n === 0 ? t("ob.toastRestoredBack") : t("ob.toastRestoredN", { n }),
         );
         onReady();
       } catch (e) {
-        setErr(humanizeError(e));
+        // A non-vault file and a wrong backup password both fail the AEAD
+        // unseal indistinguishably — give one clear, honest message rather than
+        // the generic "wrong password".
+        console.warn("[restore] vault import failed:", e);
+        setErr(t("ob.errVaultBad"));
       } finally {
         setBusy(false);
       }

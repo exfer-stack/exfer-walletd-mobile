@@ -201,17 +201,37 @@ export async function exportVaultFile(args: {
 /// 0 when every address in the backup was already present. Returns `null`
 /// (distinct from 0) when the picker was cancelled / no file was chosen, so
 /// callers don't report a phantom "restored" on a cancel.
+/** Pick a .vault file from the device. null = the picker was cancelled. Android
+ *  can't filter by extension (no MIME for .vault), so the chosen file may be
+ *  anything — it's validated by attempting the import (importVaultBytes). */
+export async function pickVaultFile(): Promise<Uint8Array | null> {
+  return readPickedFile([{ name: "Vault", extensions: ["vault"] }]);
+}
+
+/** Restore from already-read vault bytes. Throws on an obviously-invalid file
+ *  (so a stray photo/empty pick fails fast) or the walletd error when the file
+ *  isn't a vault / the backup password is wrong. Returns # of new addresses. */
+export async function importVaultBytes(
+  bytes: Uint8Array,
+  filePassword: string,
+): Promise<number> {
+  // A real sealed vault is well over this; reject obvious non-vault picks up
+  // front with a clear message instead of a cryptic AEAD failure.
+  if (bytes.length < 32) throw new Error("not a valid .vault backup file");
+  const r = await rpc<{ imported: string[] }>("import_vault", {
+    vault_hex: bytesToHex(bytes),
+    passphrase: filePassword,
+  });
+  return r.imported.length;
+}
+
 export async function importVaultFile(args: {
   filePassword: string;
 }): Promise<number | null> {
   if (devmock.isActive()) return devmock.import_vault_file(args);
-  const bytes = await readPickedFile([{ name: "Vault", extensions: ["vault"] }]);
+  const bytes = await pickVaultFile();
   if (!bytes) return null;
-  const r = await rpc<{ imported: string[] }>("import_vault", {
-    vault_hex: bytesToHex(bytes),
-    passphrase: args.filePassword,
-  });
-  return r.imported.length;
+  return importVaultBytes(bytes, args.filePassword);
 }
 
 /// Desktop UX cap on managed addresses. walletd itself supports ~4B

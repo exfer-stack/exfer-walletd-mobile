@@ -126,6 +126,10 @@ fn scope_for_method(method: &str) -> Scope {
         // funds across both legs; bsc_send_bnb withdraws BNB — all Spend.
         | "swap_get_quote" | "swap_execute" | "swap_refund"
         | "bsc_send_bnb"
+        // BNB-wallet key material: reveal exposes the mnemonic, delete destroys
+        // the key — Spend (matches walletd auth.rs). Previously missing → fell
+        // through to Read and walletd rejected with "Authentication required".
+        | "bsc_reveal_mnemonic" | "bsc_delete_key"
         // LP cash-out triggers a pool payout — Spend. (lp_pool_info / lp_position
         // / lp_deposit_start / lp_deposit_status are reads → default Read.)
         | "lp_withdraw_self" => Scope::Spend,
@@ -134,6 +138,10 @@ fn scope_for_method(method: &str) -> Scope {
         // fell through to Read, which walletd rejects with -32001.
         "generate_address" | "generate_independent_address" | "generate_standard_address"
         | "import_private_key" | "import_mnemonic" | "import_standard_mnemonic"
+        // BNB wallet: create generates the independent EVM key; import_* add one
+        // — Manage (matches walletd auth.rs). Previously missing → fell through
+        // to Read → "Authentication required" on "Generate BNB wallet".
+        | "bsc_create_address" | "bsc_import_mnemonic" | "bsc_import_key"
         | "abandon_transfer" => Scope::Manage,
         _ => Scope::Read,
     }

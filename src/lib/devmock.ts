@@ -122,6 +122,9 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "swap_execute" ||
     method === "swap_refund" ||
     method === "bsc_send_bnb" ||
+    // BNB-wallet key material: reveal exposes the mnemonic, delete destroys it.
+    method === "bsc_reveal_mnemonic" ||
+    method === "bsc_delete_key" ||
     method === "lp_withdraw_self" ||
     method === "htlc_lock" ||
     method === "htlc_claim" ||
@@ -134,6 +137,11 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "generate_standard_address" ||
     method === "import_private_key" ||
     method === "import_mnemonic" ||
+    method === "import_standard_mnemonic" ||
+    // BNB wallet: create generates the independent EVM key; import_* add one.
+    method === "bsc_create_address" ||
+    method === "bsc_import_mnemonic" ||
+    method === "bsc_import_key" ||
     method === "abandon_transfer"
   )
     return "manage";

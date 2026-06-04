@@ -37,6 +37,23 @@ pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
 // the 2 s poll interval. Seoul (icn) region — better mainland-China
 // reachability; gossips with the Tokyo node over the shared network.
 pub const DEFAULT_NODE_RPC: &str = "http://64.176.231.198:9334";
+
+/// The swap pool's self-signed TLS certificate (PEM), PINNED by walletd's pool
+/// client (it trusts ONLY this cert for the pool connection). Lets the pool run
+/// self-signed HTTPS while a MITM still can't impersonate it. Rotating the pool
+/// cert means shipping a new build with the new PEM here.
+pub const POOL_CA_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIIBljCCATugAwIBAgIUTJepaegKfI5VDoZAGcBp0v8YT34wCgYIKoZIzj0EAwIw
+GDEWMBQGA1UEAwwNZXhmZXItc3dhcC1jYTAeFw0yNjA2MDQyMjEzMzdaFw0zNjA2
+MDEyMjEzMzdaMBgxFjAUBgNVBAMMDWV4ZmVyLXN3YXAtY2EwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAARpZbH/f2lNoDecMdRrJtLP7ROwI2CcH65wkQ9C3s/GKnBP
+2x8m+nq7f5msXbVsUx/SCE79XqKY3GN8bcaLOcl0o2MwYTAdBgNVHQ4EFgQUqLAw
+xVVcFJN2vvY83lUd+fpozBkwHwYDVR0jBBgwFoAUqLAwxVVcFJN2vvY83lUd+fpo
+zBkwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwID
+SQAwRgIhAJWea9ZtxE/nWo7Jn+MVweU0q4chF/TCs3p7KPbujgLgAiEAv2MVABW2
+TiAd+cw7MH3pK+bxkCf4I038dROruAaFLw0=
+-----END CERTIFICATE-----
+";
 // Upstream exfer-indexer, co-located with the default node on the same host
 // (systemd `exfer-indexer.service`, public on :9335). Lets walletd answer
 // `get_address_history` — the authoritative per-address confirmed credit/debit
@@ -90,9 +107,10 @@ impl Default for DesktopConfig {
             node_rpc: DEFAULT_NODE_RPC.to_string(),
             indexer_rpc: None,
             // Cross-chain swap + self-serve LP point at the live mainnet pool by
-            // default (the pool runs on BSC mainnet). Empty/None would keep the
-            // swap_*/bsc_*/lp_* RPCs OFF.
-            swap_pool_url: Some("http://64.176.231.198:8080".to_string()),
+            // default (the pool runs on BSC mainnet). HTTPS with a pinned
+            // self-signed cert (POOL_CA_PEM) so a MITM can't tamper with quotes
+            // / deposit addresses. Empty/None would keep swap_*/bsc_*/lp_* OFF.
+            swap_pool_url: Some("https://64.176.231.198:8080".to_string()),
             bsc_rpc_url: None,
             bsc_chain_id: None,
         }
@@ -212,6 +230,9 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(str::to_string),
+        // Pin the pool's self-signed TLS cert: walletd trusts ONLY this cert for
+        // the pool connection, so a self-signed HTTPS pool is still MITM-proof.
+        swap_pool_ca: Some(POOL_CA_PEM.to_string()),
         // NOT bsc-dataseed: it rejects eth_getLogs (-32005) which the swap engine
         // needs to detect on-chain HTLC locks/claims. publicnode handles getLogs.
         bsc_rpc_url: desktop_cfg
