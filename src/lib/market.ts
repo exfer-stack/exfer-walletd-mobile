@@ -1,9 +1,9 @@
-// EXFER spot price (USD) + 24h change, from the public OTC market
-// (archeotc). Same network rule as walletd: the webview never calls out
-// directly. In a real Tauri build the request goes through the Rust
-// `get_market_price` command; in browser dev it goes through the Vite
-// `/__price` proxy (archeotc sends no CORS headers, so a direct fetch is
-// blocked). Any failure resolves to `null` and the UI simply hides the price.
+// EXFER spot price (USD) + 24h change, from THIS pool's own price history.
+// The displayed price is the pool's exchange rate (mid BNB-per-EXFER × BNB/USD),
+// sampled into candles server-side; today's candle close is the current price
+// and the 24h change is vs the previous day. The OTC market (archeotc) is no
+// longer a live source — it only seeds the pool's history (server-side), so
+// every price the user sees is OUR rate, not a third-party quote.
 
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
@@ -19,22 +19,8 @@ export interface MarketPrice {
 
 const EXFER_UNIT = 100_000_000; // 1 EXFER = 1e8 exfers
 
-/** Parse archeotc daily klines → latest close + 24h change. */
-function parseKlines(raw: string): MarketPrice | null {
-  try {
-    const items = (JSON.parse(raw) as { items?: { c?: string }[] }).items;
-    if (!Array.isArray(items) || items.length === 0) return null;
-    const usd = Number(items[items.length - 1]?.c);
-    if (!isFinite(usd) || usd <= 0) return null;
-    const prev = items.length >= 2 ? Number(items[items.length - 2]?.c) : usd;
-    const change24h = isFinite(prev) && prev > 0 ? ((usd - prev) / prev) * 100 : 0;
-    return { usd, change24h };
-  } catch {
-    return null;
-  }
-}
-
-const CACHE_KEY = "exfer-price-cache";
+// Bumped to drop any stale OTC-sourced value cached by an older build.
+const CACHE_KEY = "exfer-price-cache-v2";
 
 /** Last good price, so the line paints instantly on the next launch instead of
  *  blanking for the ~couple seconds the fetch takes (and survives a transient
@@ -53,27 +39,20 @@ function readCachedPrice(): MarketPrice | null {
 
 export async function getMarketPrice(): Promise<MarketPrice | null> {
   try {
-    let raw: string;
-    if (devmock.isActive()) {
-      const r = await fetch(
-        "/__price/api/coins/klines?coinId=EXFER&interval=1d&limit=2",
-      );
-      if (!r.ok) return null;
-      raw = await r.text();
-    } else {
-      raw = await invoke<string>("get_market_price");
-    }
-    const p = parseKlines(raw);
-    if (p) {
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(p));
-      } catch {
-        /* ignore */
-      }
-    }
+    // Today's candle close = the pool's current EXFER/USD; 24h change vs the
+    // previous day. Sourced from the pool (swap_price_klines), not OTC.
+    const res = await rpc<{ items?: { c: number | string }[] }>("swap_price_klines", { interval: "1d", limit: 2 });
+    const items = res?.items;
+    if (!Array.isArray(items) || items.length === 0) return readCachedPrice();
+    const usd = Number(items[items.length - 1].c);
+    if (!isFinite(usd) || usd <= 0) return readCachedPrice();
+    const prev = items.length >= 2 ? Number(items[items.length - 2].c) : usd;
+    const change24h = isFinite(prev) && prev > 0 ? ((usd - prev) / prev) * 100 : 0;
+    const p = { usd, change24h };
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
     return p;
   } catch {
-    return null;
+    return readCachedPrice();
   }
 }
 
@@ -118,31 +97,15 @@ function mapCandles(items: RawCandle[]): Candle[] {
     .sort((a, b) => a.time - b.time);
 }
 
-/** OHLC candles for the chart. Prefer THIS pool's own price history
- *  (swap_price_klines: seeded from OTC, then grown from the pool's mid). Falls
- *  back to the OTC feed directly if the pool has no data. Empty array on total
- *  failure — the chart shows its empty state. */
+/** OHLC candles for the chart, from THIS pool's own price history
+ *  (swap_price_klines: seeded once from OTC server-side, then grown from the
+ *  pool's mid). Empty array on failure — the chart shows its empty state. */
 export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]> {
-  // 1) The pool's own candles (via walletd).
   try {
     const res = await rpc<{ items?: RawCandle[] }>("swap_price_klines", { interval, limit });
-    if (Array.isArray(res?.items) && res.items.length) return mapCandles(res.items);
-  } catch { /* fall back to OTC */ }
-  // 2) OTC feed directly (Rust command in the app, /__price proxy in dev).
-  try {
-    let raw: string;
-    if (devmock.isActive()) {
-      const r = await fetch(`/__price/api/coins/klines?coinId=EXFER&interval=${interval}&limit=${limit}`);
-      if (!r.ok) return [];
-      raw = await r.text();
-    } else {
-      raw = await invoke<string>("get_market_klines", { interval, limit });
-    }
-    const items = (JSON.parse(raw) as { items?: RawCandle[] }).items;
-    return Array.isArray(items) ? mapCandles(items) : [];
-  } catch {
-    return [];
-  }
+    if (Array.isArray(res?.items)) return mapCandles(res.items);
+  } catch { /* fall through to empty */ }
+  return [];
 }
 
 // ── BNB/USD spot ─────────────────────────────────────────────────────────

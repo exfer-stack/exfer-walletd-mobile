@@ -5,10 +5,11 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
 import { rpc } from "../lib/rpc";
-import { usePrice, useBnbUsd, getKlines, type Candle } from "../lib/market";
+import { usePrice, getKlines, type Candle } from "../lib/market";
 import { useT, type MsgKey } from "../lib/i18n";
-import { Spinner } from "./ui";
+import { Spinner, BnbMark } from "./ui";
 import { PriceChart } from "./PriceChart";
+import tokenCoin from "../assets/exfer-token.png";
 
 interface InflightSwap {
   swap_id: string;
@@ -53,6 +54,23 @@ function ChangePill({ pct }: { pct: number }) {
   );
 }
 
+/** Overlapping EXFER + BNB coin pair with a small action badge — the modern
+ *  "token pair" motif (like DEX wallets) for the swap / liquidity cards. The
+ *  ring colour matches the card surface so the coins read as cleanly stacked. */
+function CoinPair({ badge }: { badge: "swap" | "add" }) {
+  const C = 30;
+  const ring = "var(--surface)";
+  return (
+    <span style={{ position: "relative", width: C * 1.5, height: C, flex: "0 0 auto", display: "inline-block" }}>
+      <span style={{ position: "absolute", right: 0, top: 0, borderRadius: 999, boxShadow: `0 0 0 2.5px ${ring}` }}><BnbMark size={C} /></span>
+      <img src={tokenCoin} alt="" width={C} height={C} style={{ position: "absolute", left: 0, top: 0, borderRadius: 999, boxSizing: "border-box", boxShadow: `0 0 0 2.5px ${ring}`, border: "1px solid rgba(255,255,255,0.45)" }} />
+      <span style={{ position: "absolute", right: -4, bottom: -4, width: 18, height: 18, borderRadius: 999, background: "var(--accent)", color: "var(--accent-ink)", display: "grid", placeItems: "center", boxShadow: `0 0 0 2.5px ${ring}` }}>
+        <Icon name={badge === "swap" ? "refresh" : "plus"} size={11} stroke={2.6} />
+      </span>
+    </span>
+  );
+}
+
 const INTERVALS: { key: string; label: string; tv: boolean }[] = [
   { key: "1h", label: "1H", tv: true },
   { key: "1d", label: "1D", tv: false },
@@ -70,9 +88,7 @@ export function SwapTab({
   theme: "dark" | "light";
 }) {
   const { t } = useT();
-  const price = usePrice();
-  const bnbUsd = useBnbUsd();
-  const [mid, setMid] = useState<number | null>(null);
+  const price = usePrice(); // pool-sourced EXFER/USD (cached → no flicker)
   const [interval, setInterval] = useState<string>("1d");
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
   const [loadingChart, setLoadingChart] = useState(false);
@@ -81,8 +97,6 @@ export function SwapTab({
 
   useEffect(() => {
     let cancelled = false;
-    rpc<{ mid_price_bnb_per_exfer: number | null }>("swap_pool_info")
-      .then((p) => { if (!cancelled) setMid(p?.mid_price_bnb_per_exfer ?? null); }).catch(() => {});
     rpc<{ genesis_done?: boolean; error?: string }>("lp_pool_info")
       .then((lp) => { const ok = !lp?.error && !!lp?.genesis_done; lpAvailableCache = ok; if (!cancelled) setLpAvailable(ok); }).catch(() => {});
     return () => { cancelled = true; };
@@ -115,7 +129,7 @@ export function SwapTab({
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
-  const exferUsd = mid != null && mid > 0 && bnbUsd ? mid * bnbUsd : price?.usd ?? null;
+  const exferUsd = price?.usd ?? null;
   const usdStr = exferUsd == null ? "—" : exferUsd >= 1 ? exferUsd.toFixed(2) : exferUsd.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
 
   return (
@@ -165,9 +179,7 @@ export function SwapTab({
 
         {/* Primary swap CTA. */}
         <button onClick={onSwap} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
-          <span style={{ width: 42, height: 42, borderRadius: 13, flex: "0 0 auto", display: "grid", placeItems: "center", background: "var(--accent)", color: "var(--accent-ink)" }}>
-            <Icon name="refresh" size={21} stroke={2.2} />
-          </span>
+          <CoinPair badge="swap" />
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("swapTab.cta")}</span>
             <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2 }}>{t("swapTab.ctaSub")}</span>
@@ -178,9 +190,7 @@ export function SwapTab({
         {/* Liquidity entry — a feature, kept above the transient in-flight list. */}
         {lpAvailable && (
           <button onClick={onLiquidity} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
-            <span style={{ width: 42, height: 42, borderRadius: 13, flex: "0 0 auto", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
-              <Icon name="spark" size={21} />
-            </span>
+            <CoinPair badge="add" />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("lp.title")}</span>
               <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2 }}>{t("lp.entrySub")}</span>
