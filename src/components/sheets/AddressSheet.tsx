@@ -388,6 +388,14 @@ function RecoveryPhraseModal({
   );
 }
 
+interface LpPosition {
+  has_position: boolean;
+  shares: string;
+  pool_share_pct: number;
+  value_bnb: string;
+  value_exfer: string;
+}
+
 /* permanently delete an address (erases its key) — password + funds guard */
 function DeleteAddressModal({
   address,
@@ -406,6 +414,19 @@ function DeleteAddressModal({
   const [pw, setPw] = useState("");
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
+  // LP shares are off-chain and invisible to walletd's on-chain funds guard, so
+  // a "balance 0" address can still own a position. Check it here and block the
+  // (irreversible) delete behind an explicit acknowledgement.
+  const [lp, setLp] = useState<LpPosition | null>(null);
+  const [lpAck, setLpAck] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    rpc<LpPosition>("lp_position", { address: address.toLowerCase() })
+      .then((p) => { if (!cancelled && p?.has_position && p.shares !== "0") setLp(p); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [address]);
+  const hasLp = lp != null;
 
   async function go() {
     if (pw.length < 4) {
@@ -437,7 +458,7 @@ function DeleteAddressModal({
           </button>
           <button
             className="btn btn-danger btn-block"
-            disabled={busy || pw.length < 4 || (funded && !force)}
+            disabled={busy || pw.length < 4 || (funded && !force) || (hasLp && !lpAck)}
             onClick={go}
           >
             {busy ? <Spinner /> : t("adr.delCta")}
@@ -475,6 +496,34 @@ function DeleteAddressModal({
           </span>
         </label>
       )}
+      {hasLp && (
+        <label
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            background: "color-mix(in srgb,#f87171 10%,transparent)",
+            border: "1px solid color-mix(in srgb,#f87171 30%,transparent)",
+            borderRadius: 12,
+            padding: "12px 13px",
+            marginBottom: 14,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={lpAck}
+            onChange={(e) => setLpAck(e.target.checked)}
+            style={{ marginTop: 2, width: 18, height: 18, accentColor: "#f87171" }}
+          />
+          <span style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.45 }}>
+            {t("adr.delLpWarn", {
+              exfer: Number(lp.value_exfer).toLocaleString("en-US", { maximumSignificantDigits: 6, useGrouping: false }),
+              bnb: Number(lp.value_bnb).toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false }),
+            })}
+          </span>
+        </label>
+      )}
       <Field label={t("sheet.walletPassword")}>
         <input
           className="field"
@@ -482,7 +531,7 @@ function DeleteAddressModal({
           autoFocus
           value={pw}
           onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !(funded && !force) && go()}
+          onKeyDown={(e) => e.key === "Enter" && !(funded && !force) && !(hasLp && !lpAck) && go()}
         />
       </Field>
     </Modal>

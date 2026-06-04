@@ -282,6 +282,8 @@ const EN = {
     "Permanently erases this key from the wallet. This can't be undone unless you've backed it up (recovery phrase, private key, or vault).",
   "adr.delForce":
     "This address still holds {amt} EXFER. I understand the funds will be unrecoverable. Delete anyway.",
+  "adr.delLpWarn":
+    "This address owns a liquidity position (≈ {exfer} EXFER + {bnb} BNB). Deleting its key loses access to those shares unless you restore the same address from your recovery phrase. I understand.",
   "adr.delCta": "Delete",
   "adr.delFail": "Delete failed",
   "adr.delDone": "Address deleted",
@@ -572,6 +574,9 @@ const EN = {
   "lp.total": "Total",
   "lp.emptyHeading": "Provide liquidity",
   "lp.emptySub": "Earn a 0.3% fee share on every swap — your share grows over time.",
+  "lp.otherPositions": "Liquidity on your other addresses",
+  "lp.posElsewhereHeading": "No liquidity on this address",
+  "lp.posElsewhereSub": "But you have a position on another address — tap it below.",
   "lp.feeChip": "0.3% fee share",
   "lp.poolChip": "Pool ≈ ${usd}",
   "swap.statusRefunding": "Timed out — refunding…",
@@ -620,6 +625,7 @@ const EN = {
   "err.swapUnavailable": "Swap isn't available on this wallet yet.",
   "err.quoteExpired": "That quote expired — get a fresh one.",
   "err.poolLiquidity": "The swap pool is busy right now. Try a smaller amount or retry shortly.",
+  "err.amountTooSmall": "Amount too small — it would be lost to network fees. Try a larger amount.",
   "err.needBnb": "Your BSC address needs a little BNB for gas first.",
   "err.unsafeTimeout": "The pool returned unsafe terms; the swap was cancelled to protect your funds.",
   "home.swap": "Swap",
@@ -863,6 +869,8 @@ const ZH: Record<MsgKey, string> = {
     "将从钱包中永久抹除这把私钥。除非你已备份（助记词、私钥或 vault 文件），否则无法找回。",
   "adr.delForce":
     "这个地址仍有 {amt} EXFER。我明白这些资金将无法找回，仍然删除。",
+  "adr.delLpWarn":
+    "这个地址持有流动性份额（≈ {exfer} EXFER + {bnb} BNB）。删除私钥后，除非用助记词恢复同一个地址，否则将无法再访问这些份额。我已知晓。",
   "adr.delCta": "删除",
   "adr.delFail": "删除失败",
   "adr.delDone": "地址已删除",
@@ -1141,6 +1149,9 @@ const ZH: Record<MsgKey, string> = {
   "lp.total": "合计",
   "lp.emptyHeading": "提供流动性",
   "lp.emptySub": "赚取每笔兑换 0.3% 手续费分成,份额价值随时间增长。",
+  "lp.otherPositions": "你在其他地址的流动性",
+  "lp.posElsewhereHeading": "这个地址没有流动性份额",
+  "lp.posElsewhereSub": "但你在另一个地址有持仓 — 点下面查看。",
   "lp.feeChip": "0.3% 手续费分成",
   "lp.poolChip": "池子 ≈ ${usd}",
   "swap.statusRefunding": "超时——退款中…",
@@ -1189,6 +1200,7 @@ const ZH: Record<MsgKey, string> = {
   "err.swapUnavailable": "此钱包暂不支持兑换。",
   "err.quoteExpired": "报价已过期——请重新获取。",
   "err.poolLiquidity": "兑换池暂时繁忙,换个小一点的金额或稍后再试。",
+  "err.amountTooSmall": "金额太小,会被网络手续费吃掉,请加大金额。",
   "err.needBnb": "你的 BSC 地址需要先充一点 BNB 付手续费。",
   "err.unsafeTimeout": "兑换池返回了不安全的条款,已为你的资金安全取消本次兑换。",
   "home.swap": "兑换",

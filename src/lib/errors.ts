@@ -40,6 +40,10 @@ const PATTERNS: { test: RegExp; key: MsgKey }[] = [
     key: "err.poolLiquidity",
   },
   {
+    test: /amount too small|below the .* minimum|lost to network fees|too small to claim/i,
+    key: "err.amountTooSmall",
+  },
+  {
     test: /no BNB|BNB for gas|fund it before/i,
     key: "err.needBnb",
   },

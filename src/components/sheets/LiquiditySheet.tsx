@@ -125,6 +125,11 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const [stage, setStage] = useState(0); // 0 send, 1 sweep, 2 credit
   const [withdrawPct, setWithdrawPct] = useState(100); // partial-withdraw percentage
   const [result, setResult] = useState<{ kind: ResultKind; bnb?: string; exfer?: string } | null>(null);
+  // Every address that holds a position, scanned across the WHOLE wallet
+  // (including hidden) — not just the selected one. Without this, a position on
+  // a non-default address reads as "no liquidity" and the user can't find it.
+  const [positions, setPositions] = useState<{ address: string; pos: Position }[]>([]);
+  const [posScanned, setPosScanned] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -147,6 +152,26 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   }, [exferAddr]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Scan the whole wallet for positions once the pool is up. Polling is suspended
+  // while the sheet is open, so `entries` is stable and this runs once per open.
+  useEffect(() => {
+    if (!pool) return;
+    let cancelled = false;
+    (async () => {
+      const all = balance?.entries ?? [];
+      const found = await Promise.all(
+        all.map(async (e) => {
+          const p = await rpc<Position>("lp_position", { address: e.address.toLowerCase() }).catch(() => null);
+          if (p?.has_position) posCache[e.address.toLowerCase()] = p;
+          return p?.has_position ? { address: e.address, pos: p } : null;
+        }),
+      );
+      if (!cancelled) { setPositions(found.filter((x): x is { address: string; pos: Position } => x != null)); setPosScanned(true); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pool]);
 
   // Refresh the BNB balance when opening Add — a cold walletd can return 0 at
   // first load, which would wrongly read as "not enough BNB" and disable the button.
@@ -445,6 +470,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
 
   // ── overview ──
   const posValueUsd = pos?.has_position ? Number(pos.value_exfer) * exferUsd * 2 : 0;
+  // Positions on addresses OTHER than the one currently shown — surfaced so a
+  // user whose position sits on a non-default address can still find it.
+  const others = positions.filter((p) => p.address.toLowerCase() !== exferAddr.toLowerCase());
   return (
     <Sheet title={t("lp.title")} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -457,6 +485,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
               </span>
             </div>
             <div className="quote-figure" style={{ fontSize: 30, marginTop: 4 }}><span className="quote-cur" style={{ fontWeight: 500 }}>≈ $</span>{usd(posValueUsd)}</div>
+            <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{shortAddress(exferAddr)}</div>
             <div style={{ marginTop: 10 }}>
               <div style={{ height: 1, background: "var(--border)" }} />
               <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))} />
@@ -464,7 +493,18 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
               <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)} />
             </div>
           </div>
-        ) : posLoaded ? (
+        ) : !posScanned || !posLoaded ? (
+          <div className="quote-card" style={{ height: 150, display: "grid", placeItems: "center" }}>
+            <Spinner size={22} />
+          </div>
+        ) : positions.length > 0 ? (
+          // This address has nothing, but the wallet does — point the user at it
+          // instead of the scary "no liquidity" empty state.
+          <div className="quote-card" style={{ textAlign: "center", padding: "20px 18px" }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{t("lp.posElsewhereHeading")}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("lp.posElsewhereSub")}</div>
+          </div>
+        ) : (
           <div className="quote-card" style={{ textAlign: "center", padding: "26px 18px" }}>
             <div style={{ width: 46, height: 46, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
               <Icon name="spark" size={22} />
@@ -472,9 +512,29 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
             <div style={{ fontSize: 15, fontWeight: 700 }}>{t("lp.emptyHeading")}</div>
             <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("lp.emptySub")}</div>
           </div>
-        ) : (
-          <div className="quote-card" style={{ height: 150, display: "grid", placeItems: "center" }}>
-            <Spinner size={22} />
+        )}
+
+        {others.length > 0 && (
+          <div>
+            <label className="eyebrow">{t("lp.otherPositions")}</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {others.map((p) => (
+                <button
+                  key={p.address}
+                  type="button"
+                  onClick={() => { setFromAddr(p.address); setPosLoaded(false); }}
+                  className="quote-card"
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", border: 0, cursor: "pointer", font: "inherit", textAlign: "left", width: "100%" }}
+                >
+                  <ExferMark size={22} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="mono" style={{ display: "block", fontSize: 12.5, color: "var(--text-dim)" }}>{shortAddress(p.address)}</span>
+                    <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)" }}>{sig(p.pos.pool_share_pct, 3)}% {t("lp.ofPool")}</span>
+                  </span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>≈ ${usd(Number(p.pos.value_exfer) * exferUsd * 2)}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
