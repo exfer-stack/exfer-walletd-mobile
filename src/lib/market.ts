@@ -97,6 +97,62 @@ export function usePrice(): MarketPrice | null {
   return price;
 }
 
+// ── BNB/USD spot ─────────────────────────────────────────────────────────
+// The independent USD anchor for BNB, so the EXFER price can be derived from
+// the live pool ratio (EXFER/USD = pool BNB-per-EXFER × BNB/USD) instead of a
+// fixed OTC quote. Same network rule: Rust command in the app, Vite proxy in
+// dev. Failure resolves to null and callers fall back to the OTC EXFER price.
+
+const BNB_CACHE_KEY = "exfer-bnbusd-cache";
+
+function readCachedBnbUsd(): number | null {
+  try {
+    const v = Number(JSON.parse(localStorage.getItem(BNB_CACHE_KEY) || "null"));
+    return isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getBnbUsd(): Promise<number | null> {
+  try {
+    let raw: string;
+    if (devmock.isActive()) {
+      const r = await fetch("/__bnbusd/api/v3/ticker/price?symbol=BNBUSDT");
+      if (!r.ok) return null;
+      raw = await r.text();
+    } else {
+      raw = await invoke<string>("get_bnb_price");
+    }
+    const price = Number((JSON.parse(raw) as { price?: string }).price);
+    if (!isFinite(price) || price <= 0) return null;
+    try {
+      localStorage.setItem(BNB_CACHE_KEY, JSON.stringify(price));
+    } catch {
+      /* ignore */
+    }
+    return price;
+  } catch {
+    return null;
+  }
+}
+
+/** Live BNB/USD spot. Seeded from cache, refreshes every 3 minutes. */
+export function useBnbUsd(): number | null {
+  const [v, setV] = useState<number | null>(readCachedBnbUsd);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => getBnbUsd().then((p) => { if (alive && p) setV(p); });
+    void tick();
+    const id = window.setInterval(tick, 180_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+  return v;
+}
+
 /** Format an exfer-denominated amount as its USD value, compactly. */
 export function usdValue(exfers: number, usd: number): string {
   const v = (exfers / EXFER_UNIT) * usd;

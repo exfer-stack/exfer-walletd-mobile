@@ -77,6 +77,15 @@ export default defineConfig(async ({ mode }) => {
           secure: true,
           rewrite: (p: string) => p.replace(/^\/__price/, ""),
         },
+        // BNB/USD spot (Binance public API) — the independent USD anchor for BNB
+        // so the EXFER price can track the live pool ratio. Mirrors get_bnb_price
+        // on the Tauri side.
+        "/__bnbusd": {
+          target: "https://api.binance.com",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p: string) => p.replace(/^\/__bnbusd/, ""),
+        },
         ...(proxyTarget
           ? {
               "/__walletd": {

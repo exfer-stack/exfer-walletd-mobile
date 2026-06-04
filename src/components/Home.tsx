@@ -11,7 +11,7 @@ import {
   rpc,
   splitBalanceCompact,
 } from "../lib/rpc";
-import { usePrice, usdValue } from "../lib/market";
+import { usePrice, usdValue, useBnbUsd } from "../lib/market";
 import { useT, type MsgKey } from "../lib/i18n";
 import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
@@ -159,6 +159,7 @@ export function Home({
 }) {
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
+  const bnbUsd = useBnbUsd();
   const { t } = useT();
   const toast = useToast();
 
@@ -527,10 +528,16 @@ export function Home({
                 </Masked>
               </span>
               {(() => {
-                if (!price || !bnbMid || bnbMid <= 0) return null;
                 const bnbHuman = Number(BigInt(bnb.wei)) / 1e18;
-                const usd = (bnbHuman * price.usd) / bnbMid;
-                if (!isFinite(usd)) return null;
+                // Prefer the real BNB/USD spot; fall back to the pool-implied
+                // value (EXFER/USD ÷ pool ratio) only if the feed is down.
+                const usd =
+                  bnbUsd != null
+                    ? bnbHuman * bnbUsd
+                    : price && bnbMid && bnbMid > 0
+                      ? (bnbHuman * price.usd) / bnbMid
+                      : null;
+                if (usd == null || !isFinite(usd)) return null;
                 const s = usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2);
                 return (
                   <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)" }}>

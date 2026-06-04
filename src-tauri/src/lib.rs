@@ -447,6 +447,24 @@ async fn get_market_price() -> Result<String, String> {
     resp.text().await.map_err(|e| format!("reading price body: {e}"))
 }
 
+/// Fetch the BNB/USDT spot price from Binance's public API. Returns the raw
+/// JSON (`{"symbol":"BNBUSDT","price":"612.30"}`); the frontend reads `price`.
+/// This is the independent USD anchor for BNB, so the EXFER price can be derived
+/// from the live pool ratio (EXFER/USD = pool BNB-per-EXFER × BNB/USD) instead
+/// of a fixed OTC quote. Read-only — a failure just falls back to the OTC price.
+#[tauri::command]
+async fn get_bnb_price() -> Result<String, String> {
+    let resp = public_https_client()?
+        .get("https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT")
+        .send()
+        .await
+        .map_err(|e| format!("bnb price request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("bnb price endpoint returned {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| format!("reading bnb price body: {e}"))
+}
+
 /// Fetch the latest published GitHub release for the mobile wallet. Returns the
 /// raw JSON; the frontend reads `tag_name` + the `.apk` asset and compares it
 /// to the running version. GitHub's REST API requires a User-Agent header.
@@ -551,6 +569,7 @@ pub fn run() {
             import_wallet_key,
             restore_from_mnemonic,
             get_market_price,
+            get_bnb_price,
             check_latest_release,
         ])
         .run(tauri::generate_context!())

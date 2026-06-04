@@ -22,7 +22,7 @@ import { addrName } from "../../lib/format";
 import type { WalletEntry } from "../../lib/types";
 import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark } from "../ui";
 import { Qr } from "../Qr";
-import { usePrice } from "../../lib/market";
+import { usePrice, useBnbUsd } from "../../lib/market";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 import { recordSwapUsd } from "../../lib/swapPrice";
 
@@ -158,6 +158,7 @@ export function SwapSheet({
   const toast = useToast();
   const { t } = useT();
   const price = usePrice();
+  const bnbUsd = useBnbUsd();
 
   useEffect(() => suspendPolling(), [suspendPolling]);
 
@@ -301,10 +302,15 @@ export function SwapSheet({
     if (!isFinite(a) || a <= 0) return null;
     return sell ? a * poolInfo.mid : a / poolInfo.mid;
   })();
-  // USD value of the trade (the EXFER side × spot) — meaningful even when the
-  // BNB figure is tiny. Sell: input EXFER; buy: output EXFER.
+  // Effective EXFER/USD: derived from the LIVE pool ratio (pool BNB-per-EXFER ×
+  // BNB/USD) so the price tracks the pool — every swap shifts it. Falls back to
+  // the OTC EXFER quote when the pool rate or BNB/USD isn't available.
+  const exferUsd = poolInfo && poolInfo.mid > 0 && bnbUsd ? poolInfo.mid * bnbUsd : price?.usd ?? null;
+
+  // USD value of the trade (the EXFER side × the effective price). Sell: input
+  // EXFER; buy: output EXFER.
   const estExfer = estOut == null ? null : sell ? Number(amount) : estOut;
-  const estUsd = estExfer != null && price ? estExfer * price.usd : null;
+  const estUsd = estExfer != null && exferUsd != null ? estExfer * exferUsd : null;
   const fmtUsd = (u: number) => (u < 1 ? u.toFixed(4) : u.toFixed(2));
 
   // Max the pool can fill right now, in input units — the smaller of the
@@ -376,9 +382,9 @@ export function SwapSheet({
     setErr(null);
     try {
       const r = await rpc<SwapRec>("swap_execute", { swap_id: quote.swap_id });
-      // Snapshot the EXFER/USD spot now, so the record can later show what this
-      // swap was worth at execution time (walletd stores no fiat).
-      if (price) recordSwapUsd(quote.swap_id, price.usd);
+      // Snapshot the effective (pool-driven) EXFER/USD now, so the record can
+      // later show what this swap was worth at execution time.
+      if (exferUsd != null) recordSwapUsd(quote.swap_id, exferUsd);
       setLive(r);
       setStep(3);
       toast.success(t("swap.started"), t("swap.startedBody"));
@@ -612,11 +618,11 @@ export function SwapSheet({
             ) : (
               <>
                 <div className="quote-label">{t("swap.priceTitle")}</div>
-                {price ? (
+                {exferUsd != null ? (
                   <>
                     <div className="quote-figure">
                       <span className="quote-cur">$</span>
-                      {sigFmt(price.usd, 4)}
+                      {sigFmt(exferUsd, 4)}
                       <span className="quote-per">{t("swap.perExfer")}</span>
                     </div>
                     <div className="quote-sub">≈ {sigFmt(poolInfo.mid)} BNB</div>
