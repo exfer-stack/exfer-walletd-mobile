@@ -403,6 +403,12 @@ export function SwapSheet({
           </div>
         )}
 
+        {sell && (
+          <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            {t("swap.sellReceiveHint")}
+          </div>
+        )}
+
         {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
       </Sheet>
     );

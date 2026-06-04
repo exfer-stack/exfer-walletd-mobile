@@ -9,10 +9,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
-import { formatExfer, formatBalanceCompact } from "../lib/rpc";
+import { formatExfer, formatBalanceCompact, rpc } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER } from "../lib/format";
-import { useT, tStatic } from "../lib/i18n";
+import { useT, tStatic, type MsgKey } from "../lib/i18n";
 import {
   buildActivityFeed,
   loadFeedCache,
@@ -20,6 +20,42 @@ import {
   type ActivityItem,
 } from "../lib/activity";
 import { AppBar, Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "./ui";
+
+/** A swap record from walletd's journal (serde snake_case), for the Swaps
+ *  section — so a cross-chain swap shows as one labeled record (both legs +
+ *  status), not just its raw EXFER transfer. */
+interface SwapRow {
+  swap_id: string;
+  direction: "exfer_to_bnb" | "bnb_to_exfer";
+  status: string;
+  amount_in: string;
+  amount_out: string;
+  created_at: number;
+  updated_at: number;
+  // The swap's own EXFER-leg tx ids, so we can hide them from the raw transfer
+  // feed (a swap shows once as a unified record, not twice).
+  user_lock_tx?: string | null;
+  claim_tx?: string | null;
+  refund_tx?: string | null;
+}
+
+function fmtA(s: string, dp = 4): string {
+  if (!s) return s;
+  const [w, f = ""] = s.split(".");
+  const frac = f.slice(0, dp).replace(/0+$/, "");
+  return frac ? `${w}.${frac}` : w;
+}
+
+/** Swap status → label key + pill class. */
+function swapPill(status: string): { key: MsgKey; cls: string } {
+  switch (status) {
+    case "completed": return { key: "swap.statusCompleted", cls: "pill-success" };
+    case "refunded": return { key: "swap.statusRefunded", cls: "pill-warn" };
+    case "failed": return { key: "swap.statusFailed", cls: "pill-danger" };
+    case "refunding": return { key: "swap.statusRefunding", cls: "pill-warn" };
+    default: return { key: "swap.inflightTitle", cls: "pill-accent" };
+  }
+}
 
 function relTime(iso: string): string {
   const ts = new Date(iso).getTime();
@@ -66,6 +102,32 @@ export function Activity() {
   const [refreshing, setRefreshing] = useState(false);
   const [indexerOk, setIndexerOk] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+
+  // Cross-chain swaps live in walletd's journal, not the EXFER chain feed —
+  // surface them as their own labeled records (both legs + status). No-ops when
+  // the swap engine isn't configured.
+  const [swaps, setSwaps] = useState<SwapRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const all = await rpc<SwapRow[]>("swap_list");
+        if (cancelled) return;
+        // Drop bare quotes (no funds moved); show everything that locked.
+        const real = (all ?? []).filter((s) => s.status !== "quoted");
+        real.sort((a, b) => b.created_at - a.created_at);
+        setSwaps(real);
+      } catch {
+        if (!cancelled) setSwaps([]);
+      }
+    };
+    load();
+    const id = window.setInterval(load, 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   const ownAddrs = useMemo(
     () => (balance?.entries ?? []).map((e) => e.address),
@@ -126,14 +188,29 @@ export function Activity() {
 
   const opened = items.find((t) => t.tx_id === open) ?? null;
 
+  // Hide the EXFER legs that belong to a swap — they're already represented by
+  // the unified swap record in the Swaps section, so showing the raw transfer
+  // too would double-count the same swap.
+  const swapTxIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const sw of swaps) {
+      for (const tx of [sw.user_lock_tx, sw.claim_tx, sw.refund_tx]) if (tx) s.add(tx);
+    }
+    return s;
+  }, [swaps]);
+  const visibleItems = useMemo(
+    () => items.filter((it) => !swapTxIds.has(it.tx_id)),
+    [items, swapTxIds],
+  );
+
   return (
     <div className="screen">
       <div className="screen-pad">
         <AppBar
           large
           title={t("act.title")}
-          subtitle={t(items.length === 1 ? "act.transfer1" : "act.transferN", {
-            n: items.length,
+          subtitle={t(visibleItems.length === 1 ? "act.transfer1" : "act.transferN", {
+            n: visibleItems.length,
           })}
           right={
             <button
@@ -155,13 +232,22 @@ export function Activity() {
           </div>
         )}
 
+        {swaps.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <div className="eyebrow" style={{ margin: "0 2px 9px" }}>{t("act.swaps")}</div>
+            <div style={{ display: "grid", gap: 11 }}>
+              {swaps.map((s) => <SwapActivityRow key={s.swap_id} s={s} />)}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div style={{ display: "grid", gap: 11 }}>
             {[0, 1, 2].map((i) => (
               <SkeletonRow key={i} />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 && swaps.length === 0 ? (
           <div
             className="card"
             style={{ padding: "36px 22px", textAlign: "center", marginTop: 8 }}
@@ -187,7 +273,7 @@ export function Activity() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 11 }}>
-            {items.map((t) => (
+            {visibleItems.map((t) => (
               <ActivityRow
                 key={t.tx_id}
                 item={t}
@@ -251,6 +337,49 @@ function SkeletonRow() {
             style={{ width: 74, height: 18, borderRadius: 999 }}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SwapActivityRow({ s }: { s: SwapRow }) {
+  const { t } = useT();
+  const sell = s.direction === "exfer_to_bnb";
+  const inUnit = sell ? "EXFER" : "BNB";
+  const outUnit = sell ? "BNB" : "EXFER";
+  const pill = swapPill(s.status);
+  const when = relTime(new Date(s.created_at * 1000).toISOString());
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "14px 15px",
+        border: "1px solid var(--border-soft)",
+        background: "var(--surface)",
+        display: "block",
+        width: "100%",
+      }}
+    >
+      <div className="h-row">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              width: 36, height: 36, borderRadius: 11, display: "grid", placeItems: "center",
+              background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)",
+            }}
+          >
+            <Icon name="refresh" size={18} />
+          </span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14.5 }}>
+              {t("act.swapped", { in: `${fmtA(s.amount_in)} ${inUnit}`, out: `${fmtA(s.amount_out)} ${outUnit}` })}
+            </div>
+            <div className="faint" style={{ fontSize: 11.5 }}>{when}</div>
+          </div>
+        </div>
+        <span className={"pill " + pill.cls} style={{ padding: "3px 9px", fontSize: 11 }}>
+          {t(pill.key)}
+        </span>
       </div>
     </div>
   );
