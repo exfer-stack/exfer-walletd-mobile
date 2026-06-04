@@ -90,6 +90,15 @@ export function revealMnemonic(
   return rpc("reveal_address_mnemonic", { address, passphrase });
 }
 
+/** Reveal the BSC/EVM (secp256k1) private key for the wallet's BNB address, so
+ *  it can be imported into MetaMask-style wallets. Returns the 0x-prefixed hex
+ *  plus the address it controls. Passphrase- and Spend-gated. */
+export function revealEvmPrivateKey(
+  passphrase: string,
+): Promise<{ address: string; private_key_hex: string }> {
+  return rpc("reveal_evm_private_key", { passphrase });
+}
+
 export function getNodeRpc(): Promise<string> {
   if (devmock.isActive()) return devmock.get_node_rpc();
   return invoke<string>("get_node_rpc");

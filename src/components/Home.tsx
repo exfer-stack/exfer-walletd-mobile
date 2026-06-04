@@ -10,6 +10,7 @@ import {
   MAX_ADDRESSES,
   rpc,
   splitBalanceCompact,
+  revealEvmPrivateKey,
 } from "../lib/rpc";
 import { usePrice, usdValue, useBnbUsd } from "../lib/market";
 import { useT, type MsgKey } from "../lib/i18n";
@@ -199,6 +200,8 @@ export function Home({
   // (EXFER/USD ÷ BNB-per-EXFER) so the BNB card can show ≈$ like every other row.
   const [bnbMid, setBnbMid] = useState<number | null>(bnbMidCache);
   const [depositOpen, setDepositOpen] = useState(false);
+  // BNB private-key export modal (password + biometric gated).
+  const [exportKey, setExportKey] = useState(false);
   // BNB withdraw form (inside the BNB modal): toggle + fields.
   const [bnbWithdraw, setBnbWithdraw] = useState(false);
   const [wto, setWto] = useState("");
@@ -883,10 +886,107 @@ export function Home({
               <button className="btn btn-secondary btn-block" onClick={() => setBnbWithdraw(true)}>
                 {t("home.withdrawBnb")}
               </button>
+              <button
+                className="btn-ghost btn-block"
+                style={{ color: "var(--text-dim)" }}
+                onClick={() => { setDepositOpen(false); setBnbWithdraw(false); setExportKey(true); }}
+              >
+                {t("home.exportBnbKey")}
+              </button>
             </div>
           )}
         </Modal>
       )}
+      {exportKey && <ExportBnbKeyModal onClose={() => setExportKey(false)} />}
     </div>
+  );
+}
+
+/* The BNB (BSC/EVM) private key — password + biometric gated — so the user can
+ * import their BNB address into MetaMask-style wallets ("Import account →
+ * Private key"). The key is derived at m/44'/60'/0'/0/0, the standard path, so
+ * the same address appears in MetaMask. */
+function ExportBnbKeyModal({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
+  const { t } = useT();
+  const [pw, setPw] = useState("");
+  const [data, setData] = useState<{ address: string; key: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function reveal() {
+    if (pw.length < 4) {
+      toast.error(t("home.expEnterPw"), "");
+      return;
+    }
+    const bio = await biometricStatus();
+    if (bio.available) {
+      const ok = await biometricUnlock(t("home.exportBnbKey"));
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const res = await revealEvmPrivateKey(pw);
+      setData({ address: res.address, key: res.private_key_hex });
+    } catch (e) {
+      toast.error(t("home.expFail"), humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={t("home.exportBnbKey")}
+      danger
+      onClose={onClose}
+      footer={
+        data ? (
+          <button className="btn btn-block" onClick={onClose}>{t("sheet.done")}</button>
+        ) : (
+          <>
+            <button className="btn btn-secondary btn-block" onClick={onClose}>{t("sheet.cancel")}</button>
+            <button className="btn btn-danger btn-block" disabled={busy} onClick={reveal}>
+              {busy ? <Spinner /> : t("home.expReveal")}
+            </button>
+          </>
+        )
+      }
+    >
+      {!data ? (
+        <>
+          <div className="banner banner-warn" style={{ marginBottom: 14 }}>{t("home.expWarn")}</div>
+          <label className="eyebrow">{t("sheet.walletPassword")}</label>
+          <input
+            className="field"
+            type="password"
+            autoFocus
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && reveal()}
+            style={{ marginTop: 8 }}
+          />
+        </>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="banner banner-danger">{t("home.expRevealed")}</div>
+          <div>
+            <label className="eyebrow">{t("home.bnbAddress")}</label>
+            <div className="mono" style={{ fontSize: 12.5, wordBreak: "break-all", marginTop: 4, color: "var(--text-dim)" }}>
+              {data.address}
+            </div>
+          </div>
+          <div>
+            <label className="eyebrow">{t("home.expPrivKey")}</label>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 4 }}>
+              <code className="mono" style={{ flex: 1, minWidth: 0, fontSize: 12.5, wordBreak: "break-all", lineHeight: 1.5 }}>
+                {data.key}
+              </code>
+              <CopyButton text={data.key} label="Copied" />
+            </div>
+          </div>
+          <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>{t("home.expMetaMask")}</div>
+        </div>
+      )}
+    </Modal>
   );
 }

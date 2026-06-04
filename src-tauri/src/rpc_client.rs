@@ -114,7 +114,7 @@ pub fn pinned_client(fingerprint: &str) -> Result<reqwest::Client, AppError> {
 fn scope_for_method(method: &str) -> Scope {
     match method {
         "transfer" | "send_raw_transaction" | "sign_message"
-        | "reveal_mnemonic" | "reveal_private_key"
+        | "reveal_mnemonic" | "reveal_private_key" | "reveal_evm_private_key"
         // walletd v1.9.x keyring lifecycle: per-address recovery phrase,
         // key-material exports, and deletion all move/expose secrets.
         | "reveal_address_mnemonic" | "export_vault" | "export_address"

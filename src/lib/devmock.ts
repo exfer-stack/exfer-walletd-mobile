@@ -111,6 +111,7 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "sign_message" ||
     method === "reveal_mnemonic" ||
     method === "reveal_private_key" ||
+    method === "reveal_evm_private_key" ||
     method === "reveal_address_mnemonic" ||
     method === "export_vault" ||
     method === "export_address" ||
