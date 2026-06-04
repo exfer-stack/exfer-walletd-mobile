@@ -465,6 +465,7 @@ function ActivityRow({
           >
             {received ? "+" : "−"}
             {formatBalanceCompact(item.amount).replace(" EXFER", "")}
+            <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> EXFER</span>
           </div>
           <span
             className={"pill " + st.cls}

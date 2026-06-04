@@ -386,8 +386,8 @@ export function Home({
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />
-          <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="secondary" />
-          <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
+          <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="secondary" />
+          <PrimaryAction icon="refresh" label={t("home.swap")} onClick={onSwap} variant="primary" />
         </div>
 
         {/* BNB asset card — BNB lives at an in-wallet BSC address; show it as a
