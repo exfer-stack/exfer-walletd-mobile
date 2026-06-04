@@ -599,6 +599,9 @@ export function SwapSheet({
             </button>
           )}
         </div>
+        {!sell && buyMax > 0 && (
+          <div style={{ fontSize: 11.5, color: "var(--text-faint)", margin: "-2px 2px 4px", lineHeight: 1.4 }}>{t("swap.maxGasNote")}</div>
+        )}
         {/* Quote card — the price is the most important thing on this screen, so
             give it a flat panel with a large Geist figure and one supporting
             line. Each value appears once: before an amount is typed it's the
