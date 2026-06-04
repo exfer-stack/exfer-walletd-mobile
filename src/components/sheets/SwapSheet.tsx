@@ -567,7 +567,7 @@ export function SwapSheet({
             const a = Number(quote.amount_in);
             const b = Number(quote.amount_out);
             if (!a || !b) return null;
-            return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${(b / a).toPrecision(4)} ${recvUnit}`} />;
+            return <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${sigFmt(b / a)} ${recvUnit}`} />;
           })()}
           {typeof quote.fee_bps === "number" && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
