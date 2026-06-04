@@ -234,10 +234,23 @@ body {
 [data-theme="light"] .quote-card,
 [data-theme="light"] .card-2 { background: var(--surface); }
 
-/* Brand X-cross watermark: subtle on the dark canvas, but cyan at the same
-   opacity is too loud on white — dial it back in light mode. */
+/* Brand X-cross watermark: a faint cyan tint on the dark canvas. On white, cyan
+   reads as a coloured smudge, so desaturate it to a soft neutral grey and keep
+   it faint — a texture, not an artefact. */
 .brand-backdrop { opacity: .13; }
-[data-theme="light"] .brand-backdrop { opacity: .06; }
+[data-theme="light"] .brand-backdrop {
+  opacity: .05;
+  filter: grayscale(1) brightness(0.5);
+}
+
+/* ── address identicon (theme-aware) ────────────────────────────── */
+/* Colours come from per-address hues set inline (--av-h / --av-bh); only the
+   lightness/chroma differ by theme. Dark: dark tile, light cells. Light: light
+   tile, darker cells — so it never looks like a dark stamp on a white card. */
+.av-bg { fill: oklch(0.22 0.04 var(--av-bh)); }
+.av-fg { fill: oklch(0.78 0.14 var(--av-h)); }
+[data-theme="light"] .av-bg { fill: oklch(0.95 0.025 var(--av-bh)); }
+[data-theme="light"] .av-fg { fill: oklch(0.58 0.16 var(--av-h)); }
 .list-row {
   display: flex;
   align-items: center;

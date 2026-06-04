@@ -37,8 +37,12 @@ export interface AvatarCell {
 }
 
 export interface AvatarData {
-  bg: string;
-  fg: string;
+  /** Cell (foreground) hue and tile (background) hue, in degrees. The actual
+   *  lightness/chroma is chosen in CSS per theme (dark tile + light cells in
+   *  dark mode; light tile + darker cells in light mode), so identicons read
+   *  well on both canvases while keeping each address's colour identity. */
+  hue: number;
+  bgHue: number;
   cells: AvatarCell[];
 }
 
@@ -77,8 +81,7 @@ function brandHue(r: () => number): number {
 export function avatarData(address: string): AvatarData {
   const r = seededRng(address);
   const hue = brandHue(r);
-  const fg = `oklch(0.78 0.14 ${hue})`;
-  const bg = `oklch(0.22 0.04 ${(hue + 20) % 360})`;
+  const bgHue = (hue + 20) % 360;
   const cells: AvatarCell[] = [];
   const half = Math.ceil(AVATAR_GRID / 2); // columns 0..2 drive the mirror
   for (let x = 0; x < half; x++) {
@@ -90,5 +93,5 @@ export function avatarData(address: string): AvatarData {
       }
     }
   }
-  return { bg, fg, cells };
+  return { hue, bgHue, cells };
 }

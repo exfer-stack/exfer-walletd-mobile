@@ -551,14 +551,19 @@ export function AddrAvatar({
   address: string;
   size?: number;
 }) {
-  const { bg, fg, cells } = avatarData(address);
+  const { hue, bgHue, cells } = avatarData(address);
   const cell = 100 / AVATAR_GRID;
-  const style: CSSProperties = {
+  const style = {
     borderRadius: Math.round(size * 0.3),
     flex: "0 0 auto",
     display: "block",
     overflow: "hidden",
-  };
+    // Per-address hues; CSS (.av-bg/.av-fg) turns these into theme-appropriate
+    // lightness — dark tile + light cells on dark, light tile + darker cells
+    // on light — so the identicon never looks like a dark stamp on a white card.
+    "--av-h": hue,
+    "--av-bh": bgHue,
+  } as CSSProperties;
   return (
     <svg
       width={size}
@@ -567,15 +572,15 @@ export function AddrAvatar({
       style={style}
       aria-hidden="true"
     >
-      <rect width="100" height="100" fill={bg} />
+      <rect className="av-bg" width="100" height="100" />
       {cells.map((c, i) => (
         <rect
           key={i}
+          className="av-fg"
           x={(c.x * cell).toFixed(2)}
           y={(c.y * cell).toFixed(2)}
           width={(cell + 0.5).toFixed(2)}
           height={(cell + 0.5).toFixed(2)}
-          fill={fg}
         />
       ))}
     </svg>
