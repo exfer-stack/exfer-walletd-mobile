@@ -5,16 +5,26 @@ import { getLabel } from "./labels";
 
 export const EXFER_UNIT = 100_000_000;
 export const EXPLORER = "https://explorer.exfer.dev";
-// BSC block explorer for the BNB leg of a swap. Testnet (Chapel) while the HTLC
-// contract is on testnet; switch to https://bscscan.com on mainnet.
-export const BSC_EXPLORER = "https://testnet.bscscan.com";
+
+/** BscScan base for a chain id (56 = mainnet, 97 = Chapel testnet). Defaults to
+ *  mainnet, which is the live BSC config. */
+export function bscExplorerBase(chainId?: number): string {
+  return chainId === 97 ? "https://testnet.bscscan.com" : "https://bscscan.com";
+}
 
 /** Explorer URL for a tx, routed by chain: a 0x-prefixed hash is a BSC tx
- *  (BscScan); anything else is an EXFER tx id (the EXFER explorer). */
-export function txExplorerUrl(txid: string): string {
+ *  (BscScan, optionally chain-specific); anything else is an EXFER tx id. */
+export function txExplorerUrl(txid: string, chainId?: number): string {
   return txid.startsWith("0x")
-    ? `${BSC_EXPLORER}/tx/${txid}`
+    ? `${bscExplorerBase(chainId)}/tx/${txid}`
     : `${EXPLORER}/tx/${txid}`;
+}
+
+/** Compact BNB amount: up to 6 significant decimals, trailing zeros trimmed. */
+export function formatBnb(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return "0";
+  const s = n.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+  return s;
 }
 
 /** Human name for an address row: a local label if set, else "Imported"

@@ -11,7 +11,7 @@ import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
 import { formatExfer, formatBalanceCompact, rpc } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
-import { addrName, EXPLORER, txExplorerUrl } from "../lib/format";
+import { addrName, EXPLORER, txExplorerUrl, formatBnb } from "../lib/format";
 import { getSwapUsd } from "../lib/swapPrice";
 import { useT, tStatic, type MsgKey } from "../lib/i18n";
 import {
@@ -86,6 +86,9 @@ function relTime(iso: string): string {
 // repeat it ("block 682,431" subtitle + "confirmed @ 682,431" pill read as a
 // bug). The full "@ height" detail still shows in the TxSheet header.
 function statusPill(it: ActivityItem): { text: string; cls: string } {
+  if (it.failed) {
+    return { text: tStatic("act.failed"), cls: "pill-danger" };
+  }
   if (it.status === "confirmed") {
     return { text: tStatic("act.confirmed"), cls: "pill-success" };
   }
@@ -552,6 +555,7 @@ function ActivityRow({
   const { t } = useT();
   const st = statusPill(item);
   const received = item.kind === "received";
+  const bnb = item.asset === "BNB";
 
   // Received: name the address that got credited (if it's one we can name).
   const toEntry = received
@@ -561,7 +565,11 @@ function ActivityRow({
   const fromAddr = item.detail?.outputs.find((o) => o.is_change)?.to;
   const fromEntry = fromAddr ? entries.find((e) => e.address === fromAddr) : null;
 
-  const title = received
+  const title = bnb
+    ? received
+      ? t("act.receivedBnb")
+      : t("act.sentBnb")
+    : received
     ? item.is_coinbase
       ? t("act.miningReward")
       : toEntry
@@ -619,8 +627,8 @@ function ActivityRow({
             }}
           >
             {received ? "+" : "−"}
-            {formatBalanceCompact(item.amount).replace(" EXFER", "")}
-            <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> EXFER</span>
+            {bnb ? formatBnb(item.amount) : formatBalanceCompact(item.amount).replace(" EXFER", "")}
+            <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {bnb ? "BNB" : "EXFER"}</span>
           </div>
           <span
             className={"pill " + st.cls}
@@ -698,6 +706,63 @@ function TxSheet({
       <Icon name="share" size={18} /> {t("act.viewExplorer")}
     </button>
   );
+
+  // ---- BNB (BSC) — its own sheet: no EXFER inputs/outputs/fee/change ------
+  if (item.asset === "BNB") {
+    const peer = item.counterparties?.[0];
+    const openBsc = () => {
+      const url = txExplorerUrl(item.tx_id, item.chainId);
+      try {
+        window.open(url, "_blank", "noopener");
+      } catch {
+        navigator.clipboard?.writeText(url);
+        toast.info(t("act.explorerCopied"), url);
+      }
+    };
+    return (
+      <Sheet title={t("act.transfer")} subtitle={subtitle} onClose={onClose} height="90%">
+        <div style={{ textAlign: "center", padding: "6px 0 18px" }}>
+          <div
+            className="mono"
+            style={{ fontSize: 30, fontWeight: 600, color: received ? "#34d399" : undefined }}
+          >
+            {received ? "+" : "−"}
+            {formatBnb(item.amount)}
+            <span className="dim" style={{ fontSize: 15 }}> BNB</span>
+          </div>
+          <span className={"pill " + st.cls} style={{ marginTop: 10 }}>
+            {st.text}
+          </span>
+        </div>
+
+        {peer && (
+          <>
+            <div className="eyebrow" style={{ marginBottom: 9 }}>
+              {received ? t("act.from") : t("act.to")}
+            </div>
+            <div
+              className="card"
+              style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}
+            >
+              <AddrAvatar address={peer} size={32} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{t("act.externalAddr")}</div>
+                <code className="mono faint" style={{ fontSize: 11.5 }}>
+                  {shortAddress(peer, 8, 8)}
+                </code>
+              </div>
+              <CopyButton text={peer} label="Address copied" />
+            </div>
+          </>
+        )}
+
+        {txIdCard}
+        <button className="btn btn-secondary btn-block" onClick={openBsc}>
+          <Icon name="share" size={18} /> {t("act.viewBscScan")}
+        </button>
+      </Sheet>
+    );
+  }
 
   // ---- Received ----------------------------------------------------------
   if (received) {

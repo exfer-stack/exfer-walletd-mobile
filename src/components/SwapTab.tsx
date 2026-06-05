@@ -25,9 +25,29 @@ interface InflightSwap {
 
 // Module cache so the chart + liquidity entry paint instantly on tab re-entry
 // instead of popping in after their async fetches.
-let candlesCache: Record<string, Candle[]> = {};
-let lpAvailableCache = false;
-let supplyCache: number | null = null;
+// These seed the tab's useState so it paints instantly on (re)mount instead of
+// popping in after the async fetches. In-memory caches are lost on a cold app
+// launch, which is exactly when the stats/sparkline/Liquidity card looked
+// "missing" for a beat — so back them with localStorage too (like the price),
+// and they survive a restart.
+function loadCache<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v != null ? (JSON.parse(v) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveCache(key: string, val: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch {
+    /* quota / private mode — non-fatal */
+  }
+}
+let candlesCache: Record<string, Candle[]> = loadCache("swaptab-candles-v1", {});
+let lpAvailableCache = loadCache("swaptab-lp-v1", false);
+let supplyCache: number | null = loadCache("swaptab-supply-v1", null);
 // In-progress swaps were the one piece NOT cached, so the card popped in a beat
 // late after the swap_list RPC on every tab re-entry (SwapTab remounts on tab
 // switch). Seed from this so it paints instantly, then the refresh updates it.
@@ -177,6 +197,7 @@ export function SwapTab({
       if (cancelled || h == null) return;
       const s = circulatingSupplyExfer(h);
       supplyCache = s;
+      saveCache("swaptab-supply-v1", s);
       setSupply(s);
     });
     return () => { cancelled = true; };
@@ -185,7 +206,7 @@ export function SwapTab({
   useEffect(() => {
     let cancelled = false;
     rpc<{ genesis_done?: boolean; error?: string }>("lp_pool_info")
-      .then((lp) => { const ok = !lp?.error && !!lp?.genesis_done; lpAvailableCache = ok; if (!cancelled) setLpAvailable(ok); }).catch(() => {});
+      .then((lp) => { const ok = !lp?.error && !!lp?.genesis_done; lpAvailableCache = ok; saveCache("swaptab-lp-v1", ok); if (!cancelled) setLpAvailable(ok); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -195,7 +216,7 @@ export function SwapTab({
     if (!candlesCache[interval]) setLoadingChart(true);
     getKlines(interval, 120).then((c) => {
       if (cancelled) return;
-      if (c.length) candlesCache[interval] = c;
+      if (c.length) { candlesCache[interval] = c; saveCache("swaptab-candles-v1", candlesCache); }
       setCandles(c.length ? c : candlesCache[interval] ?? []);
       setLoadingChart(false);
     });
@@ -326,26 +347,24 @@ export function SwapTab({
           {/* Market stats — a clean 2×2: a period group (high / low over the loaded
               window) visually separated from the global group (market cap / supply).
               When the crosshair is on a bar, the period cells show THAT bar. */}
-          {(stats || supply != null) && (
-            <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
-              {stats && (
-                <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px", paddingRight: 10, borderRight: "1px solid var(--border-soft)" }}>
-                  <Stat
-                    label={hovered ? t("swapTab.barHigh") : `${windowLabel(interval, candles.length)} ${t("swapTab.highShort")}`}
-                    value={`$${fp(hovered ? hovered.high : stats.hi)}`}
-                  />
-                  <Stat
-                    label={hovered ? t("swapTab.barLow") : `${windowLabel(interval, candles.length)} ${t("swapTab.lowShort")}`}
-                    value={`$${fp(hovered ? hovered.low : stats.lo)}`}
-                  />
-                </div>
-              )}
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px" }}>
-                <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
-                <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
-              </div>
+          {/* Always rendered (with "—" placeholders until data lands) so the card
+              has a stable height and nothing pops in on a cold tab switch. */}
+          <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px", paddingRight: 10, borderRight: "1px solid var(--border-soft)" }}>
+              <Stat
+                label={hovered ? t("swapTab.barHigh") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.highShort")}`}
+                value={stats ? `$${fp(hovered ? hovered.high : stats.hi)}` : "—"}
+              />
+              <Stat
+                label={hovered ? t("swapTab.barLow") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.lowShort")}`}
+                value={stats ? `$${fp(hovered ? hovered.low : stats.lo)}` : "—"}
+              />
             </div>
-          )}
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px" }}>
+              <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
+              <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
+            </div>
+          </div>
         </div>
 
         {/* Primary swap CTA — the filled accent action, lifted toward the top. */}

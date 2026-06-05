@@ -70,6 +70,13 @@ export interface ActivityItem {
   detail?: HistoryEntry;
   /** Where the authoritative status came from. */
   source: "indexer" | "mempool" | "local";
+  /** Set for a native-BNB (BSC) transfer: `tx_id` is a 0x hash, `amount` is in
+   *  BNB, and the explorer routes to BscScan. Absent = native EXFER. */
+  asset?: "BNB";
+  /** BSC chain id for a BNB item, so the UI picks the right explorer base. */
+  chainId?: number;
+  /** A BNB transfer whose receipt reverted (status "failed"). */
+  failed?: boolean;
 }
 
 // Per-tx aggregation while merging address-scoped rows into one logical tx.
@@ -197,11 +204,58 @@ export function saveFeedCache(ownKey: string, items: ActivityItem[]): void {
   }
 }
 
+// walletd `bsc_tx_history` — native-BNB transfers we initiated (currently
+// withdrawals). No indexer watches the BSC address, so this local log is the
+// only source; statuses are refreshed walletd-side from the on-chain receipt.
+interface BnbTxWire {
+  hash: string;
+  direction: string; // "out"
+  from: string;
+  to: string;
+  amount_wei: string;
+  status: string; // "pending" | "confirmed" | "failed"
+  created_at: number; // unix seconds
+}
+
+async function bnbActivity(): Promise<ActivityItem[]> {
+  try {
+    const r = await rpc<{ chain_id: number; txs: BnbTxWire[] }>(
+      "bsc_tx_history",
+    );
+    return (r.txs ?? []).map((tx): ActivityItem => {
+      const sent = tx.direction !== "in";
+      const amount = Number(tx.amount_wei) / 1e18;
+      // Treat confirmed AND failed as terminal (out of the pending bucket); the
+      // BNB-specific UI renders the precise state from `failed`.
+      const terminal = tx.status === "confirmed" || tx.status === "failed";
+      return {
+        tx_id: tx.hash,
+        kind: sent ? "sent" : "received",
+        amount,
+        status: terminal ? "confirmed" : "pending",
+        failed: tx.status === "failed",
+        ts: new Date(tx.created_at * 1000).toISOString(),
+        counterparties: sent ? [tx.to] : [tx.from],
+        toAddresses: sent ? undefined : [tx.to],
+        source: "local",
+        asset: "BNB",
+        chainId: r.chain_id,
+      };
+    });
+  } catch {
+    // Swap engine off / not configured — no BNB history to show.
+    return [];
+  }
+}
+
 export async function buildActivityFeed(
   ownAddresses: string[],
 ): Promise<BuildResult> {
   const byTx = new Map<string, ActivityItem>();
   let indexerOk = true;
+
+  // Native-BNB transfers run in parallel with the EXFER history fetch below.
+  const bnbItemsP = bnbActivity();
 
   // 1. Confirmed history from the indexer (authoritative).
   const confirmed = new Map<string, Agg>();
@@ -369,16 +423,20 @@ export async function buildActivityFeed(
     }),
   );
 
-  // Newest first: pending above confirmed; then by height, then by timestamp.
-  const items = all
-    .filter((it) => !dropped.has(it.tx_id))
-    .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
-      if (a.status === "confirmed" && b.status === "confirmed") {
-        return (b.block_height ?? 0) - (a.block_height ?? 0);
-      }
-      return (b.ts ?? "") < (a.ts ?? "") ? -1 : 1;
-    });
+  // BNB transfers (no EXFER tx_id, no collision) join the same timeline. Their
+  // status comes straight from walletd, so they skip the resolution loop above.
+  const merged = [...all.filter((it) => !dropped.has(it.tx_id)), ...(await bnbItemsP)];
+
+  // Newest first: pending above confirmed; then by block height when BOTH sides
+  // have one (two EXFER txs), else by timestamp — so a recent BNB tx (height-
+  // less) sorts by its time rather than sinking below every EXFER block.
+  const items = merged.sort((a, b) => {
+    if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+    if (a.block_height != null && b.block_height != null) {
+      return b.block_height - a.block_height;
+    }
+    return (b.ts ?? "") < (a.ts ?? "") ? -1 : 1;
+  });
 
   return { items, indexerOk };
 }
