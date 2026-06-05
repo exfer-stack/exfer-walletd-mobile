@@ -357,9 +357,7 @@ export function SwapTab({
             doesn't compete with the primary swap action. */}
         {lpAvailable && (
           <button onClick={() => onLiquidity()} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", marginBottom: 16, textAlign: "left" }}>
-            <span style={{ flex: "0 0 auto", width: 30, height: 30, borderRadius: 999, background: "var(--surface-2)", display: "grid", placeItems: "center", color: "var(--text-dim)" }}>
-              <Icon name="plus" size={16} stroke={2.2} />
-            </span>
+            <CoinPair badge="add" />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("lp.title")}</span>
               <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)", marginTop: 1 }}>{t("lp.entrySub")}</span>
