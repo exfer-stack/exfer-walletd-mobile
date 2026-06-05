@@ -879,6 +879,11 @@ export function SwapSheet({
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <Row label={t("swap.youSend")} value={`${fmtAmt(quote.amount_in)} ${sendUnit}`} />
           <Row label={t("swap.youReceive")} value={`${fmtAmt(quote.amount_out)} ${recvUnit}`} strong />
+          {/* The number people actually judge the trade by: what 1 EXFER is worth
+              in USD at this quote (slippage-aware). Was missing from review. */}
+          {effUsd != null && (
+            <Row label={t("swap.unitPrice")} value={`1 EXFER ≈ $${sigFmt(effUsd, 4)}`} strong />
+          )}
           {(() => {
             const a = Number(quote.amount_in);
             const b = Number(quote.amount_out);
