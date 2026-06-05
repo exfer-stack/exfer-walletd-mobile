@@ -265,6 +265,17 @@ export function SwapSheet({
   const [recvInput, setRecvInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Keep the From-address balances fresh while the sheet is open. suspendPolling()
+  // (above) pauses the AUTO-poll so a broadcast isn't raced — but that also froze
+  // the From-address dropdown, so a deposit/withdrawal wouldn't show for ages.
+  // refresh() forces a load even while suspended, so poll it ourselves (paused
+  // during a broadcast via `busy`).
+  useEffect(() => {
+    if (busy) return;
+    void refresh();
+    const id = window.setInterval(() => void refresh(), 12_000);
+    return () => window.clearInterval(id);
+  }, [busy, refresh]);
   const [quote, setQuote] = useState<SwapRec | null>(null);
   // Inline high-impact acknowledgement (review step) — arms Confirm. Replaces
   // the old Confirm→modal→"Swap anyway" double prompt.

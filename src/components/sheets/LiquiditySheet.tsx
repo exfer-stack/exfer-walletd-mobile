@@ -164,6 +164,15 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const [unavailable, setUnavailable] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  // Keep the From-address balances fresh while open — suspendPolling() pauses the
+  // auto-poll (broadcast safety) but froze the picker; refresh() forces a load
+  // even while suspended, so poll it ourselves (paused during a broadcast).
+  useEffect(() => {
+    if (busy) return;
+    void refresh();
+    const id = window.setInterval(() => void refresh(), 12_000);
+    return () => window.clearInterval(id);
+  }, [busy, refresh]);
   const [err, setErr] = useState<string | null>(null);
   const [stage, setStage] = useState(0); // 0 send, 1 sweep, 2 credit
   const [withdrawPct, setWithdrawPct] = useState(100); // partial-withdraw percentage
