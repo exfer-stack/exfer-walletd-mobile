@@ -176,7 +176,19 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
           return p?.has_position ? { address: e.address, pos: p } : null;
         }),
       );
-      if (!cancelled) { setPositions(found.filter((x): x is { address: string; pos: Position } => x != null)); setPosScanned(true); }
+      if (!cancelled) {
+        const list = found.filter((x): x is { address: string; pos: Position } => x != null);
+        setPositions(list);
+        setPosScanned(true);
+        // Auto-focus the address that actually holds a position, so the user
+        // lands ON their LP instead of "this (default) address has no shares —
+        // your position is on another address". LP is keyed to the address that
+        // funded the deposit, which isn't necessarily the wallet default. Only
+        // when the user hasn't explicitly picked one (fromAddr empty).
+        if (!fromAddr && list.length > 0 && !list.some((p) => p.address.toLowerCase() === exferAddr.toLowerCase())) {
+          setFromAddr(list[0].address);
+        }
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
