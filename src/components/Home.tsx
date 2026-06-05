@@ -111,6 +111,16 @@ function fmtBnbWei(wei: string | undefined, maxFrac = 6): string {
   }
 }
 
+// Wei → a plain BNB decimal string for an amount input. Floors (never rounds
+// up) at `dp` places so the value can never exceed the on-chain balance.
+function weiToBnbAmount(wei: bigint, dp = 8): string {
+  if (wei <= 0n) return "0";
+  const base = 10n ** 18n;
+  const whole = wei / base;
+  const frac = (wei % base).toString().padStart(18, "0").slice(0, dp).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : `${whole}`;
+}
+
 // Module-level cache for the BNB asset (address + balance + mid price). Home
 // unmounts on every tab switch, so without this the BNB card refetches from
 // scratch each time and visibly pops in a beat late. Seeding initial state from
@@ -121,7 +131,7 @@ function fmtBnbWei(wei: string | undefined, maxFrac = 6): string {
 // wallet switch / lock: after a switch the authoritative address (from
 // useBscWallet) differs, and we drop any cache that doesn't match it instead of
 // showing the previous wallet's BNB address + balance.
-let bnbCache: { addr: string; wei: string } | null = null;
+let bnbCache: { addr: string; wei: string; reserveWei?: string } | null = null;
 let bnbMidCache: number | null = null;
 
 export function Home({
@@ -156,7 +166,7 @@ export function Home({
   // The user's BNB lives at an in-wallet BSC address. Surface it as a first-class
   // asset so funded BNB is never invisible (a newcomer who deposits BNB and then
   // can't see it assumes their money is gone). No-ops when swap isn't configured.
-  const [bnb, setBnb] = useState<{ addr: string; wei: string } | null>(bnbCache);
+  const [bnb, setBnb] = useState<{ addr: string; wei: string; reserveWei?: string } | null>(bnbCache);
   // Pool mid price (BNB per EXFER) — lets us derive an implied BNB/USD value
   // (EXFER/USD ÷ BNB-per-EXFER) so the BNB card can show ≈$ like every other row.
   const [bnbMid, setBnbMid] = useState<number | null>(bnbMidCache);
@@ -167,7 +177,34 @@ export function Home({
   const [bnbWithdraw, setBnbWithdraw] = useState(false);
   const [wto, setWto] = useState("");
   const [wamt, setWamt] = useState("");
+  // True while the amount field holds the auto-computed "send everything" value.
+  // We then send "max" (walletd sweeps from the live balance) rather than the
+  // shown estimate, and keep the displayed figure in sync as the balance polls.
+  const [wamtMax, setWamtMax] = useState(false);
   const [wbusy, setWbusy] = useState(false);
+
+  // Wei the wallet holds back for gas on a full sweep (live, from walletd), and
+  // the resulting "send everything" amount = balance − reserve. Both are bigint
+  // | null so the form can hide the fee preview until the figures are known.
+  const reserveWei = useMemo(() => {
+    try { return bnb?.reserveWei ? BigInt(bnb.reserveWei) : null; } catch { return null; }
+  }, [bnb?.reserveWei]);
+  const maxSendWei = useMemo(() => {
+    if (!bnb || reserveWei == null) return null;
+    try {
+      const bal = BigInt(bnb.wei);
+      return bal > reserveWei ? bal - reserveWei : 0n;
+    } catch { return null; }
+  }, [bnb?.wei, reserveWei]);
+
+  // Keep the auto-filled "全部" amount fresh as the balance re-polls.
+  useEffect(() => {
+    if (wamtMax && maxSendWei != null) setWamt(weiToBnbAmount(maxSendWei));
+  }, [wamtMax, maxSendWei]);
+
+  const wAddrValid = /^0x[0-9a-fA-F]{40}$/.test(wto.trim());
+  const wAmtNum = Number.parseFloat(wamt);
+  const wAmtPositive = Number.isFinite(wAmtNum) && wAmtNum > 0;
 
   async function withdrawBnb() {
     const to = wto.trim();
@@ -182,13 +219,16 @@ export function Home({
     }
     setWbusy(true);
     try {
-      // Empty/"max" → walletd sends the whole balance minus a gas reserve.
-      const amount = wamt.trim();
+      // In "全部" mode send the literal "max" so walletd sweeps from the live
+      // balance (the shown figure is an estimate); otherwise send the typed
+      // amount verbatim — what the user sees is what's sent.
+      const amount = wamtMax ? "max" : wamt.trim();
       const r = await rpc<{ txhash: string }>("bsc_send_bnb", { to, amount });
       toast.success(t("home.wdSent"), shortAddress(r.txhash));
       setBnbWithdraw(false);
       setWto("");
       setWamt("");
+      setWamtMax(false);
     } catch (e) {
       toast.error(t("home.wdFailed"), humanizeError(e));
     } finally {
@@ -207,8 +247,8 @@ export function Home({
     let cancelled = false;
     const load = async () => {
       try {
-        const b = await rpc<{ bnb_wei: string }>("bsc_get_balances");
-        bnbCache = { addr: bscAddr, wei: b.bnb_wei };
+        const b = await rpc<{ bnb_wei: string; gas_reserve_wei?: string }>("bsc_get_balances");
+        bnbCache = { addr: bscAddr, wei: b.bnb_wei, reserveWei: b.gas_reserve_wei };
         if (!cancelled) setBnb(bnbCache);
         try {
           const p = await rpc<{ mid_price_bnb_per_exfer: number | null }>("swap_pool_info");
@@ -783,44 +823,92 @@ export function Home({
           onClose={() => { setDepositOpen(false); setBnbWithdraw(false); }}
         >
           {bnbWithdraw ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "2px 0" }}>
-              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
-                {t("home.bnbBalanceLabel")}: <b>{fmtBnbWei(bnb.wei)} BNB</b>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "2px 0" }}>
+              {/* Balance hero — the big figure a sender checks first. */}
+              <div className="quote-card" style={{ margin: 0 }}>
+                <div className="quote-label">{t("home.wdAvail")}</div>
+                <div className="quote-figure">
+                  {fmtBnbWei(bnb.wei)} <span className="quote-unit">BNB</span>
+                </div>
               </div>
-              <label className="eyebrow">{t("home.wdTo")}</label>
-              <input
-                className="field mono"
-                placeholder="0x…"
-                value={wto}
-                onChange={(e) => setWto(e.target.value)}
-                style={{ fontSize: 13 }}
-              />
-              <label className="eyebrow">{t("home.wdAmount")}</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  className="field"
-                  inputMode="decimal"
-                  placeholder="0.0"
-                  value={wamt}
-                  onChange={(e) => setWamt(e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>BNB</span>
-                <button
-                  className="btn-ghost btn-sm"
-                  style={{ padding: "4px 10px", color: "var(--accent)" }}
-                  onClick={() => setWamt("max")}
-                >
-                  {t("snd.max")}
-                </button>
+
+              {/* Destination address with an inline validity check. */}
+              <div>
+                <label className="field-label">{t("home.wdTo")}</label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    className="field mono"
+                    placeholder="0x…"
+                    value={wto}
+                    onChange={(e) => setWto(e.target.value)}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    style={{ paddingRight: 42 }}
+                  />
+                  {wAddrValid && (
+                    <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "#34d399", display: "flex" }}>
+                      <Icon name="check" size={18} stroke={2.4} />
+                    </span>
+                  )}
+                </div>
+                {wto.trim() !== "" && !wAddrValid && (
+                  <div className="field-help" style={{ color: "#fca5a5" }}>{t("home.wdBadAddr")}</div>
+                )}
               </div>
-              <div className="banner banner-info" style={{ fontSize: 12, lineHeight: 1.5 }}>
+
+              {/* Amount — a large figure on an inset leg with a tappable 全部 pill. */}
+              <div>
+                <label className="field-label">{t("home.wdAmount")}</label>
+                <div className="swap-leg" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input
+                    className="swap-amount"
+                    inputMode="decimal"
+                    placeholder="0.0"
+                    value={wamt}
+                    onChange={(e) => { setWamt(e.target.value); setWamtMax(false); }}
+                  />
+                  <span style={{ color: "var(--text-faint)", fontWeight: 600, fontSize: 15 }}>BNB</span>
+                  <button
+                    type="button"
+                    className={`pill ${wamtMax ? "pill-accent" : "pill-muted"}`}
+                    disabled={maxSendWei == null}
+                    onClick={() => {
+                      if (maxSendWei == null) return;
+                      setWamt(weiToBnbAmount(maxSendWei));
+                      setWamtMax(true);
+                    }}
+                    style={{ border: 0, padding: "6px 13px", fontSize: 12.5, cursor: maxSendWei == null ? "not-allowed" : "pointer" }}
+                  >
+                    {t("snd.max")}
+                  </button>
+                </div>
+              </div>
+
+              {/* Fee preview — only once an amount and the live reserve are known. */}
+              {wAmtPositive && reserveWei != null && (
+                <div className="quote-card" style={{ margin: 0 }}>
+                  <div className="quote-detail quote-detail-bare">
+                    <div className="quote-row">
+                      <span className="quote-row-k">{t("home.wdReceive")}</span>
+                      <span className="quote-row-v">{wamtMax ? "≈ " : ""}{wamt} <small>BNB</small></span>
+                    </div>
+                    <div className="quote-row">
+                      <span className="quote-row-k">{t("home.wdFeeReserve")}</span>
+                      <span className="quote-row-v">≈ {fmtBnbWei(bnb.reserveWei)} <small>BNB</small></span>
+                    </div>
+                  </div>
+                  <div className="field-help" style={{ marginTop: 10 }}>{t("home.wdFeeNote")}</div>
+                </div>
+              )}
+
+              <div className="banner banner-info" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
                 {t("home.wdNote")}
               </div>
-              <button className="btn btn-block" disabled={wbusy || !wto.trim()} onClick={withdrawBnb}>
+              <button className="btn btn-block" disabled={wbusy || !wAddrValid || !wAmtPositive} onClick={withdrawBnb}>
                 {wbusy ? <Spinner /> : t("home.wdSend")}
               </button>
-              <button className="btn-ghost btn-block" onClick={() => setBnbWithdraw(false)}>
+              <button className="btn-ghost btn-block" onClick={() => { setBnbWithdraw(false); setWamtMax(false); }}>
                 {t("home.wdBackDeposit")}
               </button>
             </div>

@@ -39,7 +39,7 @@ tokio-util         = { version = "0.7", features = ["rt"] }
 
 # The embedded walletd. Pinned to the swap-engine commit on main (ahead of the
 # last release tag); cut a v1.13.0 tag and switch back to `tag = ...` for prod.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "5b5d93a" }
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "080c28d5a903052aaa9a8efd20da03fcf747b3f4" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables
