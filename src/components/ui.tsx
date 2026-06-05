@@ -10,6 +10,7 @@ import {
 import { Icon } from "../lib/icons";
 import { avatarData, AVATAR_GRID } from "../lib/format";
 import { useToast } from "../lib/toast";
+import { copyText } from "../lib/clipboard";
 
 /* ── status bar ─────────────────────────────────────────────────── */
 function clock(): string {
@@ -142,10 +143,15 @@ export function CopyButton({
   const [done, setDone] = useState(false);
   function copy(e: React.MouseEvent) {
     e.stopPropagation();
-    navigator.clipboard?.writeText(text).catch(() => {});
-    setDone(true);
-    if (toast) toasts.success("Copied", label ?? "Copied to clipboard");
-    window.setTimeout(() => setDone(false), 1300);
+    void copyText(text).then((ok) => {
+      if (!ok) {
+        toasts.error("Couldn't copy", "Select the text and copy manually");
+        return;
+      }
+      setDone(true);
+      if (toast) toasts.success("Copied", label ?? "Copied to clipboard");
+      window.setTimeout(() => setDone(false), 1300);
+    });
   }
   return (
     <button

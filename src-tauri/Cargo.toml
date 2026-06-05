@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.5"
+version     = "1.0.6"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -23,6 +23,11 @@ tauri-plugin-dialog = "2"
 # Open the release .apk URL in the system browser for in-app updates — the
 # mobile WebView's window.open is a no-op, which forced a copy-link fallback.
 tauri-plugin-opener = "2"
+# Native clipboard. The web Clipboard API (navigator.clipboard) is undefined in
+# the Android WebView's non-secure-context (tauri://), so every copy button —
+# including the recovery-phrase / private-key export — silently no-op'd. This
+# plugin copies natively on Android/iOS/desktop.
+tauri-plugin-clipboard-manager = "2"
 # Filesystem read/write. Works on all targets (desktop + mobile); the
 # JS side does the actual file I/O so export/import works on iOS + Android
 # where dialog.save() is unavailable.

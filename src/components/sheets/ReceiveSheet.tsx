@@ -1,6 +1,7 @@
 // Receive — pick an address, show QR + full address, copy/share.
 
 import { useState } from "react";
+import { copyText } from "../../lib/clipboard";
 import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
@@ -31,7 +32,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
     if (nav.share) {
       nav.share({ title: t("rcv.shareTitle"), text: selected }).catch(() => {});
     } else {
-      navigator.clipboard?.writeText(selected);
+      copyText(selected);
       toast.success(t("sheet.copied"), t("rcv.shareToast"));
     }
   }

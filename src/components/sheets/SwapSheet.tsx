@@ -11,6 +11,7 @@
 // preimage and seals the journal — too costly to run on every input change.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { copyText } from "../../lib/clipboard";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc, formatBalanceCompact, splitBalanceCompact } from "../../lib/rpc";
@@ -815,7 +816,7 @@ export function SwapSheet({
       await openUrl(url);
     } catch {
       try { window.open(url, "_blank", "noopener"); }
-      catch { navigator.clipboard?.writeText("support@exfer.dev"); toast.info(t("act.explorerCopied"), "support@exfer.dev"); }
+      catch { copyText("support@exfer.dev"); toast.info(t("act.explorerCopied"), "support@exfer.dev"); }
     }
   }, [toast, t]);
 
@@ -1658,7 +1659,7 @@ function openTxRef(
   try {
     window.open(url, "_blank", "noopener");
   } catch {
-    navigator.clipboard?.writeText(url);
+    copyText(url);
     onCopied(url);
   }
 }
@@ -1720,7 +1721,7 @@ function SwapIdHelp({
     <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
       <button
         type="button"
-        onClick={() => { navigator.clipboard?.writeText(swapId); onCopied(swapId); }}
+        onClick={() => { copyText(swapId); onCopied(swapId); }}
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           background: "var(--surface-2)", border: 0, borderRadius: 10,

@@ -8,6 +8,7 @@
 // per IP — fine for a per-device check; we also cache the result for an hour.
 
 import { invoke } from "@tauri-apps/api/core";
+import { copyText } from "./clipboard";
 import { useEffect, useState } from "react";
 import { devmock } from "./devmock";
 
@@ -135,7 +136,7 @@ export async function openDownload(release: LatestRelease): Promise<boolean> {
     /* fall through to clipboard */
   }
   try {
-    await navigator.clipboard?.writeText(url);
+    await copyText(url);
   } catch {
     /* ignore */
   }

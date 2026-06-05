@@ -6,6 +6,7 @@
 // tx id + explorer link. See lib/activity.ts for the merge model.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { copyText } from "../lib/clipboard";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
@@ -443,7 +444,7 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
     try {
       window.open(url, "_blank", "noopener");
     } catch {
-      navigator.clipboard?.writeText(url);
+      copyText(url);
       toast.info(t("act.explorerCopied"), url);
     }
   }
@@ -667,7 +668,7 @@ function TxSheet({
     try {
       window.open(url, "_blank", "noopener");
     } catch {
-      navigator.clipboard?.writeText(url);
+      copyText(url);
       toast.info(t("act.explorerCopied"), url);
     }
   }
@@ -715,7 +716,7 @@ function TxSheet({
       try {
         window.open(url, "_blank", "noopener");
       } catch {
-        navigator.clipboard?.writeText(url);
+        copyText(url);
         toast.info(t("act.explorerCopied"), url);
       }
     };

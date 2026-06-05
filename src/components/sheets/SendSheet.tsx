@@ -2,6 +2,7 @@
 // and a receipt screen. Wired to simulate_transfer / transfer.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { pasteText } from "../../lib/clipboard";
 import { Icon } from "../../lib/icons";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
@@ -710,7 +711,7 @@ export function SendSheet({
                     style={{ flex: 1 }}
                     onClick={async () => {
                       try {
-                        const t = await navigator.clipboard.readText();
+                        const t = await pasteText();
                         if (t) setOut(i, { to: t.trim() });
                       } catch {
                         /* clipboard blocked — user can still type/scan */

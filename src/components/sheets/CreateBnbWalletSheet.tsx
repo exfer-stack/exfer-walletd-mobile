@@ -10,6 +10,7 @@
 // BIP-39 phrase via bsc_import_mnemonic. Both MetaMask-compatible.
 
 import { useState } from "react";
+import { copyText } from "../../lib/clipboard";
 import { Modal, Field, Spinner, CopyButton } from "../ui";
 import { Icon } from "../../lib/icons";
 import { useToast } from "../../lib/toast";
@@ -192,7 +193,7 @@ function GeneratePane({
         <button
           className="btn btn-secondary btn-sm"
           onClick={() => {
-            navigator.clipboard?.writeText(result.words.join(" "));
+            copyText(result.words.join(" "));
             toast.success(t("bnb.copied"));
           }}
         >

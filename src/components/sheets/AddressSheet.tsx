@@ -2,6 +2,7 @@
 // delete (with funds guard). Wired to walletd via rpc + exportWalletKey.
 
 import { useEffect, useState } from "react";
+import { copyText } from "../../lib/clipboard";
 import { Icon } from "../../lib/icons";
 import { MnemonicHelp } from "../MnemonicHelp";
 import { useWallet } from "../../lib/wallet";
@@ -185,7 +186,7 @@ export function AddressSheet({
               icon: "copy",
               label: t("adr.menuCopy"),
               onClick: () => {
-                navigator.clipboard?.writeText(address);
+                copyText(address);
                 toast.success(t("sheet.copied"));
                 setMenu(false);
               },
@@ -372,7 +373,7 @@ function RecoveryPhraseModal({
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => {
-                navigator.clipboard?.writeText(words.join(" "));
+                copyText(words.join(" "));
                 toast.success(t("adr.rpCopied"));
               }}
             >
