@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.4"
+version     = "1.0.5"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -85,3 +85,15 @@ keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
+
+# Shrink the release binary / native libs. The embedded walletd pulls in alloy +
+# rustls + reqwest + secp256k1, so the per-ABI .so is large and ships ×ABIs in
+# the APK. strip drops debug symbols (the biggest single win); opt-level "s" +
+# fat LTO + one codegen unit trade build time for size. panic is left as unwind
+# on purpose — the walletd daemon relies on catch_unwind to survive a panicking
+# request instead of taking the whole app down.
+[profile.release]
+strip = true
+opt-level = "s"
+lto = true
+codegen-units = 1

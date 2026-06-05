@@ -131,7 +131,11 @@ jobs:
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          # arm64 + armv7 only. x86/x86_64 Android targets are emulator/Chromebook
+          # niche — dropping them halves the native libs in the universal .apk/.aab
+          # with no impact on real phones. (Kept as ONE universal apk so the
+          # in-app update check, which picks the single *.apk asset, still works.)
+          targets: aarch64-linux-android,armv7-linux-androideabi
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
