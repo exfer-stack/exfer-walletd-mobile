@@ -315,7 +315,7 @@ export function Modal({
           // Clear the status bar + nav bar so a tall modal never tucks under
           // them; the card is capped to this padded area and scrolls inside.
           padding:
-            "calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))",
+            "calc(20px + var(--safe-top)) 20px calc(20px + env(safe-area-inset-bottom))",
           pointerEvents: "none",
         }}
       >

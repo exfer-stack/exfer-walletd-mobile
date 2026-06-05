@@ -13,6 +13,10 @@
   --radius-sm: 14px;
   --radius-lg: 28px;
   --ease: cubic-bezier(.22,.61,.36,1);
+  /* Cap the top safe-area inset: some Android ROMs (e.g. Huawei/HarmonyOS) over-report
+     env(safe-area-inset-top) and shove the whole UI a third of the way down. A real
+     status bar / notch is <=48px. */
+  --safe-top: min(env(safe-area-inset-top), 48px);
   font-family: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -145,7 +149,7 @@ body {
 .screen::-webkit-scrollbar { width: 0; height: 0; }
 /* Top pad clears the device status bar / notch (we no longer draw a fake
    one — the OS provides it). */
-.screen-pad { padding: calc(env(safe-area-inset-top) + 10px) 20px 28px; }
+.screen-pad { padding: calc(var(--safe-top) + 10px) 20px 28px; }
 
 /* ── bottom tab bar ─────────────────────────────────────────────── */
 .tabbar {

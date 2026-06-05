@@ -159,7 +159,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
             display: "flex",
             flexDirection: "column",
             minHeight: "100%",
-            paddingTop: "calc(env(safe-area-inset-top) + 48px)",
+            paddingTop: "calc(var(--safe-top) + 48px)",
           }}
         >
           <div className="title-xl" style={{ textAlign: "center", marginBottom: 8 }}>
@@ -224,7 +224,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           // Clear the status bar: include the safe-area inset (a flat
           // paddingTop overrode .screen-pad's env() and crammed the
           // segmented control under the clock/signal icons).
-          paddingTop: "calc(env(safe-area-inset-top) + 24px)",
+          paddingTop: "calc(var(--safe-top) + 24px)",
         }}
       >
         <div
