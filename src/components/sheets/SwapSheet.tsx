@@ -983,7 +983,7 @@ export function SwapSheet({
             card with a circular ⇅ between them. Tapping ⇅ flips direction while
             keeping the typed amount and the selected address. EXFER / BNB are
             token chips, not verbs. */}
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 7, marginBottom: 14 }}>
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
           <div className="swap-leg" style={needsFunding ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
             <span className="eyebrow">{t("swap.youPay")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
@@ -1025,23 +1025,27 @@ export function SwapSheet({
             )}
           </div>
 
-          {/* Centered reverse button, overlapping the gap between the two legs. */}
-          <button
-            type="button"
-            aria-label={t("swap.reverse")}
-            onClick={reverse}
-            style={{
-              position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-              width: 38, height: 38, borderRadius: 999, zIndex: 2,
-              display: "grid", placeItems: "center", cursor: "pointer",
-              background: "var(--elevated)", border: "1px solid var(--border)",
-              color: "var(--text)", boxShadow: "var(--shadow)",
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 4v14M7 4L4 7M7 4l3 3M17 20V6m0 14l3-3m-3 3l-3-3" />
-            </svg>
-          </button>
+          {/* Reverse — sewn onto the seam between the two cards: a zero-height row
+              so the cards stay tight together (just the 4px gap), with the button
+              centered ON the seam line, straddling both edges. */}
+          <div style={{ position: "relative", height: 0, zIndex: 2 }}>
+            <button
+              type="button"
+              aria-label={t("swap.reverse")}
+              onClick={reverse}
+              style={{
+                position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+                width: 30, height: 30, borderRadius: 999,
+                display: "grid", placeItems: "center", cursor: "pointer",
+                background: "var(--elevated)", border: "1px solid var(--border)",
+                color: "var(--text)", boxShadow: "var(--shadow)",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 4v14M7 4L4 7M7 4l3 3M17 20V6m0 14l3-3m-3 3l-3-3" />
+              </svg>
+            </button>
+          </div>
 
           <div className="swap-leg">
             <span className="eyebrow">{t("swap.youReceiveEst")}</span>
