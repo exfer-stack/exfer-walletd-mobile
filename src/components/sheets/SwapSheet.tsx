@@ -508,7 +508,13 @@ export function SwapSheet({
   // sendBal is in smallest units (1e8/EXFER); the % chips + Max work in HUMAN
   // EXFER, so convert. (This was the "25% set 28,750,000,000" bug — the chips
   // were taking a percentage of the raw unit count.)
-  const payMax = sell ? sendBal / 1e8 : buyMax;
+  // Sell-side Max holds back a little EXFER for the lock transaction's OWN fee.
+  // Paying out the entire balance left nothing to cover it, so the lock couldn't
+  // be built and Max read as "insufficient fee" (EXFER fees are tiny at
+  // FEE_RATE=1, so 0.05 is a generous-but-negligible cushion). Buy-side already
+  // holds back BNB gas via buyMax.
+  const SELL_FEE_HOLD_EXFER = 0.05;
+  const payMax = sell ? Math.max(0, sendBal / 1e8 - SELL_FEE_HOLD_EXFER) : buyMax;
 
   // ── Money everywhere (item [5]) ──
   // Live USD value of the typed input and the estimated output, so the user can
@@ -1019,9 +1025,12 @@ export function SwapSheet({
             </div>
             {/* 25/50/75/Max quick-fill chips, both directions (item [19]). */}
             <PercentChips max={payMax} onPick={(v) => { setEditSide("pay"); setAmount(sigFmt(v, 8)); }} t={t} />
-            {/* Caption the buy-Max gas hold-back so it doesn't look like a shortfall. */}
+            {/* Caption the Max hold-back so it doesn't look like a shortfall. */}
             {!sell && buyMax > 0 && (
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>{t("swap.maxGasHold")}</div>
+            )}
+            {sell && payMax > 0 && (
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>{t("swap.maxFeeHoldExfer")}</div>
             )}
           </div>
 

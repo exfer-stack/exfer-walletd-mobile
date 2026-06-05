@@ -684,6 +684,7 @@ const EN = {
   "swap.impactMoney": "You'd get ~{got} {unit} instead of ~{ideal} — about ${less} less.",
   "swap.pctMax": "{pct}%",
   "swap.maxGasHold": "Max keeps ~0.0005 BNB for the network fee.",
+  "swap.maxFeeHoldExfer": "Max keeps a little EXFER for the network fee.",
   // [3] Cross-network deposit warning (amber banner under the BNB address).
   "swap.fundOnlyBnb": "Send only on BNB Smart Chain (BEP20)",
   "swap.fundOnlyBnbBody": "Coins sent on any other network (Ethereum / ERC20, Polygon, opBNB) are lost and can't be recovered.",
@@ -1375,6 +1376,7 @@ const ZH: Record<MsgKey, string> = {
   "swap.impactMoney": "你会拿到约 {got} {unit},而非约 {ideal}——少约 ${less}。",
   "swap.pctMax": "{pct}%",
   "swap.maxGasHold": "已保留约 0.0005 BNB 作网络费。",
+  "swap.maxFeeHoldExfer": "已保留少量 EXFER 作网络费。",
   // [3] 跨网充值警告
   "swap.fundOnlyBnb": "只走 BNB 智能链(BEP20)网络充值",
   "swap.fundOnlyBnbBody": "走其他网络(以太坊 / ERC20、Polygon、opBNB)的币会丢失,无法找回。",
