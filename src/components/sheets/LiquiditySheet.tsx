@@ -545,12 +545,30 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
             <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("lp.posElsewhereSub")}</div>
           </div>
         ) : (
-          <div className="quote-card" style={{ textAlign: "center", padding: "26px 18px" }}>
-            <div style={{ width: 46, height: 46, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--accent)" }}>
-              <Icon name="spark" size={22} />
+          <div className="quote-card" style={{ textAlign: "center", padding: "30px 18px 24px" }}>
+            {/* Paired-coin hero — the pool's two assets, EXFER + BNB, overlapping
+                like every LP pair. Gives the empty state an identity (and a reason
+                to want in) instead of a lone generic icon. */}
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                {/* Raw coin marks, overlapped — no wrapper disc (that left a ring
+                    of card-bg around the EXFER coin that read as a seam). EXFER
+                    sits in front; its own thin ring cleanly cuts over the BNB. */}
+                <span style={{ position: "relative", zIndex: 2, display: "inline-grid", filter: "drop-shadow(0 3px 8px rgba(0,0,0,.4))" }}>
+                  <ExferMark size={58} />
+                </span>
+                <span style={{ position: "relative", zIndex: 1, marginLeft: -16, display: "inline-grid", filter: "drop-shadow(0 3px 8px rgba(0,0,0,.4))" }}>
+                  <BnbMark size={58} />
+                </span>
+              </span>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{t("lp.emptyHeading")}</div>
-            <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 5, lineHeight: 1.5 }}>{t("lp.emptySub")}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".07em", color: "var(--text-faint)" }}>EXFER · BNB</div>
+            <div style={{ fontSize: 16.5, fontWeight: 700, marginTop: 8 }}>{t("lp.emptyHeading")}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 6, lineHeight: 1.55, maxWidth: 290, marginLeft: "auto", marginRight: "auto" }}>{t("lp.emptySub")}</div>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 16, padding: "8px 15px", borderRadius: 999, background: "color-mix(in srgb, var(--accent) 15%, transparent)", color: "var(--accent)", fontSize: 13, fontWeight: 700 }}>
+              <Icon name="spark" size={14} stroke={2.4} />
+              {t("lp.earnPill")}
+            </span>
           </div>
         )}
 

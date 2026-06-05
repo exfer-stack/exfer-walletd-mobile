@@ -376,7 +376,10 @@ export function SwapSheet({
     if (sell || !bscBal) return 0;
     let bnbHuman = 0;
     try { bnbHuman = Number(BigInt(bscBal.bnb)) / 1e18; } catch { return 0; }
-    const GAS_RESERVE = 0.002; // ample for a BSC HTLC lock (gas is ~0.0001 BNB)
+    // Keep back a little for the lock tx's gas (BNB is the gas token). 0.0005 is
+    // ~5× a BSC HTLC lock (~0.0001 BNB) — enough headroom, but small enough that
+    // a modestly-funded wallet still gets a Max button (0.002 hid it too often).
+    const GAS_RESERVE = 0.0005;
     return Math.max(0, bnbHuman - GAS_RESERVE);
   })();
 
