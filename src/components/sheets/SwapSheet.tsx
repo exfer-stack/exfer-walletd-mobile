@@ -409,6 +409,25 @@ export function SwapSheet({
     }
     return sell ? a * poolInfo.mid : a / poolInfo.mid;
   })();
+  // Net of the pool's network fee — what actually ARRIVES — so the step-1
+  // "You receive" matches the review (which deducts it). Without this, the form
+  // showed the gross output and the review then dropped ~5× for a small swap.
+  const estNetFee = quote?.network_fee_bnb && Number(quote.network_fee_bnb) > 0 ? Number(quote.network_fee_bnb) : 0.0002;
+  const estOutNet = (() => {
+    if (estOut == null) return null;
+    if (sell) return Math.max(0, estOut - estNetFee); // BNB out, minus the fee
+    // Buy: the pool prices EXFER on (BNB in − fee); re-derive on the net input.
+    const a = Number(amount);
+    if (!poolInfo || !isFinite(a)) return estOut;
+    const net = a - estNetFee;
+    if (net <= 0) return 0;
+    const ri = poolInfo.bnbReserve, ro = poolInfo.exferReserve;
+    if (ri > 0 && ro > 0) {
+      const inWithFee = (net * (10_000 - poolInfo.feeBps)) / 10_000;
+      return (inWithFee * ro) / (ri + inWithFee);
+    }
+    return net / poolInfo.mid;
+  })();
   // Effective per-EXFER rate for THIS trade (BNB per 1 EXFER), derived from the
   // slippage-aware estimate so it moves as the amount changes. Sell pays out BNB
   // for EXFER (out/in); buy spends BNB for EXFER (in/out).
@@ -461,19 +480,25 @@ export function SwapSheet({
 
   // Spendable ceiling in the pay unit, for the 25/50/75/Max chips (item [19]).
   // Sell: the address's EXFER balance (human). Buy: buyMax (BNB less gas hold).
-  const payMax = sell ? sendBal : buyMax;
+  // sendBal is in smallest units (1e8/EXFER); the % chips + Max work in HUMAN
+  // EXFER, so convert. (This was the "25% set 28,750,000,000" bug — the chips
+  // were taking a percentage of the raw unit count.)
+  const payMax = sell ? sendBal / 1e8 : buyMax;
 
   // ── Money everywhere (item [5]) ──
   // Live USD value of the typed input and the estimated output, so the user can
   // see "I'm sending $X / getting $Y" before committing.
+  // Value each leg at MARKET price (EXFER at the market mid, BNB at spot), and
+  // the receive side at the NET output (estOutNet), so "send $X / get $Y" is
+  // honest and matches the review — the X−Y gap is the fees.
   const sendUsd = (() => {
     const a = Number(amount);
     if (!amountValid || !isFinite(a)) return null;
-    return sell ? (effUsd != null ? a * effUsd : null) : (bnbUsd != null ? a * bnbUsd : null);
+    return sell ? (exferUsd != null ? a * exferUsd : null) : (bnbUsd != null ? a * bnbUsd : null);
   })();
   const recvUsd = (() => {
-    if (estOut == null) return null;
-    return sell ? (bnbUsd != null ? estOut * bnbUsd : null) : (effUsd != null ? estOut * effUsd : null);
+    if (estOutNet == null) return null;
+    return sell ? (bnbUsd != null ? estOutNet * bnbUsd : null) : (exferUsd != null ? estOutNet * exferUsd : null);
   })();
 
   // ── Client-side minimum (item [6]) ──
@@ -485,10 +510,12 @@ export function SwapSheet({
   const netFeeBnb = (() => {
     const q = quote?.network_fee_bnb;
     if (q && Number(q) > 0) return Number(q);
-    return 0.0003; // ~a BSC HTLC settlement; only a hint until a real quote lands
+    return 0.0002; // matches the pool's default SWAP_GAS_FEE_BNB until a quote lands
   })();
-  // Require the output to clear ~3× the network fee so the user nets something.
-  const minOutBnb = netFeeBnb * 3;
+  // The pool accepts any trade whose output exceeds the network fee. Mirror that
+  // (with a small buffer for the AMM/30bps gap so we don't allow something the
+  // pool then 400s) rather than a heavy 3× margin that blocked legit small swaps.
+  const minOutBnb = netFeeBnb * 1.2;
   const minAmount = (() => {
     if (!poolInfo || poolInfo.mid <= 0) return 0;
     // Convert the BNB output floor back to the input unit at the mid rate.
@@ -991,8 +1018,8 @@ export function SwapSheet({
             <span className="eyebrow">{t("swap.youReceiveEst")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums", color: estOut != null ? "var(--text)" : "var(--text-faint)" }}>
-                  {estOut != null ? sigFmt(estOut, 6) : "0.0"}
+                <span style={{ display: "block", fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums", color: estOutNet != null ? "var(--text)" : "var(--text-faint)" }}>
+                  {estOutNet != null ? sigFmt(estOutNet, 6) : "0.0"}
                 </span>
                 {/* Live USD value of the estimated output (item [5]). */}
                 <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2, minHeight: 16 }}>
@@ -1009,62 +1036,36 @@ export function SwapSheet({
             line. Each value appears once: before an amount is typed it's the
             EXFER price (USD figure, BNB rate beneath); after, it's the estimated
             output (figure) with its USD value beneath. */}
-        {poolInfo && (
+        {/* Price + impact for the typed trade only. The standalone "EXFER price"
+            card (shown before any amount) was redundant — the price is on the
+            Swap tab and previewed live here — so it's gone. */}
+        {poolInfo && estOut != null && (
           <div className="quote-card" style={belowMin ? { opacity: 0.45 } : undefined}>
-            {estOut != null ? (
-              <>
-                {/* The estimated output figure lives in the "You receive" card
-                    above; here we keep the effective unit price (Price, in USD)
-                    and price impact with a plain-language "?". Network/liquidity
-                    fees are consolidated into the Fees disclosure below the card
-                    (item [4]), so they read identically on review. */}
-                <div className="quote-detail quote-detail-bare">
-                  <div className="quote-row">
-                    <span className="quote-row-k">{t("swap.priceLabel")}</span>
-                    <span className="quote-row-v">
-                      {effUsd != null ? `$${sigFmt(effUsd, 4)}` : `${sigFmt(effRate ?? poolInfo.mid)} BNB`}
-                      <small>/ EXFER</small>
-                    </span>
-                  </div>
-                  {priceImpact > 0 && (
-                    <div className="quote-row">
-                      <span className="quote-row-k" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        {t("swap.priceImpact")}
-                        <HelpDot open={impactHelpOpen} onClick={() => setImpactHelpOpen((o) => !o)} />
-                      </span>
-                      <span className="quote-row-v" style={{ color: impactColor(priceImpact, highImpact) }}>
-                        {(priceImpact * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                  )}
-                  {impactHelpOpen && priceImpact > 0 && (
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, padding: "0 2px 2px" }}>
-                      {t("swap.impactHelp")}
-                    </div>
-                  )}
+            <div className="quote-detail quote-detail-bare">
+              <div className="quote-row">
+                <span className="quote-row-k">{t("swap.priceLabel")}</span>
+                <span className="quote-row-v">
+                  {effUsd != null ? `$${sigFmt(effUsd, 4)}` : `${sigFmt(effRate ?? poolInfo.mid)} BNB`}
+                  <small>/ EXFER</small>
+                </span>
+              </div>
+              {priceImpact > 0 && (
+                <div className="quote-row">
+                  <span className="quote-row-k" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {t("swap.priceImpact")}
+                    <HelpDot open={impactHelpOpen} onClick={() => setImpactHelpOpen((o) => !o)} />
+                  </span>
+                  <span className="quote-row-v" style={{ color: impactColor(priceImpact, highImpact) }}>
+                    {(priceImpact * 100).toFixed(2)}%
+                  </span>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="quote-label">{t("swap.priceTitle")}</div>
-                {exferUsd != null ? (
-                  <>
-                    <div className="quote-figure">
-                      <span className="quote-cur">$</span>
-                      {sigFmt(exferUsd, 4)}
-                      <span className="quote-per">{t("swap.perExfer")}</span>
-                    </div>
-                    <div className="quote-sub">≈ {sigFmt(poolInfo.mid)} BNB</div>
-                  </>
-                ) : (
-                  <div className="quote-figure">
-                    {sigFmt(poolInfo.mid, 4)}
-                    <span className="quote-unit">BNB</span>
-                    <span className="quote-per">{t("swap.perExfer")}</span>
-                  </div>
-                )}
-              </>
-            )}
+              )}
+              {impactHelpOpen && priceImpact > 0 && (
+                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, padding: "0 2px 2px" }}>
+                  {t("swap.impactHelp")}
+                </div>
+              )}
+            </div>
           </div>
         )}
         {/* ONE consolidated fee disclosure (item [4]) — identical here and on
@@ -1164,9 +1165,12 @@ export function SwapSheet({
     // pays BNB out per EXFER in (qRate); buy spends BNB in per EXFER out (1/qRate).
     const qBnbPerExfer = qRate == null ? null : sell ? qRate : 1 / qRate;
     const qExferUsd = qBnbPerExfer != null && bnbUsd != null ? qBnbPerExfer * bnbUsd : effUsd;
-    // USD totals for each side (item [5]).
-    const sendUsdR = sell ? (qExferUsd != null ? qIn * qExferUsd : null) : (bnbUsd != null ? qIn * bnbUsd : null);
-    const recvUsdR = sell ? (bnbUsd != null ? qOut * bnbUsd : null) : (qExferUsd != null ? qOut * qExferUsd : null);
+    // USD totals — value each leg at its MARKET price (EXFER at the market mid,
+    // BNB at spot), NOT the post-fee effective rate. The gap between the two is
+    // the fees (shown below). Using the effective rate made "You send 145 EXFER"
+    // read its post-fee value ($0.028) instead of its real ~$0.15 market worth.
+    const sendUsdR = sell ? (exferUsd != null ? qIn * exferUsd : null) : (bnbUsd != null ? qIn * bnbUsd : null);
+    const recvUsdR = sell ? (bnbUsd != null ? qOut * bnbUsd : null) : (exferUsd != null ? qOut * exferUsd : null);
     // Fees total in USD, mirroring step-1 (item [4]).
     const liqFeeUsdR = sendUsdR != null && typeof quote.fee_bps === "number" ? sendUsdR * (quote.fee_bps / 10_000) : (sendUsdR != null && poolInfo ? sendUsdR * (poolInfo.feeBps / 10_000) : null);
     const impactUsdR = sendUsdR != null && priceImpact > 0 ? sendUsdR * priceImpact : null;
@@ -1196,23 +1200,12 @@ export function SwapSheet({
           <Row label={t("swap.youSend")} value={`${fmtAmt(quote.amount_in)} ${sendUnit}${sendUsdStr ? ` ($${sendUsdStr})` : ""}`} />
           <Row label={t("swap.youReceive")} value={`${fmtAmt(quote.amount_out)} ${recvUnit}${recvUsdStr ? ` ($${recvUsdStr})` : ""}`} strong />
 
-          {/* Minimum received — the firm-HTLC guarantee, not a slippage floor.
-              amount_out IS what arrives, or it's refunded (item [1]). */}
-          <div className="banner" style={{ background: "color-mix(in srgb, #34d399 12%, transparent)", border: "1px solid color-mix(in srgb, #34d399 30%, transparent)", borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{t("swap.minReceived")}</span>
-              <span style={{ fontSize: 15, fontWeight: 700 }}>{fmtAmt(quote.amount_out)} {recvUnit}</span>
-            </span>
-            <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>{t("swap.guaranteed")}</span>
-          </div>
-
-          {/* Price (USD per EXFER) + a single Rate line, both from the quote
-              (items [5], [13]) — the redundant unit-price / rate pair is merged. */}
-          {qExferUsd != null && (
-            <Row label={t("swap.priceLabel")} value={`1 EXFER ≈ $${sigFmt(qExferUsd, 4)}`} />
-          )}
-          {qRate != null && (
-            <Row label={t("swap.rate")} value={`1 ${sendUnit} ≈ ${sigFmt(qRate)} ${recvUnit}`} />
+          {/* One market Price line (USD per EXFER). The firm-HTLC guarantee that
+              "you receive == what arrives, or it's refunded" is stated once in
+              the note below — no separate Minimum-received box repeating the same
+              number, and no redundant BNB Rate line. */}
+          {exferUsd != null && (
+            <Row label={t("swap.priceLabel")} value={`1 EXFER ≈ $${sigFmt(exferUsd, 4)}`} />
           )}
 
           {/* Price impact with the same "?" affordance as step-1, severity-coloured. */}
@@ -1245,6 +1238,15 @@ export function SwapSheet({
             netFeeBnb={netFeeBnb > 0 ? sigFmt(netFeeBnb, 4) : null}
             netFeeUsd={netFeeUsd != null ? usdStr(netFeeUsd) : null}
           />
+
+          {/* Fee-heavy warning — when the (mostly fixed) fees eat a big share of
+              the trade, the user gets back far less than they put in. Flag it like
+              a high price impact so a tiny, inefficient swap isn't a surprise. */}
+          {feesTotalUsdR != null && sendUsdR != null && sendUsdR > 0 && feesTotalUsdR / sendUsdR >= 0.2 && (
+            <div className="banner banner-warn" style={{ marginTop: 2, fontSize: 12.5, lineHeight: 1.55 }}>
+              {t("swap.feeHeavy", { pct: String(Math.round((feesTotalUsdR / sendUsdR) * 100)) })}
+            </div>
+          )}
 
           <Row label={t("swap.from")} value={shortAddress(fromAddr)} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
