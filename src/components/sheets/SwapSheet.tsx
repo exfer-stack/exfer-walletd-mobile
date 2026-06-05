@@ -114,6 +114,8 @@ interface SwapRec {
   amount_in: string;
   amount_out: string;
   fee_bps?: number;
+  /** Pool's settlement-gas fee (human BNB), already deducted from amount_out. */
+  network_fee_bnb?: string | null;
   our_bsc_address?: string | null;
   error?: string | null;
 }
@@ -746,6 +748,12 @@ export function SwapSheet({
                       <span className="quote-row-v" style={{ color: highImpact ? "#fbbf24" : undefined }}>
                         {(priceImpact * 100).toFixed(2)}%
                       </span>
+                    </div>
+                  )}
+                  {quote?.network_fee_bnb && Number(quote.network_fee_bnb) > 0 && (
+                    <div className="quote-row">
+                      <span className="quote-row-k">{t("swap.networkFee")}</span>
+                      <span className="quote-row-v">{quote.network_fee_bnb} BNB</span>
                     </div>
                   )}
                 </div>

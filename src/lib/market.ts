@@ -57,9 +57,10 @@ export async function getMarketPrice(): Promise<MarketPrice | null> {
 }
 
 /** Live EXFER price. `null` until the first successful fetch (and stays at the
- *  last good value if a later refresh fails). Refreshes every 60s to match the
- *  pool's price sampler (mid × BNB/USD sampled into candles each minute), so the
- *  displayed price tracks BNB moves as promptly as the chart does. */
+ *  last good value if a later refresh fails). Refreshes every 15s so the
+ *  displayed mid-price tracks other users' swaps reasonably promptly (it's a
+ *  poll, not a push — the indicative number; the actual trade always re-quotes
+ *  live, so a slightly-stale display never affects what you pay). */
 export function usePrice(): MarketPrice | null {
   // Seed from the cached price so the line shows immediately on launch.
   const [price, setPrice] = useState<MarketPrice | null>(readCachedPrice);
@@ -70,7 +71,7 @@ export function usePrice(): MarketPrice | null {
         if (alive && p) setPrice(p);
       });
     void tick();
-    const id = window.setInterval(tick, 60_000);
+    const id = window.setInterval(tick, 15_000);
     return () => {
       alive = false;
       window.clearInterval(id);
