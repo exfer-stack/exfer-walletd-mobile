@@ -187,7 +187,9 @@ export function SwapTab({
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
   const [supply, setSupply] = useState<number | null>(supplyCache);
   const [hovered, setHovered] = useState<Candle | null>(null); // crosshair bar (OHLC legend)
-  const [chartOpen, setChartOpen] = useState(false); // full candlestick lives behind a toggle
+  // Chart is expanded by default (fills the page, more useful than a sparkline);
+  // the toggle choice is remembered, so collapsing it sticks.
+  const [chartOpen, setChartOpen] = useState(() => loadCache("swaptab-chart-open-v1", true));
 
   // Circulating EXFER supply, computed from the tip height (no supply RPC). It
   // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
@@ -305,7 +307,7 @@ export function SwapTab({
 
           {/* View-chart toggle. */}
           <button
-            onClick={() => { setChartOpen((o) => !o); setHovered(null); }}
+            onClick={() => { setChartOpen((o) => { const n = !o; saveCache("swaptab-chart-open-v1", n); return n; }); setHovered(null); }}
             style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600, color: "var(--accent)", padding: "8px 0 0", display: "inline-flex", alignItems: "center", gap: 4 }}
           >
             {chartOpen ? t("swapTab.hideChart") : t("swapTab.viewChart")}
