@@ -122,6 +122,17 @@ async fn unlock_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String
     restart(&ctx).await.map_err(|e| e.to_user_string())
 }
 
+/// Validate a .vault blob + its backup password WITHOUT creating a wallet, so
+/// onboarding can reject a wrong password / non-vault file BEFORE submit_password
+/// (which would otherwise create a wallet the app immediately navigates into,
+/// hiding the import failure). Returns the address count on success.
+#[tauri::command]
+async fn validate_vault(vault_hex: String, file_password: String) -> Result<usize, String> {
+    let blob = hex::decode(&vault_hex).map_err(|_| "vault file not valid hex".to_string())?;
+    exfer_walletd::store::validate_vault(&blob, file_password.as_bytes())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn restore_from_mnemonic(
     app: tauri::AppHandle,
@@ -654,6 +665,7 @@ pub fn run() {
             export_wallet_key,
             import_wallet_key,
             restore_from_mnemonic,
+            validate_vault,
             get_market_price,
             get_market_klines,
             get_bnb_price,

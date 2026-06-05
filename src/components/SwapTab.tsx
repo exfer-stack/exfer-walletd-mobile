@@ -10,7 +10,7 @@ import { useT, type MsgKey } from "../lib/i18n";
 import { Spinner, BnbMark } from "./ui";
 import { PriceChart } from "./PriceChart";
 import tokenCoin from "../assets/exfer-token.png";
-import { getLpOps, removeLpOp, onLpOpsChange, type LpOp } from "../lib/inflightLp";
+import { getLpOps, removeLpOp, onLpOpsChange, onSwapChanged, type LpOp } from "../lib/inflightLp";
 
 const TERMINAL_SWAP = ["quoted", "completed", "refunded", "failed"];
 const TERMINAL_DEP = ["completed", "expired", "refunded", "failed"];
@@ -172,17 +172,21 @@ export function SwapTab({
       if (!cancelled) setLpOps(getLpOps());
     };
     void refresh();
-    const id = window.setInterval(refresh, 15_000);
+    const id = window.setInterval(refresh, 8_000);
     const onWake = () => { if (document.visibilityState !== "hidden") void refresh(); };
     window.addEventListener("focus", onWake);
     document.addEventListener("visibilitychange", onWake);
     const unsub = onLpOpsChange(() => { if (!cancelled) setLpOps(getLpOps()); });
+    // A just-executed swap pings this — refresh immediately so the in-progress
+    // card shows the moment you close the sheet, not a poll-tick later.
+    const unsubSwap = onSwapChanged(() => { if (!cancelled) void refresh(); });
     return () => {
       cancelled = true;
       window.clearInterval(id);
       window.removeEventListener("focus", onWake);
       document.removeEventListener("visibilitychange", onWake);
       unsub();
+      unsubSwap();
     };
   }, []);
 

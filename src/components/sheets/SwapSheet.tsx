@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc, formatExfer, formatBalanceCompact, splitBalanceCompact } from "../../lib/rpc";
+import { notifySwapChanged } from "../../lib/inflightLp";
 import { humanizeError } from "../../lib/errors";
 import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
@@ -438,6 +439,9 @@ export function SwapSheet({
       // Snapshot the effective (pool-driven) EXFER/USD now, so the record can
       // later show what this swap was worth at execution time.
       if (exferUsd != null) recordSwapUsd(quote.swap_id, exferUsd);
+      // Tell the Swap tab to refresh its in-progress list immediately so the
+      // card is there the instant the user closes this sheet (not 8s later).
+      notifySwapChanged();
       setLive(r);
       setStep(3);
       toast.success(t("swap.started"), t("swap.startedBody"));

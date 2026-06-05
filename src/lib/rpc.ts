@@ -234,6 +234,21 @@ export async function importVaultFile(args: {
   return importVaultBytes(bytes, args.filePassword);
 }
 
+/** Validate a .vault + its backup password WITHOUT creating a wallet. Throws on
+ *  a wrong password / non-vault file. Used by onboarding to reject a bad restore
+ *  BEFORE submit_password — otherwise the app auto-enters the just-created wallet
+ *  the instant walletd reports ready, hiding the import failure. */
+export async function validateVaultBytes(
+  bytes: Uint8Array,
+  filePassword: string,
+): Promise<void> {
+  if (bytes.length < 32) throw new Error("not a valid .vault backup file");
+  // Tauri-only Rust check (no walletd/keystore needed). Browser dev has no Tauri
+  // layer and doesn't exercise onboarding-restore, so it's a no-op there.
+  if (devmock.isActive()) return;
+  await invoke("validate_vault", { vaultHex: bytesToHex(bytes), filePassword });
+}
+
 /// Desktop UX cap on managed addresses. walletd itself supports ~4B
 /// HD indices, but a personal desktop wallet stays legible (and the
 /// per-address balance fan-out stays light on the public node's

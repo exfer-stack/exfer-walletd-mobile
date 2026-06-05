@@ -51,3 +51,15 @@ export function onLpOpsChange(cb: () => void): () => void {
     window.removeEventListener("storage", h);
   };
 }
+
+/** Ping when a swap is just executed so the in-progress list refreshes NOW
+ *  instead of waiting for the next poll tick (the swap card otherwise appears
+ *  up to a full interval late after you close the sheet). */
+export function notifySwapChanged(): void {
+  try { window.dispatchEvent(new Event("inflight-swap")); } catch { /* ignore */ }
+}
+export function onSwapChanged(cb: () => void): () => void {
+  const h = () => cb();
+  window.addEventListener("inflight-swap", h);
+  return () => window.removeEventListener("inflight-swap", h);
+}

@@ -113,12 +113,13 @@ const EN = {
   "home.depositBnb": "Deposit BNB",
   "home.bnbBalanceLabel": "Your BNB balance",
   "home.bnbWhat":
-    "Your wallet's own BNB address. Your BNB wallet has its own recovery phrase — shown when you set it up, and exportable anytime as a private key for MetaMask. It's separate from your EXFER recovery phrase. Top it up to swap EXFER ⇄ BNB and to provide liquidity.",
+    "Your wallet's built-in BNB address — its own recovery phrase, separate from EXFER. Top up to swap and provide liquidity.",
   "home.depositBnbBody":
     "Note: deposit on the BNB Smart Chain (BSC) network only — other networks will lose the funds.",
   "home.withdrawBnb": "Withdraw BNB",
   "home.bnbAddress": "BNB address",
-  "home.exportBnbKey": "Export BNB private key",
+  "home.exportBnbKey": "Back up BNB wallet",
+  "home.bnbRecoveryPhrase": "Recovery phrase",
   "home.expWarn": "Your private key controls this BNB address. Anyone who sees it can take your BNB. Never share it or enter it on a website.",
   "home.expReveal": "Reveal key",
   "home.expEnterPw": "Enter your wallet password",
@@ -766,12 +767,13 @@ const ZH: Record<MsgKey, string> = {
   "home.depositBnb": "充值 BNB",
   "home.bnbBalanceLabel": "你的 BNB 余额",
   "home.bnbWhat":
-    "这是你钱包自带的 BNB 地址。你的 BNB 钱包有自己的助记词——创建时会展示,之后也可随时导出为私钥导入 MetaMask。它和 EXFER 的助记词是分开的。往这里转入 BNB,即可用来兑换 EXFER ⇄ BNB、以及提供流动性。",
+    "钱包自带的 BNB 地址,有独立助记词(和 EXFER 分开)。转入 BNB 即可兑换与提供流动性。",
   "home.depositBnbBody":
     "请注意：必须用 BNB 智能链（BSC）网络转入，用其他网络会丢币。",
   "home.withdrawBnb": "提出 BNB",
   "home.bnbAddress": "BNB 地址",
-  "home.exportBnbKey": "导出 BNB 私钥",
+  "home.exportBnbKey": "备份 BNB 钱包",
+  "home.bnbRecoveryPhrase": "助记词",
   "home.expWarn": "私钥就是这个 BNB 地址的全部控制权。任何人拿到它都能转走你的 BNB。别截图、别发给别人、别在任何网站里输入。",
   "home.expReveal": "显示私钥",
   "home.expEnterPw": "请输入钱包密码",

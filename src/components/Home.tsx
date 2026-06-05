@@ -23,7 +23,7 @@ import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { NewAddressModal } from "./modals/NewAddressModal";
 import { CreateBnbWalletSheet } from "./sheets/CreateBnbWalletSheet";
-import { useBscWallet } from "../lib/bscWallet";
+import { useBscWallet, revealBscMnemonic } from "../lib/bscWallet";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { humanizeError } from "../lib/errors";
 
@@ -88,14 +88,24 @@ function PrimaryAction({
   );
 }
 
-/** Format native BNB wei (18 dp) to a short human string. */
-function fmtBnbWei(wei: string | undefined, frac = 5): string {
+/** Format native BNB wei (18 dp) to a short human string. Gas-sized balances are
+ *  tiny (≈0.0000017 BNB), so a fixed 5-dp cut showed them as a flat "0". For a
+ *  sub-1 balance we extend precision to keep ~4 significant digits, so a real
+ *  (non-zero) balance never reads as 0. */
+function fmtBnbWei(wei: string | undefined, maxFrac = 6): string {
   if (!wei) return "0";
   try {
     const n = BigInt(wei);
     const base = 10n ** 18n;
-    const f = (n % base).toString().padStart(18, "0").slice(0, frac).replace(/0+$/, "");
-    return f ? `${n / base}.${f}` : `${n / base}`;
+    const whole = n / base;
+    const rem = (n % base).toString().padStart(18, "0");
+    let frac = maxFrac;
+    if (whole === 0n && n > 0n) {
+      const firstSig = rem.search(/[1-9]/);
+      if (firstSig >= 0) frac = Math.min(18, firstSig + 4); // ~4 significant figures
+    }
+    const f = rem.slice(0, frac).replace(/0+$/, "");
+    return f ? `${whole}.${f}` : `${whole}`;
   } catch {
     return "0";
   }
@@ -882,7 +892,7 @@ function ExportBnbKeyModal({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const { t } = useT();
   const [pw, setPw] = useState("");
-  const [data, setData] = useState<{ address: string; key: string } | null>(null);
+  const [data, setData] = useState<{ address: string; key: string; mnemonic: string[] | null } | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function reveal() {
@@ -898,7 +908,16 @@ function ExportBnbKeyModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const res = await revealEvmPrivateKey(pw);
-      setData({ address: res.address, key: res.private_key_hex });
+      // Also fetch the recovery phrase so the user can view/back it up again —
+      // not just the private key. Raw-key-imported BNB wallets have no phrase
+      // (bsc_reveal_mnemonic errors); show only the key in that case.
+      let mnemonic: string[] | null = null;
+      try {
+        mnemonic = (await revealBscMnemonic(pw)).mnemonic;
+      } catch {
+        mnemonic = null;
+      }
+      setData({ address: res.address, key: res.private_key_hex, mnemonic });
     } catch (e) {
       toast.error(t("home.expFail"), humanizeError(e));
     } finally {
@@ -947,6 +966,19 @@ function ExportBnbKeyModal({ onClose }: { onClose: () => void }) {
               {data.address}
             </div>
           </div>
+          {data.mnemonic && (
+            <div>
+              <label className="eyebrow">{t("home.bnbRecoveryPhrase")}</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, margin: "6px 0 8px" }}>
+                {data.mnemonic.map((w, i) => (
+                  <div key={i} className="mono" style={{ fontSize: 12.5, padding: "5px 9px", background: "var(--surface-2)", borderRadius: 8, display: "flex", gap: 7 }}>
+                    <span style={{ color: "var(--text-faint)", minWidth: 16, textAlign: "right" }}>{i + 1}</span>{w}
+                  </div>
+                ))}
+              </div>
+              <CopyButton text={data.mnemonic.join(" ")} label="Copied" />
+            </div>
+          )}
           <div>
             <label className="eyebrow">{t("home.expPrivKey")}</label>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 4 }}>

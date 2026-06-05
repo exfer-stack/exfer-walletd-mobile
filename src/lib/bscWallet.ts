@@ -26,39 +26,58 @@ export interface BscWallet {
   refresh: () => Promise<void>;
 }
 
+// Module-level cache of the last-known BNB-key state. The hook re-mounts on
+// every tab switch (Home/Swap/Liquidity unmount when you leave them); without a
+// cache each mount restarts from {created:false, loading:true}, so the BNB card
+// blanks out and the "Set up" CTA flashes for a beat before the re-fetch lands —
+// the "it disappears / I have to leave and come back" bug. Seeding from the
+// cache makes a re-mount render the real state immediately while it revalidates.
+// Cleared on wallet reset/switch via clearBscWalletCache().
+let bscCache: BscAddressInfo | null = null;
+
+export function clearBscWalletCache(): void {
+  bscCache = null;
+}
+
 export function useBscWallet(): BscWallet {
-  const [address, setAddress] = useState<string | null>(null);
-  const [created, setCreated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [address, setAddress] = useState<string | null>(bscCache?.address ?? null);
+  const [created, setCreated] = useState<boolean>(bscCache?.created ?? false);
+  // "loading" only before the very first answer ever — a re-mount with a cached
+  // answer renders it immediately (no skeleton, no CTA flash).
+  const [loading, setLoading] = useState<boolean>(bscCache === null);
+
+  const apply = useCallback((r: BscAddressInfo) => {
+    bscCache = r;
+    setAddress(r.address);
+    setCreated(r.created);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
-      const r = await getBscAddress();
-      setAddress(r.address);
-      setCreated(r.created);
+      apply(await getBscAddress());
     } catch {
-      // Transient (engine reachable problems shouldn't happen here since the
-      // RPC hits the store directly, but stay defensive): treat as "unknown",
-      // not "create me" — never push the setup CTA on a flaky read.
-      setAddress(null);
-      setCreated(false);
+      // Transient read: keep the last-known state rather than blanking the card
+      // / flashing the setup CTA. Only the very first load (no cache) falls back.
+      if (!bscCache) {
+        setAddress(null);
+        setCreated(false);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apply]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await getBscAddress();
-        if (cancelled) return;
-        setAddress(r.address);
-        setCreated(r.created);
+        if (!cancelled) apply(r);
       } catch {
-        if (cancelled) return;
-        setAddress(null);
-        setCreated(false);
+        if (!cancelled && !bscCache) {
+          setAddress(null);
+          setCreated(false);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -66,7 +85,7 @@ export function useBscWallet(): BscWallet {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [apply]);
 
   return { address, created, loading, refresh };
 }

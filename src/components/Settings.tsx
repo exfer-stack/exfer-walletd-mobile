@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
 import { useWallet } from "../lib/wallet";
+import { clearBscWalletCache } from "../lib/bscWallet";
 import {
   rpc,
   getNodeRpc,
@@ -925,6 +926,9 @@ function ResetModal({
     setBusy(true);
     try {
       await resetWallet();
+      // Drop the cached BNB-key state so the next wallet doesn't briefly show
+      // the wiped wallet's BNB address/balance.
+      clearBscWalletCache();
       toast.info(t("rs.done"));
       onClose();
       onWiped();

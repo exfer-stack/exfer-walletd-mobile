@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
 import { Field, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
-import { submitPassword, pickVaultFile, importVaultBytes, walletExists } from "../lib/rpc";
+import { submitPassword, pickVaultFile, validateVaultBytes, importVaultBytes, walletExists } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
 import { useT } from "../lib/i18n";
 
@@ -83,6 +83,19 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         return;
       }
       setBusy(true);
+      // Validate the file + backup password BEFORE creating the wallet. The app
+      // auto-navigates into the wallet the moment walletd reports "ready", so if
+      // we created it first and the import then failed, the failure would be
+      // invisible (the user lands in an empty wallet). Validating up front means
+      // a wrong password / bad file never creates a wallet at all.
+      try {
+        await validateVaultBytes(bytes, vaultPw);
+      } catch (e) {
+        console.warn("[restore] vault validation failed:", e);
+        setErr(t("ob.errVaultBad"));
+        setBusy(false);
+        return;
+      }
       try {
         await submitPassword(pw);
         const n = await importVaultBytes(bytes, vaultPw);
@@ -92,9 +105,6 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         );
         onReady();
       } catch (e) {
-        // A non-vault file and a wrong backup password both fail the AEAD
-        // unseal indistinguishably — give one clear, honest message rather than
-        // the generic "wrong password".
         console.warn("[restore] vault import failed:", e);
         setErr(t("ob.errVaultBad"));
       } finally {
