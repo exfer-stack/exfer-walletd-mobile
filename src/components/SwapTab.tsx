@@ -28,6 +28,10 @@ interface InflightSwap {
 let candlesCache: Record<string, Candle[]> = {};
 let lpAvailableCache = false;
 let supplyCache: number | null = null;
+// In-progress swaps were the one piece NOT cached, so the card popped in a beat
+// late after the swap_list RPC on every tab re-entry (SwapTab remounts on tab
+// switch). Seed from this so it paints instantly, then the refresh updates it.
+let inflightCache: InflightSwap[] = [];
 
 function fmtAmt(s: string, dp = 4): string {
   if (!s) return s;
@@ -158,7 +162,7 @@ export function SwapTab({
   const [interval, setInterval] = useState<string>("1d");
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
   const [loadingChart, setLoadingChart] = useState(false);
-  const [inflight, setInflight] = useState<InflightSwap[]>([]);
+  const [inflight, setInflight] = useState<InflightSwap[]>(inflightCache);
   const [lpOps, setLpOps] = useState<LpOp[]>(getLpOps());
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
   const [supply, setSupply] = useState<number | null>(supplyCache);
@@ -206,8 +210,9 @@ export function SwapTab({
     const refresh = async () => {
       try {
         const all = await rpc<InflightSwap[]>("swap_list");
-        if (!cancelled) setInflight((all ?? []).filter((s) => !TERMINAL_SWAP.includes(s.status)));
-      } catch { if (!cancelled) setInflight([]); }
+        inflightCache = (all ?? []).filter((s) => !TERMINAL_SWAP.includes(s.status));
+        if (!cancelled) setInflight(inflightCache);
+      } catch { /* keep the last cached list rather than blanking the card */ }
       // Drop any LP add whose deposit has gone terminal (the status read is a
       // cheap DB lookup via walletd, not a node-RPC hit).
       for (const op of getLpOps()) {
