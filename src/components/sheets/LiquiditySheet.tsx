@@ -84,6 +84,32 @@ function TokenRow({ kind, amount }: { kind: "exfer" | "bnb"; amount: string }) {
 let poolCache: PoolInfo | null = null;
 const posCache: Record<string, Position> = {};
 
+// Whole-wallet position scan, cached (module + localStorage) so reopening the
+// Liquidity sheet paints instantly instead of spinning while it re-scans every
+// address (one lp_position RPC each) — that re-scan, gated behind the spinner on
+// every mount, is what made the sheet "spin for ages, say no liquidity, then pop
+// a position in". Seeds the state below; refreshed in the background on open.
+let positionsCache: { address: string; pos: Position }[] = (() => {
+  try {
+    const v = localStorage.getItem("lp-positions-v1");
+    const list = v ? (JSON.parse(v) as { address: string; pos: Position }[]) : [];
+    for (const p of list) posCache[p.address.toLowerCase()] = p.pos; // warm per-address cache too
+    return list;
+  } catch {
+    return [];
+  }
+})();
+let scannedOnce = positionsCache.length > 0;
+function savePositionsCache(list: { address: string; pos: Position }[]): void {
+  positionsCache = list;
+  scannedOnce = true;
+  try {
+    localStorage.setItem("lp-positions-v1", JSON.stringify(list));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Tinted result badge, same visual language as the swap result screen. */
 function ResultBadge({ kind }: { kind: "success" | "refunded" | "failed" }) {
   const color = kind === "success" ? "#34d399" : kind === "refunded" ? "#fbbf24" : "#f87171";
@@ -115,7 +141,14 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const defaultAddr = funded[0]?.address ?? visible[0]?.address ?? "";
   // The EXFER address that funds the deposit AND owns the position. User-visible
   // and selectable (a wallet can hold many) — was silently forced to funded[0].
-  const [fromAddr, setFromAddr] = useState<string>("");
+  // Open directly on a cached position's address (the largest) when the default
+  // address holds none, so the sheet doesn't flash "no liquidity here" then jump.
+  const [fromAddr, setFromAddr] = useState<string>(() => {
+    if (positionsCache.length === 0) return "";
+    const def = (funded[0]?.address ?? visible[0]?.address ?? "").toLowerCase();
+    if (!def || positionsCache.some((p) => p.address.toLowerCase() === def)) return "";
+    return [...positionsCache].sort((a, b) => Number(b.pos.value_bnb ?? 0) - Number(a.pos.value_bnb ?? 0))[0].address;
+  });
   const exferAddr = fromAddr || defaultAddr;
   const exferBal = visible.find((a) => a.address === exferAddr)?.balance ?? 0;
 
@@ -138,8 +171,8 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   // Every address that holds a position, scanned across the WHOLE wallet
   // (including hidden) — not just the selected one. Without this, a position on
   // a non-default address reads as "no liquidity" and the user can't find it.
-  const [positions, setPositions] = useState<{ address: string; pos: Position }[]>([]);
-  const [posScanned, setPosScanned] = useState(false);
+  const [positions, setPositions] = useState<{ address: string; pos: Position }[]>(positionsCache);
+  const [posScanned, setPosScanned] = useState(scannedOnce);
   const [feeOpen, setFeeOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -178,6 +211,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       );
       if (!cancelled) {
         const list = found.filter((x): x is { address: string; pos: Position } => x != null);
+        savePositionsCache(list); // module + localStorage, so reopen paints instantly
         setPositions(list);
         setPosScanned(true);
         // Auto-focus the address that actually holds a position, so the user
