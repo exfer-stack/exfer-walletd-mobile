@@ -12,7 +12,7 @@ import { PriceChart } from "./PriceChart";
 import tokenCoin from "../assets/exfer-token.png";
 import { getLpOps, removeLpOp, onLpOpsChange, onSwapChanged, type LpOp } from "../lib/inflightLp";
 
-const TERMINAL_SWAP = ["quoted", "completed", "refunded", "failed"];
+const TERMINAL_SWAP = ["quoted", "expired", "completed", "refunded", "failed"];
 const TERMINAL_DEP = ["completed", "expired", "refunded", "failed"];
 
 interface InflightSwap {

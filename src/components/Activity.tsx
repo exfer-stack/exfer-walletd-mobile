@@ -125,8 +125,16 @@ export function Activity() {
       try {
         const all = await rpc<SwapRow[]>("swap_list");
         if (cancelled) return;
-        // Drop bare quotes (no funds moved); show everything that locked.
-        const real = (all ?? []).filter((s) => s.status !== "quoted");
+        // Drop quotes the user never executed — no funds ever moved, so they're
+        // not swaps and must not look like failures. New records use the benign
+        // "expired" status; older builds marked them "failed (never executed)",
+        // so drop those too. Show everything that actually locked.
+        const real = (all ?? []).filter(
+          (s) =>
+            s.status !== "quoted" &&
+            s.status !== "expired" &&
+            !(s.status === "failed" && /never executed/i.test(s.error ?? "")),
+        );
         real.sort((a, b) => b.created_at - a.created_at);
         setSwaps(real);
       } catch {
