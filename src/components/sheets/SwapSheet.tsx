@@ -211,11 +211,14 @@ let poolInfoCache: PoolInfo | null = null;
 export function SwapSheet({
   onClose,
   onDone,
+  onReceive,
   initialFrom,
   resumeSwapId,
 }: {
   onClose: () => void;
   onDone: (tab?: "wallet" | "activity" | "settings") => void;
+  /** Open the Receive flow (e.g. from the "no EXFER to sell" empty state). */
+  onReceive: () => void;
   initialFrom?: string;
   /** When set, jump straight to the progress screen and watch this existing
    *  swap (e.g. resumed from Home after the app was reopened). */
@@ -771,9 +774,16 @@ export function SwapSheet({
           <span style={{ flex: 1, minWidth: 0, fontFamily: "monospace", wordBreak: "break-all", lineHeight: 1.55, textAlign: "left" }}>{bscAddr}</span>
           <CopyButton text={bscAddr} />
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", gap: 12, alignSelf: "flex-start" }}>
+        <div style={{ fontSize: 12, color: "var(--text-faint)", display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start" }}>
           <span>BNB: {fmtUnits(bscBal?.bnb, 18, 4)}</span>
-          <button className="btn-ghost btn-sm" disabled={bscBusy} onClick={refreshBsc}>
+          {/* Compact inline refresh — btn-ghost btn-sm padded it up so it looked
+              like a chunky control on its own line next to the tiny balance. */}
+          <button
+            onClick={refreshBsc}
+            disabled={bscBusy}
+            aria-label="Refresh BNB balance"
+            style={{ background: "none", border: 0, padding: 2, color: "var(--text-faint)", cursor: "pointer", fontSize: 13, lineHeight: 1, opacity: bscBusy ? 0.5 : 1 }}
+          >
             {bscBusy ? "…" : "↻"}
           </button>
         </div>
@@ -899,7 +909,7 @@ export function SwapSheet({
               {t("swap.noExferBody")}
             </div>
             <div style={{ display: "flex", gap: 10, width: "100%", marginTop: 4 }}>
-              <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => onDone()}>
+              <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={onReceive}>
                 {t("swap.receiveExfer")}
               </button>
               <button className="btn btn-block" style={{ flex: 1 }} onClick={reverse}>

@@ -296,7 +296,12 @@ function Shell() {
                 initialFrom={overlay.from}
                 resumeSwapId={overlay.resumeSwapId}
                 onClose={() => setOverlay(null)}
+                onReceive={() => setOverlay({ type: "receive" })}
                 onDone={(t) => {
+                  // Close the swap overlay too — without this, setting the tab
+                  // left the sheet open on top (so "Receive EXFER" / "View in
+                  // Activity" appeared to do nothing).
+                  setOverlay(null);
                   if (t) setTab(t);
                 }}
               />
