@@ -1457,11 +1457,6 @@ export function SwapSheet({
   const stuck = elapsed > 165;
   const canRefund = ["user_locked", "pool_locked"].includes(s);
   const swapId = live?.swap_id ?? watchId ?? "";
-  // Up-front, honest ETA (item [9]): a soft countdown from a ~60s budget. Once
-  // past budget we drop to the neutral "usually ~60s" so it never goes negative
-  // or implies it's late.
-  const secLeft = Math.max(0, 60 - elapsed);
-  const etaText = secLeft > 0 ? t("swap.etaCountdown", { sec: secLeft }) : t("swap.etaUsual");
   return (
     <Sheet
       title={t("swap.submittedTitle")}
@@ -1476,21 +1471,13 @@ export function SwapSheet({
           {amounts && <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>}
         </div>
 
-        {/* horizontal staged stepper — shared with the liquidity flow */}
+        {/* horizontal staged stepper — shared with the liquidity flow. The
+            active step already says what's happening, so no verbose "Confirming
+            on BNB Chain… / about Ns left" status lines below it. */}
         <StagedStepper labels={stepLabels} doneCount={doneCount} />
 
-        {/* What it's actively waiting on right now + an up-front ETA (item [9]). */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600 }}>
-            <Spinner size={13} />
-            <span>{t("swap.confirmingChain")}</span>
-          </div>
-          <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>{etaText}</div>
-        </div>
-
-        <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, alignSelf: "center", flexWrap: "wrap" }}>
-          <span>{t("swap.safeToClose")}</span>
-          <SwapTimingHelp />
+        <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
+          {t("swap.safeToClose")}
         </div>
 
         {/* Per-leg explorer links once they land (item [10]). */}
