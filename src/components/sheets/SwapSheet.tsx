@@ -257,6 +257,12 @@ export function SwapSheet({
   const [direction, setDirection] = useState<Direction>("exfer_to_bnb");
   const [from, setFrom] = useState<string>(initialFrom ?? "");
   const [amount, setAmount] = useState("");
+  // Two-way amount binding: `amount` (the pay side) is canonical and drives the
+  // quote. When the user types into the RECEIVE field instead, editSide flips to
+  // "receive", recvInput holds what they typed, and an effect back-computes the
+  // pay `amount` from it. Editing the pay side (or a % chip) flips back.
+  const [editSide, setEditSide] = useState<"pay" | "receive">("pay");
+  const [recvInput, setRecvInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState<SwapRec | null>(null);
@@ -428,6 +434,25 @@ export function SwapSheet({
     }
     return net / poolInfo.mid;
   })();
+  // Reverse binding: when the user types a desired RECEIVE amount, back-compute
+  // the pay `amount` (constant-product inverse + the network fee) so the rest of
+  // the sheet — quote, USD, Review — works off `amount` as usual.
+  useEffect(() => {
+    if (editSide !== "receive" || !poolInfo) return;
+    const want = Number(recvInput);
+    if (!isFinite(want) || want <= 0) { setAmount(""); return; }
+    const reserveIn = sell ? poolInfo.exferReserve : poolInfo.bnbReserve;
+    const reserveOut = sell ? poolInfo.bnbReserve : poolInfo.exferReserve;
+    // Gross output the AMM must produce to NET `want`: a sell nets BNB (the fee
+    // is taken from the BNB output), a buy receives EXFER (the fee is on the BNB
+    // input, added below).
+    const grossOut = sell ? want + estNetFee : want;
+    if (!(reserveIn > 0 && reserveOut > 0) || grossOut >= reserveOut) return; // too big — leave the typed value
+    // Uniswap-v2 inverse: input needed for a desired output, incl. the 30bps fee.
+    const inHuman = (reserveIn * grossOut) / ((reserveOut - grossOut) * (1 - poolInfo.feeBps / 10_000));
+    const payHuman = sell ? inHuman : inHuman + estNetFee; // buy pays the fee on the BNB it sends
+    setAmount(payHuman > 0 && isFinite(payHuman) ? sigFmt(payHuman, 8) : "");
+  }, [editSide, recvInput, poolInfo, sell, estNetFee]);
   // Effective per-EXFER rate for THIS trade (BNB per 1 EXFER), derived from the
   // slippage-aware estimate so it moves as the amount changes. Sell pays out BNB
   // for EXFER (out/in); buy spends BNB for EXFER (in/out).
@@ -604,6 +629,10 @@ export function SwapSheet({
     buzz(8);
     setErr(null);
     setQuote(null);
+    // Editing always restarts from the pay side after a flip, so the stale
+    // receive input from the old direction doesn't drive the new one.
+    setEditSide("pay");
+    setRecvInput("");
     setDirection((d) => (d === "exfer_to_bnb" ? "bnb_to_exfer" : "exfer_to_bnb"));
   }
 
@@ -968,7 +997,7 @@ export function SwapSheet({
                   value={amount}
                   // Truly inert while the buy side still needs funding (item [15]).
                   disabled={needsFunding}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => { setEditSide("pay"); setAmount(e.target.value); }}
                 />
                 {/* Live USD value of what's being paid (item [5]). */}
                 <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2, minHeight: 16 }}>
@@ -989,7 +1018,7 @@ export function SwapSheet({
               )}
             </div>
             {/* 25/50/75/Max quick-fill chips, both directions (item [19]). */}
-            <PercentChips max={payMax} onPick={(v) => setAmount(sigFmt(v, 8))} t={t} />
+            <PercentChips max={payMax} onPick={(v) => { setEditSide("pay"); setAmount(sigFmt(v, 8)); }} t={t} />
             {/* Caption the buy-Max gas hold-back so it doesn't look like a shortfall. */}
             {!sell && buyMax > 0 && (
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>{t("swap.maxGasHold")}</div>
@@ -1018,9 +1047,18 @@ export function SwapSheet({
             <span className="eyebrow">{t("swap.youReceiveEst")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums", color: estOutNet != null ? "var(--text)" : "var(--text-faint)" }}>
-                  {estOutNet != null ? sigFmt(estOutNet, 6) : "0.0"}
-                </span>
+                {/* Editable: type a desired receive amount and the pay side is
+                    back-computed (the reverse-binding effect above). When editing
+                    the pay side, it shows the live net estimate. */}
+                <input
+                  className="swap-amount"
+                  style={{ width: "100%" }}
+                  inputMode="decimal"
+                  placeholder="0.0"
+                  disabled={needsFunding || noExferToSell}
+                  value={editSide === "receive" ? recvInput : (estOutNet != null ? sigFmt(estOutNet, 6) : "")}
+                  onChange={(e) => { setEditSide("receive"); setRecvInput(e.target.value); }}
+                />
                 {/* Live USD value of the estimated output (item [5]). */}
                 <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2, minHeight: 16 }}>
                   {usdStr(recvUsd) != null ? t("swap.approxUsd", { usd: usdStr(recvUsd)! }) : ""}
