@@ -355,6 +355,31 @@ body {
 .quote-row-k { font-size: 13px; font-weight: 500; color: var(--text-faint); }
 .quote-row-v { font-size: 15.5px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .quote-row-v small { font-size: 12px; font-weight: 500; color: var(--text-faint); margin-left: 4px; }
+/* When the detail rows are the whole quote card (the output figure now lives in
+   the "You receive" leg), drop the divider + top margin so it doesn't read as a
+   headerless rule. */
+.quote-detail-bare { margin-top: 0; border-top: 0; }
+.quote-detail-bare .quote-row:first-child { padding-top: 0; }
+
+/* ── swap pay/receive legs ──────────────────────────────────────── */
+/* The canonical reversible pair: a "You pay" card over a "You receive" card.
+   Same inset surface as a field, sized to host a large amount figure + chip. */
+.swap-leg {
+  padding: 13px 15px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.swap-amount {
+  flex: 1; min-width: 0;
+  border: 0; outline: none; background: none; padding: 0;
+  color: var(--text);
+  font: 600 26px/1 "Geist Variable", "Geist", sans-serif;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.swap-amount::placeholder { color: var(--text-faint); }
+.swap-amount:disabled { color: var(--text-faint); }
 
 /* ── banners ────────────────────────────────────────────────────── */
 .banner { border-radius: var(--radius-sm); padding: 13px 15px; font-size: 13.5px; line-height: 1.55; }

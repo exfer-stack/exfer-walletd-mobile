@@ -69,6 +69,31 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** A tiny inline trend line drawn from candle closes — the at-a-glance shape of
+ *  the price, shown in the compact (collapsed) market view. Tinted by 24h move. */
+function Sparkline({ candles, up, width = 92, height = 30 }: { candles: Candle[]; up: boolean; width?: number; height?: number }) {
+  const closes = candles.map((c) => c.close).filter((n) => isFinite(n));
+  if (closes.length < 2) return null;
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const span = max - min || 1;
+  const stepX = width / (closes.length - 1);
+  const pts = closes.map((c, i) => `${(i * stepX).toFixed(1)},${(height - ((c - min) / span) * height).toFixed(1)}`).join(" ");
+  const color = up ? "#34d399" : "#f87171";
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ flex: "0 0 auto", overflow: "visible" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+    </svg>
+  );
+}
+
+/** Human window for the loaded candles, e.g. "120d" for 120 daily candles —
+ *  so "high"/"low" read against a real period, not an implied candle count. */
+function windowLabel(interval: string, count: number): string {
+  if (interval === "1d") return `${count}d`;
+  if (interval === "1w") return `${count}w`;
+  return `${count} bars`;
+}
+
 /** Overlapping EXFER + BNB coin pair with a small action badge — the modern
  *  "token pair" motif (like DEX wallets) for the swap / liquidity cards. The
  *  ring colour matches the card surface so the coins read as cleanly stacked. */
@@ -81,6 +106,28 @@ function CoinPair({ badge }: { badge: "swap" | "add" }) {
       <img src={tokenCoin} alt="" width={C} height={C} style={{ position: "absolute", left: 0, top: 0, borderRadius: 999, boxSizing: "border-box", boxShadow: `0 0 0 2.5px ${ring}`, border: "1px solid rgba(255,255,255,0.45)" }} />
       <span style={{ position: "absolute", right: -4, bottom: -4, width: 18, height: 18, borderRadius: 999, background: "var(--accent)", color: "var(--accent-ink)", display: "grid", placeItems: "center", boxShadow: `0 0 0 2.5px ${ring}` }}>
         <Icon name={badge === "swap" ? "refresh" : "plus"} size={11} stroke={2.6} />
+      </span>
+    </span>
+  );
+}
+
+/** Leading mark for an in-progress row: a distinct glyph (⇄ for a swap, + for a
+ *  liquidity op) over a spinning ring, so the two kinds are told apart at a
+ *  glance instead of sharing one anonymous spinner. */
+function InflightIcon({ kind }: { kind: "swap" | "lp" }) {
+  return (
+    <span style={{ position: "relative", flex: "0 0 auto", width: 30, height: 30, display: "inline-grid", placeItems: "center" }}>
+      <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--accent)" }}>
+        <Spinner size={30} />
+      </span>
+      <span style={{ display: "grid", placeItems: "center", color: "var(--text-dim)" }}>
+        {kind === "swap" ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 1l4 4-4 4" /><path d="M3 5h18" /><path d="M7 23l-4-4 4-4" /><path d="M21 19H3" />
+          </svg>
+        ) : (
+          <Icon name="plus" size={15} stroke={2.4} />
+        )}
       </span>
     </span>
   );
@@ -116,6 +163,7 @@ export function SwapTab({
   const [lpAvailable, setLpAvailable] = useState(lpAvailableCache);
   const [supply, setSupply] = useState<number | null>(supplyCache);
   const [hovered, setHovered] = useState<Candle | null>(null); // crosshair bar (OHLC legend)
+  const [chartOpen, setChartOpen] = useState(false); // full candlestick lives behind a toggle
 
   // Circulating EXFER supply, computed from the tip height (no supply RPC). It
   // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
@@ -210,87 +258,113 @@ export function SwapTab({
       <div className="screen-pad">
         <div className="title-xl" style={{ padding: "12px 4px 14px" }}>{t("swap.title")}</div>
 
-        {/* Market card: price + 24h change + interval toggle + candlestick chart. */}
-        <div className="card" style={{ padding: "14px 14px 10px", marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        {/* Market card — compact by default: price + 24h change + sparkline, with
+            a "View chart" toggle that reveals the full candlestick (intervals +
+            crosshair). Keeps the swap CTA near the top, not below a 200px chart. */}
+        <div className="card" style={{ padding: "14px 14px 12px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div>
               <div className="eyebrow" style={{ marginBottom: 4 }}>EXFER · USD</div>
-              <div style={{ fontFamily: '"Geist Variable","Geist",sans-serif', fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text-dim)", marginRight: 1 }}>$</span>{usdStr}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ fontFamily: '"Geist Variable","Geist",sans-serif', fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text-dim)", marginRight: 1 }}>$</span>{usdStr}
+                </div>
+                {price && <ChangePill pct={price.change24h} />}
               </div>
             </div>
-            {price && <ChangePill pct={price.change24h} />}
-          </div>
-          {/* Interval toggle — its own full-width row so it has room for many
-              timeframes; scrolls horizontally if it ever overflows. */}
-          <div style={{ display: "flex", gap: 4, marginTop: 12, overflowX: "auto", scrollbarWidth: "none" }}>
-            {INTERVALS.map((iv) => (
-              <button
-                key={iv.key}
-                onClick={() => { setInterval(iv.key); setHovered(null); }}
-                style={{
-                  border: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600,
-                  padding: "4px 11px", borderRadius: 7, flex: "0 0 auto",
-                  background: interval === iv.key ? "var(--surface-2)" : "transparent",
-                  color: interval === iv.key ? "var(--accent)" : "var(--text-faint)",
-                }}
-              >
-                {iv.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ marginTop: 8, minHeight: 200 }}>
-            {candles.length > 0 ? (
-              <PriceChart candles={candles} theme={theme} height={200} timeVisible={INTERVALS.find((i) => i.key === interval)?.tv ?? true} onHover={setHovered} />
-            ) : (
-              <div style={{ height: 200, display: "grid", placeItems: "center", color: "var(--text-faint)", fontSize: 13 }}>
-                {loadingChart ? <Spinner size={20} /> : t("swapTab.noChart")}
-              </div>
+            {!chartOpen && candles.length > 1 && (
+              <Sparkline candles={candles} up={(price?.change24h ?? 0) >= 0} />
             )}
           </div>
 
-          {/* Market stats: period high/low/avg + circulating supply & market cap. */}
+          {/* View-chart toggle. */}
+          <button
+            onClick={() => { setChartOpen((o) => !o); setHovered(null); }}
+            style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600, color: "var(--accent)", padding: "8px 0 0", display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            {chartOpen ? t("swapTab.hideChart") : t("swapTab.viewChart")}
+            <span style={{ display: "inline-block", transform: chartOpen ? "rotate(180deg)" : "none", transition: "transform .15s var(--ease)" }}>▾</span>
+          </button>
+
+          {chartOpen && (
+            <>
+              {/* Interval toggle — its own full-width row so it has room for many
+                  timeframes; scrolls horizontally if it ever overflows. */}
+              <div style={{ display: "flex", gap: 4, marginTop: 10, overflowX: "auto", scrollbarWidth: "none" }}>
+                {INTERVALS.map((iv) => (
+                  <button
+                    key={iv.key}
+                    onClick={() => { setInterval(iv.key); setHovered(null); }}
+                    style={{
+                      border: 0, cursor: "pointer", font: "inherit", fontSize: 11.5, fontWeight: 600,
+                      padding: "4px 11px", borderRadius: 7, flex: "0 0 auto",
+                      background: interval === iv.key ? "var(--surface-2)" : "transparent",
+                      color: interval === iv.key ? "var(--accent)" : "var(--text-faint)",
+                    }}
+                  >
+                    {iv.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, minHeight: 200 }}>
+                {candles.length > 0 ? (
+                  <PriceChart candles={candles} theme={theme} height={200} timeVisible={INTERVALS.find((i) => i.key === interval)?.tv ?? true} onHover={setHovered} />
+                ) : (
+                  <div style={{ height: 200, display: "grid", placeItems: "center", color: "var(--text-faint)", fontSize: 13 }}>
+                    {loadingChart ? <Spinner size={20} /> : t("swapTab.noChart")}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Market stats — a clean 2×2: a period group (high / low over the loaded
+              window) visually separated from the global group (market cap / supply).
+              When the crosshair is on a bar, the period cells show THAT bar. */}
           {(stats || supply != null) && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: "12px 8px",
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: "1px solid var(--border-soft)",
-              }}
-            >
-              {/* When the crosshair is over a bar, the three price cells show
-                  THAT bar's high / low / close; otherwise the whole period. */}
-              {stats && <Stat label={hovered ? t("swapTab.barHigh") : t("swapTab.high")} value={`$${fp(hovered ? hovered.high : stats.hi)}`} />}
-              {stats && <Stat label={hovered ? t("swapTab.barLow") : t("swapTab.low")} value={`$${fp(hovered ? hovered.low : stats.lo)}`} />}
-              {stats && <Stat label={hovered ? t("swapTab.barClose") : t("swapTab.avg")} value={`$${fp(hovered ? hovered.close : stats.avg)}`} />}
-              <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
-              <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
+            <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
+              {stats && (
+                <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px", paddingRight: 10, borderRight: "1px solid var(--border-soft)" }}>
+                  <Stat
+                    label={hovered ? t("swapTab.barHigh") : `${windowLabel(interval, candles.length)} ${t("swapTab.highShort")}`}
+                    value={`$${fp(hovered ? hovered.high : stats.hi)}`}
+                  />
+                  <Stat
+                    label={hovered ? t("swapTab.barLow") : `${windowLabel(interval, candles.length)} ${t("swapTab.lowShort")}`}
+                    value={`$${fp(hovered ? hovered.low : stats.lo)}`}
+                  />
+                </div>
+              )}
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px" }}>
+                <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
+                <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
+              </div>
             </div>
           )}
         </div>
 
-        {/* Primary swap CTA. */}
-        <button onClick={onSwap} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
+        {/* Primary swap CTA — the filled accent action, lifted toward the top. */}
+        <button onClick={onSwap} className="btn btn-block" style={{ gap: 12, padding: "16px", marginBottom: lpAvailable ? 10 : 16, justifyContent: "flex-start" }}>
           <CoinPair badge="swap" />
-          <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("swapTab.cta")}</span>
-            <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2 }}>{t("swapTab.ctaSub")}</span>
+            <span style={{ display: "block", fontSize: 12.5, fontWeight: 500, opacity: 0.78, marginTop: 2 }}>{t("swapTab.ctaSub")}</span>
           </span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", opacity: 0.7 }}><path d="M9 6l6 6-6 6" /></svg>
         </button>
 
-        {/* Liquidity entry — a feature, kept above the transient in-flight list. */}
+        {/* Liquidity — a quieter "Earn" affordance, demoted to a list row so it
+            doesn't compete with the primary swap action. */}
         {lpAvailable && (
-          <button onClick={() => onLiquidity()} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px", marginBottom: 16, textAlign: "left" }}>
-            <CoinPair badge="add" />
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 16, fontWeight: 700 }}>{t("lp.title")}</span>
-              <span style={{ display: "block", fontSize: 12.5, color: "var(--text-faint)", marginTop: 2 }}>{t("lp.entrySub")}</span>
+          <button onClick={() => onLiquidity()} className="card" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", marginBottom: 16, textAlign: "left" }}>
+            <span style={{ flex: "0 0 auto", width: 30, height: 30, borderRadius: 999, background: "var(--surface-2)", display: "grid", placeItems: "center", color: "var(--text-dim)" }}>
+              <Icon name="plus" size={16} stroke={2.2} />
             </span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("lp.title")}</span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)", marginTop: 1 }}>{t("lp.entrySub")}</span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
           </button>
         )}
 
@@ -300,24 +374,24 @@ export function SwapTab({
             <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swapTab.inProgress")}</div>
             {inflight.map((s) => (
               <button key={s.swap_id} onClick={() => onResumeSwap(s.swap_id)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
-                <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}><Spinner size={18} /></span>
+                <InflightIcon kind="swap" />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
                     {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} → {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
                   </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>{swapStatusText(t, s.status)}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{swapStatusText(t, s.status)}</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
               </button>
             ))}
             {lpOps.map((op) => (
               <button key={op.id} onClick={() => onLiquidity(op.kind === "add" ? op.id : undefined)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
-                <span style={{ flex: "0 0 auto", display: "inline-flex", color: "var(--accent)" }}><Spinner size={18} /></span>
+                <InflightIcon kind="lp" />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
                     {op.kind === "add" ? t("lp.addTitle") : t("lp.removeTitle")} · {fmtAmt(op.exfer)} EXFER + {op.bnb} BNB
                   </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--accent)", marginTop: 2 }}>{t("swapTab.lpProcessing")}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{t("swapTab.lpProcessing")}</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
               </button>
