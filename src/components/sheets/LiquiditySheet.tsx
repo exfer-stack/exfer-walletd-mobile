@@ -186,7 +186,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
         // funded the deposit, which isn't necessarily the wallet default. Only
         // when the user hasn't explicitly picked one (fromAddr empty).
         if (!fromAddr && list.length > 0 && !list.some((p) => p.address.toLowerCase() === exferAddr.toLowerCase())) {
-          setFromAddr(list[0].address);
+          // Land on the LARGEST position when several addresses hold liquidity.
+          const biggest = [...list].sort((a, b) => Number(b.pos.value_bnb ?? 0) - Number(a.pos.value_bnb ?? 0))[0];
+          setFromAddr(biggest.address);
         }
       }
     })();
