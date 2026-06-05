@@ -187,7 +187,18 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       setBnbWei(b.bnb_wei);
       if (exferAddr) {
         const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
-        if (pp) { posCache[exferAddr.toLowerCase()] = pp; setPos(pp); }
+        if (pp) {
+          posCache[exferAddr.toLowerCase()] = pp;
+          setPos(pp);
+          // Keep the scan cache + persisted snapshot in sync with this fresh
+          // fetch, so an add/withdraw (both call load() afterwards) is reflected
+          // on the very next open — including a cold start — instead of flashing
+          // the pre-action value until the background re-scan lands.
+          const rest = positionsCache.filter((x) => x.address.toLowerCase() !== exferAddr.toLowerCase());
+          const next = pp.has_position ? [...rest, { address: exferAddr, pos: pp }] : rest;
+          savePositionsCache(next);
+          setPositions(next);
+        }
         setPosLoaded(true);
       }
     } catch { setUnavailable(true); }
