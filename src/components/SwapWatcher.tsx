@@ -77,9 +77,13 @@ export function SwapWatcher() {
 
       for (const s of list) {
         const before = baseline.get(s.swap_id);
-        if (before !== undefined && before !== s.status && TERMINAL.has(s.status)) {
-          announce(s);
-        }
+        if (before === undefined || before === s.status || !TERMINAL.has(s.status)) continue;
+        // A quote the user previewed but never confirmed simply expires
+        // (quoted → failed/expired on older daemons): no funds moved, so it is
+        // NOT a swap failure and must not pop a scary "transaction failed" toast.
+        // Only announce a failure for a swap that actually went in-flight.
+        if (s.status === "failed" && before === "quoted") continue;
+        announce(s);
       }
     };
 
