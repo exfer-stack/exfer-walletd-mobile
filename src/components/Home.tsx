@@ -343,6 +343,12 @@ export function Home({
     [vis],
   );
   const { whole, frac } = splitBalanceCompact(projected);
+  // Responsive headline size: a fixed 58px overflowed once the integer part grew
+  // (e.g. 583,999.2917 pushed the faded decimals and the "EXFER" suffix off the
+  // right edge). Scale down by the rendered length so the whole line always fits
+  // (the decimals render at 0.72em, hence the weight). Small balances stay 58px.
+  const balLen = whole.length + (frac ? (frac.length + 1) * 0.72 : 0);
+  const balFont = Math.max(26, Math.min(58, Math.floor(265 / (0.58 * balLen))));
   const atCap = entries.length >= MAX_ADDRESSES;
 
   function newAddress() {
@@ -449,11 +455,11 @@ export function Home({
               style={{ width: 168, height: 46, borderRadius: 12, verticalAlign: "middle" }}
             />
           ) : (
-            <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 7, whiteSpace: "nowrap", maxWidth: "100%" }}>
               <span
                 style={{
                   fontFamily: '"Geist Variable","Geist", sans-serif',
-                  fontSize: 58,
+                  fontSize: balFont,
                   fontWeight: 600,
                   // Proportional figures (no tnum) so the zeros don't spread,
                   // with lighter tracking — tabular + heavy tracking is what
