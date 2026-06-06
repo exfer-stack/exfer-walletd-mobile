@@ -10,6 +10,10 @@ export interface LpOp {
   exfer: string; // human amount for display
   bnb: string;   // human amount for display
   startedAt: number;
+  /** The EXFER leg went out but the BNB leg failed: the deposit can't complete
+   *  and is headed for the pool's expiry auto-refund. The in-flight row says
+   *  so instead of pretending the add is still progressing. */
+  partial?: boolean;
 }
 
 const KEY = "exfer-inflight-lp";
@@ -48,6 +52,10 @@ export function getLpOps(): LpOp[] {
 export function addLpOp(op: LpOp): void {
   writeRaw([...readRaw().filter((o) => o.id !== op.id), op]);
 }
+export function markLpOpPartial(id: string): void {
+  writeRaw(readRaw().map((o) => (o.id === id ? { ...o, partial: true } : o)));
+}
+
 export function removeLpOp(id: string): void {
   writeRaw(readRaw().filter((o) => o.id !== id));
 }

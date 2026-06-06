@@ -19,7 +19,7 @@ import tokenCoin from "../../assets/exfer-token.png";
 import { Icon } from "../../lib/icons";
 import { AddrPicker } from "../AddrPicker";
 import { shortAddress } from "../../lib/labels";
-import { addLpOp, removeLpOp } from "../../lib/inflightLp";
+import { addLpOp, getLpOps, removeLpOp, markLpOpPartial } from "../../lib/inflightLp";
 import { useBscWallet } from "../../lib/bscWallet";
 import { CreateBnbWalletSheet } from "./CreateBnbWalletSheet";
 
@@ -28,6 +28,13 @@ const FEE_RATE = 1; // exfers/byte, matches SendSheet
 // it must clear a safe gas floor (a few × the typical 21000-gas cost). Below
 // this the pool would auto-refund the deposit, so we block it up front instead.
 const MIN_BNB_LEG = 0.00001;
+// The wallet's OWN bsc_send_bnb burns gas on top of the leg amount (BNB is the
+// gas token). The "enough BNB" gate must budget it: checking the leg alone once
+// let a 0.000173032 balance pass a 0.00017293 leg, and the send died on
+// "insufficient funds for gas * price + value" AFTER the EXFER leg had already
+// broadcast — stranding a single-leg deposit. ~21000 gas at a few gwei is
+// ≤0.0001 BNB; same idea as SwapSheet's GAS_RESERVE (HTLC locks cost more).
+const BNB_GAS_HEADROOM = 0.0001;
 
 interface PoolInfo {
   total_shares: string;
@@ -49,6 +56,13 @@ interface Position {
   deposited_bnb?: string;
   earn_exfer?: string;
   earn_bnb?: string;
+  /** Pure fee earnings since entry (sqrt(k)/share growth) — monotone; isolates
+   *  pool performance from market price drift. */
+  fee_growth_pct?: number | null;
+  /** A withdrawal is awaiting payout. Shares burn only after both legs are
+   *  sent, so the position still shows its full balance during that window —
+   *  Remove must be locked or the unchanged numbers invite a doomed resubmit. */
+  pending_withdrawal?: boolean;
 }
 // "stillProcessing": the status poll ran out of patience but the deposit is NOT
 // failed — it finishes (or auto-refunds) in the background. "sentPartial": the
@@ -287,6 +301,14 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   // dropping the user on the overview). Poll it to completion like confirmAdd.
   useEffect(() => {
     if (!resumeAddId) return;
+    // A partial add (EXFER went out, the BNB leg never did) can never complete —
+    // re-showing the progress spinner would repeat the original lie. Jump
+    // straight to the honest outcome; the pool's expiry refund clears the row.
+    if (getLpOps().some((o) => o.id === resumeAddId && o.partial)) {
+      setResult({ kind: "sentPartial" });
+      setStep("done");
+      return;
+    }
     let cancelled = false;
     setStep("progress"); setStage(1);
     (async () => {
@@ -338,7 +360,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   const minExfer = mid > 0 ? MIN_BNB_LEG / mid : 0; // min EXFER so the BNB leg clears gas
   const amountValid = isFinite(amtNum) && amtNum > 0;
   const enoughExfer = amountValid && parseExferAmount(amount || "0") <= exferBal;
-  const enoughBnb = bnbNeeded <= bnbHuman;
+  const enoughBnb = bnbNeeded + BNB_GAS_HEADROOM <= bnbHuman;
   const belowMin = amountValid && minExfer > 0 && amtNum < minExfer;
   // The BNB leg is funded from the BSC key — block the whole Add until it
   // exists (seedless wallets have none). Without it there's no BNB to send and
@@ -404,7 +426,10 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       buzz(60);
       if (exferSent) {
         // EXFER is out the door; don't say "failed — try again" (a retry would
-        // send it twice) and keep the LpOp so the deposit stays visible.
+        // send it twice) and keep the LpOp so the deposit stays visible — but
+        // flagged, so the in-flight row says "auto-returns" instead of
+        // pretending the add is still progressing.
+        if (intentId) markLpOpPartial(intentId);
         setErr(null);
         setResult({ kind: "sentPartial" });
       } else {
@@ -439,7 +464,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
   }
 
   async function confirmWithdraw() {
-    if (!pos?.has_position) return;
+    if (!pos?.has_position || pos.pending_withdrawal) return;
     const bio = await biometricStatus();
     if (bio.available && !(await biometricUnlock(t("lp.removeTitle")))) {
       toast.error(t("swap.notConfirmedTitle"), ""); return;
@@ -501,17 +526,20 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
     const k = result.kind;
     // Only a confirmed add earns the green check. A withdraw is QUEUED (both
     // legs pay out in the background) — amber "returning to you", not success.
-    // stillProcessing / sentPartial keep a spinner: genuinely still working.
+    // stillProcessing keeps a spinner (genuinely still working); sentPartial
+    // does NOT — the deposit is missing its other leg and is headed for the
+    // auto-refund, so a spinner would read as "still adding" forever.
     const badge: "success" | "refunded" | "failed" | null =
       k === "added" ? "success"
-      : k === "removed" || k === "refunded" ? "refunded"
+      : k === "removed" || k === "refunded" || k === "sentPartial" ? "refunded"
       : k === "failed" ? "failed"
       : null;
     const heading =
       k === "added" ? t("lp.addedHeading")
       : k === "removed" ? t("lp.withdrawQueuedTitle")
       : k === "refunded" ? t("lp.refundedTitle")
-      : k === "stillProcessing" || k === "sentPartial" ? t("lp.stillProcessingTitle")
+      : k === "sentPartial" ? t("lp.sentPartialTitle")
+      : k === "stillProcessing" ? t("lp.stillProcessingTitle")
       : t("lp.failedHeading");
     const body =
       k === "added" ? t("lp.addedDoneBody")
@@ -565,7 +593,13 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
 
   // ── add ──
   if (step === "add") {
-    const maxAdd = Math.min(exferBal / 1e8, mid > 0 ? bnbHuman / mid : Infinity);
+    // Max must mirror the gates or it fills an amount they instantly reject:
+    // hold back the EXFER transfer's own fee (same 0.05 cushion as Swap's sell
+    // Max) and the BNB leg's gas headroom.
+    const maxAdd = Math.min(
+      Math.max(0, exferBal / 1e8 - 0.05),
+      mid > 0 ? Math.max(0, bnbHuman - BNB_GAS_HEADROOM) / mid : Infinity,
+    );
     return (
       <Sheet title={t("lp.addTitle")} onClose={onClose} onBack={() => { setStep("overview"); setErr(null); }}
         footer={<button className="btn btn-block" disabled={busy || !canAdd} onClick={confirmAdd}>{busy ? <Spinner /> : t("lp.addConfirm")}</button>}>
@@ -612,7 +646,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
           <span className="mono" style={{ fontSize: 12.5, color: amountValid && !enoughBnb ? "#fbbf24" : "var(--text-dim)", textAlign: "right" }}>{sig(bnbHuman, 4)} BNB</span>
         </div>
 
-        {amountValid && !enoughBnb && <div className="banner banner-warn" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.5 }}>{t("lp.needBnb", { bnb: sig(bnbNeeded, 4) })}</div>}
+        {amountValid && !enoughBnb && <div className="banner banner-warn" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.5 }}>{t("lp.needBnb", { bnb: sig(bnbNeeded + BNB_GAS_HEADROOM, 4) })}</div>}
         {belowMin && <div className="banner banner-warn" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.5 }}>{t("lp.belowMin", { n: sig(Math.ceil(minExfer), 2) })}</div>}
         <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 10, lineHeight: 1.5 }}>{t("lp.gasNote")}</div>
         {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</div>}
@@ -626,7 +660,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
     const outBnb = Number(pos.value_bnb) * withdrawPct / 100;
     return (
       <Sheet title={t("lp.removeTitle")} onClose={onClose} onBack={() => setStep("overview")}
-        footer={<button className="btn btn-block btn-danger" disabled={busy} onClick={confirmWithdraw}>{busy ? <Spinner /> : (withdrawPct >= 100 ? t("lp.removeConfirm") : t("lp.removeConfirmPct", { pct: String(withdrawPct) }))}</button>}>
+        footer={<button className="btn btn-block btn-danger" disabled={busy || pos.pending_withdrawal} onClick={confirmWithdraw}>{busy ? <Spinner /> : (withdrawPct >= 100 ? t("lp.removeConfirm") : t("lp.removeConfirmPct", { pct: String(withdrawPct) }))}</button>}>
 
         {/* Partial withdrawal — was all-or-nothing before. */}
         <label className="eyebrow">{t("lp.removeAmount")}</label>
@@ -707,9 +741,23 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
                 <>
                   <div style={{ height: 1, background: "var(--border)" }} />
                   <div style={{ padding: "10px 0 12px" }}>
+                    {/* Pure fee earnings first — the pool's actual performance,
+                        monotone non-decreasing (tiny accounting noise clamped). */}
+                    {pos.fee_growth_pct != null && (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.feeEarned")}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13.5, color: "#34d399", fontVariantNumeric: "tabular-nums" }}>
+                          +{(Math.max(0, pos.fee_growth_pct) * 100).toFixed(2)}%
+                          {/* The ≈$ suffix only once it clears display precision —
+                              "+$0.0000000352" is noise, not information. */}
+                          {haveSpots && earnBasisUsd * Math.max(0, pos.fee_growth_pct) >= 0.01 &&
+                            ` (≈ +$${usd(earnBasisUsd * Math.max(0, pos.fee_growth_pct))})`}
+                        </span>
+                      </div>
+                    )}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.earnings")}</span>
-                      {/* Combined headline — the number that matters; the two legs
+                      <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.totalPnl")}</span>
+                      {/* Combined P&L — honest full picture; the two legs
                           routinely have OPPOSITE signs (AMM price drift). */}
                       {haveSpots && (
                         <span style={{ fontWeight: 700, fontSize: 13.5, color: earnTint(earnUsd), fontVariantNumeric: "tabular-nums" }}>
@@ -718,15 +766,24 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
                         </span>
                       )}
                     </div>
-                    <div className="mono" style={{ fontSize: 12, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>
-                      <span style={{ color: earnTint(earn.exfer) }}>{signed(earn.exfer, fmtExfer2)} EXFER</span>
-                      <span style={{ color: "var(--text-faint)" }}> · </span>
-                      <span style={{ color: earnTint(earn.bnb) }}>{signed(earn.bnb, (a) => sig(a))} BNB</span>
-                    </div>
+                    {/* Per-leg deltas. A leg below display precision (float dust
+                        like -6e-16 BNB) is hidden rather than printed as noise. */}
+                    {(Math.abs(earn.exfer) >= 0.01 || Math.abs(earn.bnb) >= 1e-8) && (
+                      <div className="mono" style={{ fontSize: 12, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>
+                        {Math.abs(earn.exfer) >= 0.01 && (
+                          <span style={{ color: earnTint(earn.exfer) }}>{signed(earn.exfer, fmtExfer2)} EXFER</span>
+                        )}
+                        {Math.abs(earn.exfer) >= 0.01 && Math.abs(earn.bnb) >= 1e-8 && (
+                          <span style={{ color: "var(--text-faint)" }}> · </span>
+                        )}
+                        {Math.abs(earn.bnb) >= 1e-8 && (
+                          <span style={{ color: earnTint(earn.bnb) }}>{signed(earn.bnb, (a) => sig(a))} BNB</span>
+                        )}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 5 }}>
                       {t("lp.depositedLine", { exfer: fmtExfer2(earn.depExfer), bnb: sig(earn.depBnb) })}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8, lineHeight: 1.5 }}>{t("lp.earningsNote")}</div>
                   </div>
                 </>
               )}
@@ -797,8 +854,16 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
 
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setAmount(""); setStep("add"); }}>{t("lp.add")}</button>
-          {pos?.has_position && <button className="btn btn-secondary btn-block" style={{ flex: 1 }} onClick={() => { setErr(null); setWithdrawPct(100); setStep("withdraw"); }}>{t("lp.remove")}</button>}
+          {pos?.has_position && (
+            <button className="btn btn-secondary btn-block" style={{ flex: 1 }} disabled={pos.pending_withdrawal}
+              onClick={() => { setErr(null); setWithdrawPct(100); setStep("withdraw"); }}>
+              {pos.pending_withdrawal ? t("lp.removePendingBtn") : t("lp.remove")}
+            </button>
+          )}
         </div>
+        {pos?.has_position && pos.pending_withdrawal && (
+          <div style={{ padding: "0 2px", fontSize: 12, lineHeight: 1.5, color: "var(--warn, #fbbf24)" }}>{t("lp.removePendingNote")}</div>
+        )}
 
         <div style={{ padding: "0 2px" }}>
           <button

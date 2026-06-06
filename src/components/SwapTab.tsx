@@ -107,6 +107,27 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** One reserve cluster of the single-line pool row: coin mark + tabular
+ *  amount. The mark identifies the asset, so no symbol text is needed. */
+function PoolAsset({ kind, amount }: { kind: "exfer" | "bnb"; amount: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+      {kind === "exfer" ? (
+        <img
+          src={tokenCoin}
+          alt="EXFER"
+          width={18}
+          height={18}
+          style={{ borderRadius: 999, display: "block", flex: "0 0 auto", boxSizing: "border-box", border: "1px solid rgba(255,255,255,0.55)" }}
+        />
+      ) : (
+        <BnbMark size={18} />
+      )}
+      <span style={{ fontWeight: 600, fontSize: 13.5, fontVariantNumeric: "tabular-nums", color: "var(--text-dim)" }}>{amount}</span>
+    </span>
+  );
+}
+
 /** A tiny inline trend line drawn from candle closes — the at-a-glance shape of
  *  the price, shown in the compact (collapsed) market view. Tinted by 24h move. */
 function Sparkline({ candles, up, width = 92, height = 30 }: { candles: Candle[]; up: boolean; width?: number; height?: number }) {
@@ -196,7 +217,7 @@ export function SwapTab({
 }) {
   const { t, lang } = useT();
   const price = usePrice(); // pool-sourced EXFER/USD (cached → no flicker)
-  const bnbUsd = useBnbUsd(); // BNB/USD spot, for the pool-depth TVL figure
+  const bnbUsd = useBnbUsd(); // BNB/USD spot — the pool row's ≈$ total value
   const [interval, setInterval] = useState<string>("1d");
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
   const [loadingChart, setLoadingChart] = useState(false);
@@ -374,33 +395,8 @@ export function SwapTab({
   // Plain decimal (never exponent) for tiny BNB figures like 0.0000016.
   const plainDec = (n: number) => n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
 
-  // 24h stats row segments — dot-separated under the price header. A segment
-  // whose data hasn't landed (or the pool doesn't provide) is simply omitted.
-  const statSegs: string[] = [];
-  if (dayStats?.hi != null) statSegs.push(`${t("swap.statHigh")} $${fp(dayStats.hi)}`);
-  if (dayStats?.lo != null) statSegs.push(`${t("swap.statLow")} $${fp(dayStats.lo)}`);
-  if (dayStats?.vol) {
-    statSegs.push(
-      `${t("swap.statVol")} ${Math.round(dayStats.vol.volExfer24h).toLocaleString("en-US")} EXFER (${t("swap.statTrades", { n: dayStats.vol.swaps24h })})`,
-    );
-  }
-  if (pool && pool.mid > 0) statSegs.push(`1 EXFER = ${plainDec(pool.mid)} BNB`);
-  if (marketCap != null) statSegs.push(`${t("swap.statMcap")} ≈ $${compact(marketCap)}`);
-
-  // Pool depth line: reserves (+ TVL when both USD prices are known), fee rate,
-  // and the per-swap soft cap (reserve × max_swap_bps).
-  const poolLine = (() => {
-    if (!pool || pool.exferReserve <= 0) return null;
-    const tvl = exferUsd != null && bnbUsd != null ? pool.exferReserve * exferUsd + pool.bnbReserve * bnbUsd : null;
-    const parts = [
-      `${t("swap.poolDepth")} ${Math.round(pool.exferReserve).toLocaleString("en-US")} EXFER + ${plainDec(pool.bnbReserve)} BNB${tvl != null ? ` (≈ $${compact(tvl)})` : ""}`,
-      `${t("swap.poolFee")} ${(pool.feeBps / 100).toFixed(2)}%`,
-    ];
-    if (pool.maxSwapBps > 0) {
-      parts.push(`${t("swap.poolMax")} ~${Math.round((pool.exferReserve * pool.maxSwapBps) / 10_000).toLocaleString("en-US")} EXFER`);
-    }
-    return parts.join(" · ");
-  })();
+  // Pool meta line (under the reserve rows): TVL when both USD prices are
+  // known, fee rate, and the per-swap soft cap (reserve × max_swap_bps).
 
   return (
     <div className="screen">
@@ -426,19 +422,6 @@ export function SwapTab({
             )}
           </div>
 
-          {/* 24h market stats — a muted, wrap-friendly dot-separated row: 24h
-              high/low (fixed hourly window), 24h volume + trade count (pool
-              stats), the raw BNB rate, and the market cap. */}
-          {statSegs.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", columnGap: 6, rowGap: 2, marginTop: 8, fontSize: 11.5, color: "var(--text-faint)", fontVariantNumeric: "tabular-nums" }}>
-              {statSegs.map((s, i) => (
-                <span key={i} style={{ whiteSpace: "nowrap" }}>
-                  {s}
-                  {i < statSegs.length - 1 ? " ·" : ""}
-                </span>
-              ))}
-            </div>
-          )}
 
           {/* View-chart toggle. */}
           <button
@@ -478,23 +461,6 @@ export function SwapTab({
                   </div>
                 )}
               </div>
-              {/* Crosshair OHLC readout — the hovered/pressed candle's numbers,
-                  with that candle's own move tinted green/red. Hidden when the
-                  finger lifts (the stats grid below also reacts to the bar). */}
-              {hovered && (() => {
-                const d = hovered.open > 0 ? ((hovered.close - hovered.open) / hovered.open) * 100 : 0;
-                return (
-                  <div className="mono" style={{ display: "flex", flexWrap: "wrap", columnGap: 10, rowGap: 2, marginTop: 6, fontSize: 11, color: "var(--text-faint)", fontVariantNumeric: "tabular-nums" }}>
-                    <span>O {fp(hovered.open)}</span>
-                    <span>H {fp(hovered.high)}</span>
-                    <span>L {fp(hovered.low)}</span>
-                    <span>C {fp(hovered.close)}</span>
-                    <span style={{ color: d >= 0 ? "#34d399" : "#f87171" }}>
-                      {d >= 0 ? "+" : ""}{d.toFixed(2)}%
-                    </span>
-                  </div>
-                );
-              })()}
             </>
           )}
 
@@ -503,28 +469,45 @@ export function SwapTab({
               When the crosshair is on a bar, the period cells show THAT bar. */}
           {/* Always rendered (with "—" placeholders until data lands) so the card
               has a stable height and nothing pops in on a cold tab switch. */}
-          <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px", paddingRight: 10, borderRight: "1px solid var(--border-soft)" }}>
-              <Stat
-                label={hovered ? t("swapTab.barHigh") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.highShort")}`}
-                value={stats ? `$${fp(hovered ? hovered.high : stats.hi)}` : "—"}
-              />
-              <Stat
-                label={hovered ? t("swapTab.barLow") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.lowShort")}`}
-                value={stats ? `$${fp(hovered ? hovered.low : stats.lo)}` : "—"}
-              />
-            </div>
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 8px" }}>
-              <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
-              <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 12px", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
+            <Stat
+              label={hovered ? t("swapTab.barHigh") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.highShort")}`}
+              value={stats ? `$${fp(hovered ? hovered.high : stats.hi)}` : "—"}
+            />
+            <Stat
+              label={hovered ? t("swapTab.barLow") : `${candles.length ? windowLabel(interval, candles.length) + " " : ""}${t("swapTab.lowShort")}`}
+              value={stats ? `$${fp(hovered ? hovered.low : stats.lo)}` : "—"}
+            />
+            <Stat
+              label={t("swap.statVol")}
+              value={dayStats?.vol ? `${compact(dayStats.vol.volExfer24h)} EXFER` : "—"}
+            />
+            <Stat
+              label={t("swap.statTradesShort")}
+              value={dayStats?.vol ? String(dayStats.vol.swaps24h) : "—"}
+            />
+            <Stat label={t("swapTab.mcap")} value={marketCap != null ? `$${compact(marketCap)}` : "—"} />
+            <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
           </div>
 
-          {/* Pool depth — reserves (+TVL), fee rate and the per-swap soft cap,
-              so the liquidity behind the quoted price is visible up front. */}
-          {poolLine && (
-            <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.6 }}>
-              {poolLine}
+          {/* Pool — the liquidity behind the quoted price gets its own small
+              sub-section (not a text dump): one token row per reserve asset,
+              then TVL / fee / per-swap cap as one quiet meta line. */}
+          {pool && pool.exferReserve > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-soft)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="eyebrow" style={{ flex: "0 0 auto" }}>{t("swap.poolTitle")}</span>
+                {/* Total value — the row's headline figure; the composing
+                    reserve clusters follow, slightly muted. */}
+                {(exferUsd ?? 0) > 0 && (bnbUsd ?? 0) > 0 && (
+                  <span style={{ fontWeight: 700, fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>
+                    ≈ ${compact(pool.exferReserve * (exferUsd ?? 0) + pool.bnbReserve * (bnbUsd ?? 0))}
+                  </span>
+                )}
+                <span style={{ flex: 1 }} />
+                <PoolAsset kind="exfer" amount={Math.round(pool.exferReserve).toLocaleString("en-US")} />
+                <PoolAsset kind="bnb" amount={plainDec(pool.bnbReserve)} />
+              </div>
             </div>
           )}
         </div>
@@ -601,12 +584,16 @@ export function SwapTab({
             })}
             {lpOps.map((op) => (
               <button key={op.id} onClick={() => onLiquidity(op.kind === "add" ? op.id : undefined)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
-                <InflightIcon kind="lp" />
+                <InflightIcon kind="lp" spin={!op.partial} />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
                     {op.kind === "add" ? t("lp.addTitle") : t("lp.removeTitle")} · {fmtAmt(op.exfer)} EXFER + {op.bnb} BNB
                   </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{t("swapTab.lpProcessing")}</span>
+                  {/* A partial (EXFER-only) deposit can't complete — it's awaiting
+                      the pool's expiry auto-refund, not "processing". */}
+                  <span style={{ display: "block", fontSize: 11.5, color: op.partial ? "#fbbf24" : "var(--text-faint)", marginTop: 2 }}>
+                    {op.partial ? t("swapTab.lpAwaitingRefund") : t("swapTab.lpProcessing")}
+                  </span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
               </button>

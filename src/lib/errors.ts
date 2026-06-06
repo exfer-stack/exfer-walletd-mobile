@@ -68,6 +68,12 @@ const PATTERNS: { test: RegExp; key: MsgKey }[] = [
     key: "err.refundNotYet",
   },
   {
+    // The pool allows one pending LP withdrawal at a time; a second submit
+    // during the payout window is a WAIT, not a failure.
+    test: /withdrawal is already pending/i,
+    key: "err.lpWithdrawPending",
+  },
+  {
     test: /rate.?limit|too many requests|queries per minute|-32603/i,
     key: "err.busy",
   },
