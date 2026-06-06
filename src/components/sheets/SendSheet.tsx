@@ -69,7 +69,7 @@ export function SendSheet({
    *  address's detail sheet so the user sends from the address they tapped. */
   initialFrom?: string;
 }) {
-  const { balance, refresh, suspendPolling } = useWallet();
+  const { balance, refresh, suspendPolling, utxos, refreshUtxos } = useWallet();
   const toast = useToast();
   const { t } = useT();
 
@@ -77,6 +77,9 @@ export function SendSheet({
   // upstream node's balance/utxo rate-limit budget is free for this flow's own
   // simulate_transfer + transfer queries. Resumes on close.
   useEffect(() => suspendPolling(), [suspendPolling]);
+  // One UTXO-count scan on open: it feeds the Max fill's fee floor (the floor
+  // scales with the inputs the transfer will pick — see the maxRow effect).
+  useEffect(() => { refreshUtxos(); }, [refreshUtxos]);
   const entries = balance?.entries ?? [];
   const sendable = entries.filter((a) => !isHidden(a.address) && a.balance > 0);
 
@@ -194,16 +197,22 @@ export function SendSheet({
   // loop; it converges once the simulated fee settles.
   useEffect(() => {
     if (maxRow === null) return;
-    const avail = Math.max(0, (fromEntry?.balance ?? 0) - fee - othersTotal);
+    // Until the real fee simulates, reserve a UTXO-scaled floor (~500/input,
+    // 2000 minimum) instead of the 1-input estimate `fee` falls back to.
+    // A many-UTXO address needs a much bigger fee, so the estimate-based fill
+    // overshoots, simulate_transfer fails ("insufficient: amount + fee"),
+    // simFee stays null and Max NEVER converges — the user just gets a red
+    // "not enough balance" banner on their own balance. (Ported from desktop
+    // Send, which hit the exact same trap.) Once simFee lands it takes over.
+    const feeFloor = Math.max(2000, (utxos[fromAddr]?.utxo_count ?? 1) * 500);
+    const avail = Math.max(0, (fromEntry?.balance ?? 0) - (simFee ?? feeFloor) - othersTotal);
     const amt = formatExfer(avail).replace(" EXFER", "");
     setOutputs((prev) => {
       if (maxRow >= prev.length || prev[maxRow].amount === amt) return prev;
       return prev.map((o, k) => (k === maxRow ? { ...o, amount: amt } : o));
     });
-    // `fee` derives from `simFee` + outputs.length; both are covered via
-    // simFee/othersTotal, so they're intentionally omitted here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simFee, othersTotal, maxRow, fromEntry?.balance]);
+  }, [simFee, othersTotal, maxRow, fromEntry?.balance, utxos, fromAddr]);
 
   function setOut(i: number, patch: Partial<OutputDraft>) {
     setOutputs((p) => p.map((o, k) => (k === i ? { ...o, ...patch } : o)));
