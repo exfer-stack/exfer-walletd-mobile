@@ -41,6 +41,14 @@ interface Position {
   pool_share_pct: number;
   value_bnb: string;
   value_exfer: string;
+  // Cost basis of the current shares and per-leg earnings (current value minus
+  // basis — CAN be negative on one leg while positive on the other, since price
+  // drift shifts the EXFER/BNB ratio). Newer pools only; absent on older pools,
+  // in which case the earnings block is hidden entirely.
+  deposited_exfer?: string;
+  deposited_bnb?: string;
+  earn_exfer?: string;
+  earn_bnb?: string;
 }
 // "stillProcessing": the status poll ran out of patience but the deposit is NOT
 // failed — it finishes (or auto-refunds) in the background. "sentPartial": the
@@ -57,6 +65,19 @@ function usd(n: number): string {
   return n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 3, useGrouping: false });
 }
 function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* unsupported */ } }
+
+/** Signed display — explicit "+" on gains so the green/red tint reads unambiguously. */
+function signed(n: number, fmt: (abs: number) => string): string {
+  return `${n < 0 ? "-" : "+"}${fmt(Math.abs(n))}`;
+}
+/** Earnings tint: green for gains (and exactly zero), red for losses. */
+function earnTint(n: number): string {
+  return n >= 0 ? "#34d399" : "#f87171";
+}
+/** EXFER amounts in the earnings block: grouped, at most 2 decimals. */
+function fmtExfer2(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
 
 function ExferMark({ size = 26 }: { size?: number }) {
   // The full token coin (exfer-token.png is a centered mark on a black disc),
@@ -649,6 +670,21 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
 
   // ── overview ──
   const posValueUsd = pos?.has_position ? Number(pos.value_exfer) * exferUsd * 2 : 0;
+  // Earnings vs cost basis — only rendered when the pool reports the basis
+  // (deposited_*); older pools omit these fields and the block stays hidden.
+  const earn = pos?.has_position && pos.deposited_exfer != null
+    ? {
+        exfer: Number(pos.earn_exfer ?? 0),
+        bnb: Number(pos.earn_bnb ?? 0),
+        depExfer: Number(pos.deposited_exfer),
+        depBnb: Number(pos.deposited_bnb ?? 0),
+      }
+    : null;
+  // The combined ≈$ headline needs BOTH spot prices; with either missing we
+  // show the per-leg amounts only rather than a wrong/partial dollar figure.
+  const haveSpots = exferUsd > 0 && (bnbUsd ?? 0) > 0;
+  const earnUsd = earn && haveSpots ? earn.exfer * exferUsd + earn.bnb * (bnbUsd ?? 0) : 0;
+  const earnBasisUsd = earn && haveSpots ? earn.depExfer * exferUsd + earn.depBnb * (bnbUsd ?? 0) : 0;
   // Positions on addresses OTHER than the one currently shown — surfaced so a
   // user whose position sits on a non-default address can still find it.
   const others = positions.filter((p) => p.address.toLowerCase() !== exferAddr.toLowerCase());
@@ -667,6 +703,33 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
               <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))} />
               <div style={{ height: 1, background: "var(--border)" }} />
               <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)} />
+              {earn && (
+                <>
+                  <div style={{ height: 1, background: "var(--border)" }} />
+                  <div style={{ padding: "10px 0 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.earnings")}</span>
+                      {/* Combined headline — the number that matters; the two legs
+                          routinely have OPPOSITE signs (AMM price drift). */}
+                      {haveSpots && (
+                        <span style={{ fontWeight: 700, fontSize: 13.5, color: earnTint(earnUsd), fontVariantNumeric: "tabular-nums" }}>
+                          ≈ {signed(earnUsd, (a) => `$${usd(a)}`)}
+                          {earnBasisUsd > 0 && ` (${signed(earnUsd / earnBasisUsd * 100, (a) => a.toFixed(1))}%)`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mono" style={{ fontSize: 12, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ color: earnTint(earn.exfer) }}>{signed(earn.exfer, fmtExfer2)} EXFER</span>
+                      <span style={{ color: "var(--text-faint)" }}> · </span>
+                      <span style={{ color: earnTint(earn.bnb) }}>{signed(earn.bnb, (a) => sig(a))} BNB</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 5 }}>
+                      {t("lp.depositedLine", { exfer: fmtExfer2(earn.depExfer), bnb: sig(earn.depBnb) })}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8, lineHeight: 1.5 }}>{t("lp.earningsNote")}</div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : !posScanned || !posLoaded ? (
