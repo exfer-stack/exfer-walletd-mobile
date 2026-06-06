@@ -98,7 +98,22 @@ export function SwapWatcher() {
       }
     };
 
+    // Re-entrancy guard: tick is async (RPC + a possible tip-height fetch) on a
+    // fixed interval — without this, a slow tick overlaps the next one and the
+    // unmatched nudge below could fire twice for the same swap.
+    let running = false;
+
     const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        await tickInner();
+      } finally {
+        running = false;
+      }
+    };
+
+    const tickInner = async () => {
       let list: SwapLite[];
       try {
         list = await rpc<SwapLite[]>("swap_list");
@@ -154,6 +169,11 @@ export function SwapWatcher() {
           !nudged.has(s.swap_id),
       );
       if (candidates.length > 0) {
+        // Mark + persist the candidates as nudged BEFORE any await: if this
+        // tick is interrupted (or a future overlap slips past the guard), the
+        // same swap must never announce twice.
+        for (const s of candidates) nudged.add(s.swap_id);
+        writeNudged([...nudged]);
         // Sell timeouts are EXFER block heights; one tip fetch covers them all.
         const needHeight = candidates.some((c) => c.direction === "exfer_to_bnb");
         const height = needHeight ? await getBlockHeight() : null;
@@ -168,7 +188,6 @@ export function SwapWatcher() {
           const body = t("swap.nudgeBody", { eta });
           toast.info(title, body);
           osNotify(title, body);
-          nudged.add(s.swap_id);
         }
       }
       // Drop nudge marks for swaps that are gone / terminal (they can't

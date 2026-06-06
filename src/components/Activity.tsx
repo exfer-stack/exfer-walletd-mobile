@@ -5,7 +5,7 @@
 // incoming or outgoing, confirmed or pending — opens a detail sheet with a real
 // tx id + explorer link. See lib/activity.ts for the merge model.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import { Icon } from "../lib/icons";
 import { useToast } from "../lib/toast";
@@ -14,7 +14,9 @@ import { formatExfer, formatBalanceCompact, rpc } from "../lib/rpc";
 import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER, txExplorerUrl, formatBnb } from "../lib/format";
 import { getSwapUsd } from "../lib/swapPrice";
-import { useT, tStatic, type MsgKey } from "../lib/i18n";
+import { getBlockHeight } from "../lib/market";
+import { derivePhase, formatEta, GRACE_SEC, type SwapPhase } from "../lib/swapPhase";
+import { useT, tStatic, type MsgKey, type Lang } from "../lib/i18n";
 import {
   buildActivityFeed,
   loadFeedCache,
@@ -42,6 +44,11 @@ interface SwapRow {
   claim_tx?: string | null;
   refund_tx?: string | null;
   error?: string | null;
+  // Phase-derivation fields (see src/lib/swapPhase.ts) — swap_list returns the
+  // full record; optional so an older daemon's record still renders.
+  expires_at?: number | null;
+  exfer_timeout_height?: number | null;
+  bsc_timeout_sec?: number | null;
 }
 
 function fmtA(s: string, dp = 4): string {
@@ -58,15 +65,29 @@ function fmtA(s: string, dp = 4): string {
   return frac ? `${w}.${frac}` : w;
 }
 
-/** Swap status → label key + pill class. */
-function swapPill(status: string): { key: MsgKey; cls: string } {
-  switch (status) {
+/** Derived swap phase → label key + pill class. An unmatched/refundable swap
+ *  gets an honest amber "didn't match" pill instead of the accent "in progress"
+ *  one — it's waiting on its HTLC auto-refund, not making forward motion. */
+function swapPill(phase: SwapPhase): { key: MsgKey; cls: string } {
+  switch (phase.kind) {
     case "completed": return { key: "swap.statusCompleted", cls: "pill-success" };
     case "refunded": return { key: "swap.statusRefunded", cls: "pill-warn" };
     case "failed": return { key: "swap.statusFailed", cls: "pill-danger" };
     case "refunding": return { key: "swap.statusRefunding", cls: "pill-warn" };
+    case "unmatched":
+    case "refundable":
+      return { key: "swap.unmatchedTitle", cls: "pill-warn" };
     default: return { key: "swap.inflightTitle", cls: "pill-accent" };
   }
+}
+
+/** {eta} slot for the unmatched/refundable copy. Refundable never fabricates a
+ *  minutes figure — the timeout has passed, so the auto-refund lands "any
+ *  moment now", however long the broadcast retries take. */
+function phaseEtaText(phase: SwapPhase, lang: Lang): string {
+  if (phase.kind === "refundable") return tStatic("swap.etaMoments");
+  if (phase.kind === "unmatched" && phase.etaSec != null) return formatEta(phase.etaSec, lang);
+  return tStatic("swap.etaFewHours");
 }
 
 function relTime(iso: string): string {
@@ -142,7 +163,9 @@ export function Activity() {
         real.sort((a, b) => b.created_at - a.created_at);
         setSwaps(real);
       } catch {
-        if (!cancelled) setSwaps([]);
+        // Transient RPC failure (or engine off): keep the last-known swaps.
+        // Blanking them would also blank swapTxIds for a beat, letting a swap's
+        // raw lock/refund legs flash into the transfer feed below.
       }
     };
     load();
@@ -152,6 +175,36 @@ export function Activity() {
       window.clearInterval(id);
     };
   }, []);
+
+  // Clock for the derived swap phases — 30s is plenty for hour-scale countdowns.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = window.setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // EXFER tip height — only needed to turn a sell's refund-timeout HEIGHT into
+  // a countdown on an unmatched row. Fetched lazily (throttled to ~30s) and
+  // ONLY while some sell actually sits user_locked past its quote expiry; a
+  // null tip degrades the eta copy to "a few hours".
+  const [tipHeight, setTipHeight] = useState<number | null>(null);
+  const lastHeightAt = useRef(0);
+  useEffect(() => {
+    const needsHeight = swaps.some(
+      (s) =>
+        s.status === "user_locked" &&
+        s.direction === "exfer_to_bnb" &&
+        s.expires_at != null &&
+        nowSec > s.expires_at + GRACE_SEC,
+    );
+    if (!needsHeight || Date.now() - lastHeightAt.current <= 30_000) return;
+    lastHeightAt.current = Date.now();
+    let cancelled = false;
+    void getBlockHeight().then((h) => {
+      if (!cancelled && h != null) setTipHeight(h);
+    });
+    return () => { cancelled = true; };
+  }, [swaps, nowSec]);
 
   const ownAddrs = useMemo(
     () => (balance?.entries ?? []).map((e) => e.address),
@@ -262,7 +315,12 @@ export function Activity() {
             <div className="eyebrow" style={{ margin: "0 2px 9px" }}>{t("act.swaps")}</div>
             <div style={{ display: "grid", gap: 11 }}>
               {swaps.map((s) => (
-                <SwapActivityRow key={s.swap_id} s={s} onOpen={() => setOpenSwap(s.swap_id)} />
+                <SwapActivityRow
+                  key={s.swap_id}
+                  s={s}
+                  phase={derivePhase(s, nowSec, tipHeight)}
+                  onOpen={() => setOpenSwap(s.swap_id)}
+                />
               ))}
             </div>
           </div>
@@ -322,7 +380,13 @@ export function Activity() {
 
       {openSwap && (() => {
         const s = swaps.find((x) => x.swap_id === openSwap);
-        return s ? <SwapDetailSheet s={s} onClose={() => setOpenSwap(null)} /> : null;
+        return s ? (
+          <SwapDetailSheet
+            s={s}
+            phase={derivePhase(s, nowSec, tipHeight)}
+            onClose={() => setOpenSwap(null)}
+          />
+        ) : null;
       })()}
     </div>
   );
@@ -374,11 +438,13 @@ function SkeletonRow() {
   );
 }
 
-function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
-  const { t } = useT();
+function SwapActivityRow({ s, phase, onOpen }: { s: SwapRow; phase: SwapPhase; onOpen: () => void }) {
+  const { t, lang } = useT();
   const sell = s.direction === "exfer_to_bnb";
+  const inUnit = sell ? "EXFER" : "BNB";
   const outUnit = sell ? "BNB" : "EXFER";
-  const pill = swapPill(s.status);
+  const pill = swapPill(phase);
+  const unmatched = phase.kind === "unmatched" || phase.kind === "refundable";
   const when = relTime(new Date(s.created_at * 1000).toISOString());
   return (
     <button
@@ -412,13 +478,34 @@ function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
               {sell ? t("act.soldExfer") : t("act.boughtExfer")}
             </div>
             <div className="faint" style={{ fontSize: 11.5 }}>{when}</div>
+            {unmatched && (
+              <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
+                {t("swap.cardUnmatched", { eta: phaseEtaText(phase, lang) })}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="mono" style={{ fontWeight: 600, fontSize: 15, color: "#34d399" }}>
-            +{fmtA(s.amount_out)}
-            <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {outUnit}</span>
-          </div>
+          {/* Only a completed swap actually credited amount_out — show it green
+              and signed. A refunded swap returned the IN amount (neutral, not a
+              credit of the quoted out). Anything still in flight (or waiting on
+              its auto-refund) shows the expected outcome muted and unsigned. */}
+          {phase.kind === "completed" ? (
+            <div className="mono" style={{ fontWeight: 600, fontSize: 15, color: "#34d399" }}>
+              +{fmtA(s.amount_out)}
+              <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {outUnit}</span>
+            </div>
+          ) : phase.kind === "refunded" ? (
+            <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>
+              {fmtA(s.amount_in)}
+              <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {inUnit}</span>
+            </div>
+          ) : (
+            <div className="mono" style={{ fontWeight: 600, fontSize: 15, color: "var(--text-dim)" }}>
+              {fmtA(s.amount_out)}
+              <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 11.5 }}> {outUnit}</span>
+            </div>
+          )}
           <span className={"pill " + pill.cls} style={{ marginTop: 6, padding: "3px 9px", fontSize: 11 }}>
             {t(pill.key)}
           </span>
@@ -431,8 +518,8 @@ function SwapActivityRow({ s, onOpen }: { s: SwapRow; onOpen: () => void }) {
 /** Detail sheet for a single swap — amounts, status, fee, time, and the
  *  on-chain references (only those present), each copyable. Mirrors the
  *  TxSheet's eyebrow + mono-code styling. */
-function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
-  const { t } = useT();
+function SwapDetailSheet({ s, phase, onClose }: { s: SwapRow; phase: SwapPhase; onClose: () => void }) {
+  const { t, lang } = useT();
   const toast = useToast();
   const sell = s.direction === "exfer_to_bnb";
 
@@ -450,7 +537,8 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
   }
   const inUnit = sell ? "EXFER" : "BNB";
   const outUnit = sell ? "BNB" : "EXFER";
-  const pill = swapPill(s.status);
+  const pill = swapPill(phase);
+  const unmatched = phase.kind === "unmatched" || phase.kind === "refundable";
   const created = new Date(s.created_at * 1000).toLocaleString();
 
   // Price/value at the time of the swap. The executed rate is exact (derived
@@ -484,6 +572,22 @@ function SwapDetailSheet({ s, onClose }: { s: SwapRow; onClose: () => void }) {
           {t(pill.key)}
         </span>
       </div>
+
+      {/* Unmatched / refundable: the honest destination is the automatic HTLC
+          refund — explain it instead of leaving a bare in-progress pill. */}
+      {unmatched && (() => {
+        const eta = phaseEtaText(phase, lang);
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: "var(--text-dim)", fontSize: 13, lineHeight: 1.6, textAlign: "center" }}>
+              {t("swap.unmatchedBody", { eta })}
+            </div>
+            <div style={{ textAlign: "center", fontSize: 13.5, fontWeight: 600, marginTop: 10 }}>
+              {phase.kind === "unmatched" ? t("swap.autoRefundIn", { eta }) : t("swap.refundingAuto")}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="card card-2" style={{ overflow: "hidden", marginBottom: 16 }}>
         {rate != null && (

@@ -437,9 +437,21 @@ export function SwapTab({
                 phase.kind === "unmatched" && phase.etaSec != null
                   ? formatEta(phase.etaSec, lang)
                   : phase.kind === "refundable"
-                    ? formatEta(60, lang)
+                    // Timeout passed — don't fabricate a minutes figure while
+                    // the refund broadcast may still be retrying.
+                    ? t("swap.etaMoments")
                     : t("swap.etaFewHours");
               const ageMin = s.created_at ? Math.max(1, Math.floor((nowSec - s.created_at) / 60)) : null;
+              // "237 min ago" reads badly for an hours-old swap — switch to
+              // "{h} h {m} min ago" past the hour (plain "{h} h ago" on the dot).
+              const ageLabel =
+                ageMin == null
+                  ? null
+                  : ageMin < 60
+                    ? t("swap.cardAge", { n: ageMin })
+                    : ageMin % 60 === 0
+                      ? t("act.hAgo", { h: Math.floor(ageMin / 60) })
+                      : t("swap.cardAgeLong", { h: Math.floor(ageMin / 60), m: ageMin % 60 });
               const statusLine = unmatched ? t("swap.cardUnmatched", { eta }) : swapStatusText(t, s.status);
               return (
                 <button key={s.swap_id} onClick={() => onResumeSwap(s.swap_id)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
@@ -450,7 +462,7 @@ export function SwapTab({
                     </span>
                     <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>
                       {statusLine}
-                      {ageMin != null ? ` · ${t("swap.cardAge", { n: ageMin })}` : ""}
+                      {ageLabel != null ? ` · ${ageLabel}` : ""}
                     </span>
                   </span>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>

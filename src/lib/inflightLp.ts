@@ -14,8 +14,10 @@ export interface LpOp {
 
 const KEY = "exfer-inflight-lp";
 // Backstop so a crashed/abandoned flow never lingers forever. Adds are normally
-// removed the moment their status goes terminal; this only catches the strays.
-const MAX_AGE: Record<LpOp["kind"], number> = { add: 10 * 60_000, remove: 60_000 };
+// removed the moment their status goes terminal (the status poll is the real
+// cleanup) — the TTL only catches strays, so it must be generous: a slow
+// deposit that's still pending must not silently vanish from "In progress".
+const MAX_AGE: Record<LpOp["kind"], number> = { add: 60 * 60_000, remove: 60_000 };
 
 function readRaw(): LpOp[] {
   try {
@@ -25,15 +27,23 @@ function readRaw(): LpOp[] {
     return [];
   }
 }
-function writeRaw(ops: LpOp[]): void {
+function writeRaw(ops: LpOp[], notify = true): void {
   try { localStorage.setItem(KEY, JSON.stringify(ops)); } catch { /* ignore */ }
-  try { window.dispatchEvent(new Event("inflight-lp")); } catch { /* ignore */ }
+  if (notify) {
+    try { window.dispatchEvent(new Event("inflight-lp")); } catch { /* ignore */ }
+  }
 }
 
-/** Active ops, with stale entries (by age) filtered out for display. */
+/** Active ops. Entries past their TTL are DELETED from storage, not just
+ *  hidden — otherwise the localStorage list grows without bound. The prune is
+ *  silent (no change event): the dropped entries were already invisible, and
+ *  this is called from render paths where a synchronous notify could re-enter. */
 export function getLpOps(): LpOp[] {
   const now = Date.now();
-  return readRaw().filter((o) => o && o.id && now - o.startedAt < (MAX_AGE[o.kind] ?? 60_000));
+  const all = readRaw();
+  const live = all.filter((o) => o && o.id && now - o.startedAt < (MAX_AGE[o.kind] ?? 60_000));
+  if (live.length !== all.length) writeRaw(live, false);
+  return live;
 }
 export function addLpOp(op: LpOp): void {
   writeRaw([...readRaw().filter((o) => o.id !== op.id), op]);

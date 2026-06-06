@@ -726,6 +726,9 @@ export function SwapSheet({
     try {
       const r = await rpc<SwapRec>("swap_refund", { swap_id: watchId });
       setLive(r);
+      // Ping the swap-changed listeners so Home's "{amt} EXFER in an active
+      // swap" line clears immediately instead of on the next poll tick.
+      notifySwapChanged();
       toast.success(t("swap.refundedTitle"), "");
     } catch (e) {
       // A failed refund ATTEMPT is not a failed swap — the dominant case is the
@@ -1540,7 +1543,9 @@ export function SwapSheet({
       phase.kind === "unmatched" && phase.etaSec != null
         ? formatEta(phase.etaSec, lang)
         : phase.kind === "refundable"
-          ? formatEta(60, lang) // timeout passed; the auto-refund lands shortly
+          // Timeout passed — but never fabricate a minutes figure: the refund
+          // broadcast can retry for a while, so promise "any moment", not "~1 min".
+          ? t("swap.etaMoments")
           : t("swap.etaFewHours");
     return (
       <Sheet
