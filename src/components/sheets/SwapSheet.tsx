@@ -1284,9 +1284,12 @@ export function SwapSheet({
       return parts.length ? parts.reduce((s, x) => s + x, 0) : null;
     })();
     const feePctR = sigFmt(((typeof quote.fee_bps === "number" ? quote.fee_bps : poolInfo?.feeBps ?? 0) / 100), 2);
-    // Countdown styling.
+    // Countdown styling. `expired` is the backstop for a FAILED in-place
+    // re-quote (the countdown normally refreshes itself just before expiry):
+    // the quote is truly stale, so Confirm is disabled until a fresh one lands.
     const left = quoteLeft;
     const lowTime = left != null && left <= 10;
+    const expired = left != null && left <= 0 && !requoting;
     const sendUsdStr = usdStr(sendUsdR);
     const recvUsdStr = usdStr(recvUsdR);
     return (
@@ -1296,7 +1299,7 @@ export function SwapSheet({
         onClose={onClose}
         onBack={() => setStep(1)}
         footer={
-          <button className="btn btn-block" disabled={busy || requoting || !confirmArmed} onClick={() => void doExecute()}>
+          <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || expired} onClick={() => void doExecute()}>
             {busy || requoting ? <Spinner /> : t("swap.confirm")}
           </button>
         }
@@ -1313,17 +1316,14 @@ export function SwapSheet({
             <Row label={t("swap.priceLabel")} value={`1 EXFER ≈ $${sigFmt(exferUsd, 4)}`} />
           )}
 
-          {/* Price impact with the same "?" affordance as step-1, severity-coloured. */}
-          {priceImpact > 0 && (
+          {/* Price impact — always in the breakdown once it's computable
+              (muted normally, severity-coloured past the warning thresholds),
+              with the same "?" affordance as step-1. */}
+          {poolInfo != null && (
             <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "var(--text-faint)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  {t("swap.priceImpact")}
-                  <HelpDot open={impactHelpOpen} onClick={() => setImpactHelpOpen((o) => !o)} />
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: impactColor(priceImpact, highImpact) }}>
-                  {(priceImpact * 100).toFixed(2)}%
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: priceImpact >= 0.03 || highImpact ? impactColor(priceImpact, highImpact) : "var(--text-faint)" }}>
+                <span>{t("swap.priceImpactLine", { pct: `${(priceImpact * 100).toFixed(2)}%` })}</span>
+                <HelpDot open={impactHelpOpen} onClick={() => setImpactHelpOpen((o) => !o)} />
               </div>
               {impactHelpOpen && (
                 <div style={{ fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.5, marginTop: -4 }}>{t("swap.impactHelp")}</div>
@@ -1363,16 +1363,18 @@ export function SwapSheet({
           </div>
 
           {/* Quote countdown (item [1]) — amber under ~10s. At expiry it
-              re-quotes IN PLACE; Confirm never fails for a stale quote. */}
-          {left != null && (
+              re-quotes IN PLACE; if that refresh failed the quote is truly
+              stale, so say so (amber) and keep Confirm disabled (footer). */}
+          {left != null && (expired ? (
+            <div style={{ color: "#fbbf24", fontSize: 12.5, lineHeight: 1.5 }}>{t("swap.quoteExpired")}</div>
+          ) : (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.quoteValid", { time: mmss(left) })}</span>
+              <span style={{ fontSize: 13, fontWeight: lowTime ? 600 : 400, color: lowTime ? "#fbbf24" : "var(--text-faint)" }}>
+                {t("swap.quoteValidFor", { t: mmss(left) })}
+              </span>
               {requoting && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-faint)" }}><Spinner size={12} /> {t("swap.requoting")}</span>}
-              {!requoting && (
-                <span style={{ fontSize: 13, fontWeight: 600, color: lowTime ? "#fbbf24" : "var(--text)" }}>{mmss(left)}</span>
-              )}
             </div>
-          )}
+          ))}
 
           {/* High-impact inline acknowledgement (item [17]) — arms Confirm. A
               single confirmation, then biometric. Leads with the money. */}

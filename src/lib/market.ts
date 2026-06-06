@@ -100,15 +100,44 @@ function mapCandles(items: RawCandle[]): Candle[] {
     .sort((a, b) => a.time - b.time);
 }
 
-/** OHLC candles for the chart, from THIS pool's own price history
+/** 24h trading stats the pool appends to swap_price_klines. Older pools omit
+ *  it — callers get `null` and hide the corresponding UI. */
+export interface KlineStats {
+  swaps24h: number;
+  volExfer24h: number;
+  volBnb24h: number;
+}
+
+type RawStats = { swaps_24h?: number | string; vol_exfer_24h?: number | string; vol_bnb_24h?: number | string };
+
+function mapStats(s: RawStats | null | undefined): KlineStats | null {
+  if (!s) return null;
+  const swaps = Number(s.swaps_24h), volExfer = Number(s.vol_exfer_24h), volBnb = Number(s.vol_bnb_24h);
+  if (!isFinite(swaps) || !isFinite(volExfer) || !isFinite(volBnb)) return null;
+  return { swaps24h: swaps, volExfer24h: volExfer, volBnb24h: volBnb };
+}
+
+/** OHLC candles + the pool's 24h stats, from THIS pool's own price history
  *  (swap_price_klines: seeded once from OTC server-side, then grown from the
- *  pool's mid). Empty array on failure — the chart shows its empty state. */
-export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]> {
+ *  pool's mid). Empty candles / null stats on failure. */
+export async function getKlinesWithStats(
+  interval = "1d",
+  limit = 120,
+): Promise<{ candles: Candle[]; stats: KlineStats | null }> {
   try {
-    const res = await rpc<{ items?: RawCandle[] }>("swap_price_klines", { interval, limit });
-    if (Array.isArray(res?.items)) return mapCandles(res.items);
+    const res = await rpc<{ items?: RawCandle[]; stats?: RawStats | null }>("swap_price_klines", { interval, limit });
+    return {
+      candles: Array.isArray(res?.items) ? mapCandles(res.items) : [],
+      stats: mapStats(res?.stats),
+    };
   } catch { /* fall through to empty */ }
-  return [];
+  return { candles: [], stats: null };
+}
+
+/** OHLC candles for the chart. Empty array on failure — the chart shows its
+ *  empty state. Thin wrapper that drops the stats. */
+export async function getKlines(interval = "1d", limit = 120): Promise<Candle[]> {
+  return (await getKlinesWithStats(interval, limit)).candles;
 }
 
 // ── circulating supply ───────────────────────────────────────────────────

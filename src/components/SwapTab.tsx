@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import { rpc } from "../lib/rpc";
-import { usePrice, getKlines, circulatingSupplyExfer, getBlockHeight, type Candle } from "../lib/market";
+import { usePrice, useBnbUsd, getKlines, getKlinesWithStats, circulatingSupplyExfer, getBlockHeight, type Candle, type KlineStats } from "../lib/market";
 import { derivePhase, formatEta, GRACE_SEC } from "../lib/swapPhase";
 import { useT, type MsgKey } from "../lib/i18n";
 import { Spinner, BnbMark } from "./ui";
@@ -55,6 +55,13 @@ function saveCache(key: string, val: unknown): void {
 let candlesCache: Record<string, Candle[]> = loadCache("swaptab-candles-v1", {});
 let lpAvailableCache = loadCache("swaptab-lp-v1", false);
 let supplyCache: number | null = loadCache("swaptab-supply-v1", null);
+// 24h market stats: high/low from a fixed hourly window (independent of the
+// selected chart interval) + the pool's appended trade-volume stats.
+interface DayStats { hi: number | null; lo: number | null; vol: KlineStats | null }
+let dayStatsCache: DayStats | null = loadCache("swaptab-daystats-v1", null);
+// Pool reserves / fee / per-swap cap (the same swap_pool_info the sheet uses).
+interface PoolStats { mid: number; feeBps: number; exferReserve: number; bnbReserve: number; maxSwapBps: number }
+let poolStatsCache: PoolStats | null = loadCache("swaptab-pool-v1", null);
 // In-progress swaps were the one piece NOT cached, so the card popped in a beat
 // late after the swap_list RPC on every tab re-entry (SwapTab remounts on tab
 // switch). Seed from this so it paints instantly, then the refresh updates it.
@@ -189,6 +196,7 @@ export function SwapTab({
 }) {
   const { t, lang } = useT();
   const price = usePrice(); // pool-sourced EXFER/USD (cached → no flicker)
+  const bnbUsd = useBnbUsd(); // BNB/USD spot, for the pool-depth TVL figure
   const [interval, setInterval] = useState<string>("1d");
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
   const [loadingChart, setLoadingChart] = useState(false);
@@ -205,6 +213,59 @@ export function SwapTab({
   // the refresh loop below, and only while some swap actually needs it.
   const [tipHeight, setTipHeight] = useState<number | null>(null);
   const lastHeightAt = useRef(0);
+  // 24h high/low/volume + pool depth, refreshed on their own ~60s cadence.
+  const [dayStats, setDayStats] = useState<DayStats | null>(dayStatsCache);
+  const [pool, setPool] = useState<PoolStats | null>(poolStatsCache);
+
+  // 24h high/low from a dedicated hourly window (25 × 1h candles), independent
+  // of whichever interval the chart is showing, plus the pool's appended 24h
+  // trade stats (swaps / volume). Both ride the same fetch.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () =>
+      getKlinesWithStats("1h", 25).then(({ candles: c, stats }) => {
+        if (cancelled) return;
+        let hi: number | null = null, lo: number | null = null;
+        for (const k of c) {
+          if (hi == null || k.high > hi) hi = k.high;
+          if (lo == null || k.low < lo) lo = k.low;
+        }
+        if (hi == null && stats == null) return; // keep the cached values on failure
+        dayStatsCache = { hi, lo, vol: stats };
+        saveCache("swaptab-daystats-v1", dayStatsCache);
+        setDayStats(dayStatsCache);
+      });
+    void tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
+
+  // Pool depth / fee / per-swap cap — the same swap_pool_info the swap sheet
+  // quotes against. Refreshed ~60s so the depth line tracks live liquidity.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () =>
+      rpc<{
+        mid_price_bnb_per_exfer: number; fee_bps: number;
+        exfer_reserve: number | string | null; bnb_reserve: number | string | null; max_swap_bps: number | null;
+      }>("swap_pool_info")
+        .then((p) => {
+          if (cancelled) return;
+          poolStatsCache = {
+            mid: Number(p.mid_price_bnb_per_exfer) || 0,
+            feeBps: Number(p.fee_bps) || 0,
+            exferReserve: Number(p.exfer_reserve) || 0,
+            bnbReserve: Number(p.bnb_reserve) || 0,
+            maxSwapBps: Number(p.max_swap_bps) || 0,
+          };
+          saveCache("swaptab-pool-v1", poolStatsCache);
+          setPool(poolStatsCache);
+        })
+        .catch(() => { /* engine off — keep the cached line (or none) */ });
+    void tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
 
   // Circulating EXFER supply, computed from the tip height (no supply RPC). It
   // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
@@ -310,6 +371,36 @@ export function SwapTab({
   const marketCap = supply != null && exferUsd != null ? supply * exferUsd : null;
   const compact = (n: number) =>
     n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n.toFixed(0);
+  // Plain decimal (never exponent) for tiny BNB figures like 0.0000016.
+  const plainDec = (n: number) => n.toLocaleString("en-US", { maximumSignificantDigits: 4, useGrouping: false });
+
+  // 24h stats row segments — dot-separated under the price header. A segment
+  // whose data hasn't landed (or the pool doesn't provide) is simply omitted.
+  const statSegs: string[] = [];
+  if (dayStats?.hi != null) statSegs.push(`${t("swap.statHigh")} $${fp(dayStats.hi)}`);
+  if (dayStats?.lo != null) statSegs.push(`${t("swap.statLow")} $${fp(dayStats.lo)}`);
+  if (dayStats?.vol) {
+    statSegs.push(
+      `${t("swap.statVol")} ${Math.round(dayStats.vol.volExfer24h).toLocaleString("en-US")} EXFER (${t("swap.statTrades", { n: dayStats.vol.swaps24h })})`,
+    );
+  }
+  if (pool && pool.mid > 0) statSegs.push(`1 EXFER = ${plainDec(pool.mid)} BNB`);
+  if (marketCap != null) statSegs.push(`${t("swap.statMcap")} ≈ $${compact(marketCap)}`);
+
+  // Pool depth line: reserves (+ TVL when both USD prices are known), fee rate,
+  // and the per-swap soft cap (reserve × max_swap_bps).
+  const poolLine = (() => {
+    if (!pool || pool.exferReserve <= 0) return null;
+    const tvl = exferUsd != null && bnbUsd != null ? pool.exferReserve * exferUsd + pool.bnbReserve * bnbUsd : null;
+    const parts = [
+      `${t("swap.poolDepth")} ${Math.round(pool.exferReserve).toLocaleString("en-US")} EXFER + ${plainDec(pool.bnbReserve)} BNB${tvl != null ? ` (≈ $${compact(tvl)})` : ""}`,
+      `${t("swap.poolFee")} ${(pool.feeBps / 100).toFixed(2)}%`,
+    ];
+    if (pool.maxSwapBps > 0) {
+      parts.push(`${t("swap.poolMax")} ~${Math.round((pool.exferReserve * pool.maxSwapBps) / 10_000).toLocaleString("en-US")} EXFER`);
+    }
+    return parts.join(" · ");
+  })();
 
   return (
     <div className="screen">
@@ -334,6 +425,20 @@ export function SwapTab({
               <Sparkline candles={candles} up={(price?.change24h ?? 0) >= 0} />
             )}
           </div>
+
+          {/* 24h market stats — a muted, wrap-friendly dot-separated row: 24h
+              high/low (fixed hourly window), 24h volume + trade count (pool
+              stats), the raw BNB rate, and the market cap. */}
+          {statSegs.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", columnGap: 6, rowGap: 2, marginTop: 8, fontSize: 11.5, color: "var(--text-faint)", fontVariantNumeric: "tabular-nums" }}>
+              {statSegs.map((s, i) => (
+                <span key={i} style={{ whiteSpace: "nowrap" }}>
+                  {s}
+                  {i < statSegs.length - 1 ? " ·" : ""}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* View-chart toggle. */}
           <button
@@ -373,6 +478,23 @@ export function SwapTab({
                   </div>
                 )}
               </div>
+              {/* Crosshair OHLC readout — the hovered/pressed candle's numbers,
+                  with that candle's own move tinted green/red. Hidden when the
+                  finger lifts (the stats grid below also reacts to the bar). */}
+              {hovered && (() => {
+                const d = hovered.open > 0 ? ((hovered.close - hovered.open) / hovered.open) * 100 : 0;
+                return (
+                  <div className="mono" style={{ display: "flex", flexWrap: "wrap", columnGap: 10, rowGap: 2, marginTop: 6, fontSize: 11, color: "var(--text-faint)", fontVariantNumeric: "tabular-nums" }}>
+                    <span>O {fp(hovered.open)}</span>
+                    <span>H {fp(hovered.high)}</span>
+                    <span>L {fp(hovered.low)}</span>
+                    <span>C {fp(hovered.close)}</span>
+                    <span style={{ color: d >= 0 ? "#34d399" : "#f87171" }}>
+                      {d >= 0 ? "+" : ""}{d.toFixed(2)}%
+                    </span>
+                  </div>
+                );
+              })()}
             </>
           )}
 
@@ -397,6 +519,14 @@ export function SwapTab({
               <Stat label={t("swapTab.supply")} value={supply != null ? `${compact(supply)}` : "—"} />
             </div>
           </div>
+
+          {/* Pool depth — reserves (+TVL), fee rate and the per-swap soft cap,
+              so the liquidity behind the quoted price is visible up front. */}
+          {poolLine && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.6 }}>
+              {poolLine}
+            </div>
+          )}
         </div>
 
         {/* Primary swap CTA — the filled accent action, lifted toward the top. */}
