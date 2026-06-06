@@ -21,6 +21,7 @@ import type { WalletEntry } from "../lib/types";
 import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner, BnbMark } from "./ui";
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
+import { onSwapChanged } from "../lib/inflightLp";
 import { NewAddressModal } from "./modals/NewAddressModal";
 import { CreateBnbWalletSheet } from "./sheets/CreateBnbWalletSheet";
 import { useBscWallet, revealBscMnemonic } from "../lib/bscWallet";
@@ -134,14 +135,22 @@ function weiToBnbAmount(wei: bigint, dp = 8): string {
 let bnbCache: { addr: string; wei: string; reserveWei?: string } | null = null;
 let bnbMidCache: number | null = null;
 
+// Swap statuses that no longer hold user funds (mirrors SwapTab) — anything
+// else is an ACTIVE swap whose EXFER is locked on-chain and therefore missing
+// from the balance hero. Surfaced as a quiet one-liner under the headline.
+const TERMINAL_SWAP = ["quoted", "expired", "completed", "refunded", "failed"];
+
 export function Home({
   onReceive,
   onSend,
   onOpenAddress,
+  onGoSwap,
 }: {
   onReceive: () => void;
   onSend: () => void;
   onOpenAddress: (address: string) => void;
+  /** Navigate to the Swap tab (the locked-in-swap line taps through to it). */
+  onGoSwap: () => void;
 }) {
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
@@ -312,6 +321,36 @@ export function Home({
       window.clearInterval(id);
     };
   }, [depositOpen, bnb, toast, t]);
+
+  // EXFER currently locked in ACTIVE (non-terminal) sell swaps. That amount
+  // has left the addresses (so the hero total dropped) but isn't gone — it's
+  // locked on-chain and settles or auto-refunds by itself. One subdued line
+  // under the headline keeps the books honest; tapping it goes to the Swap tab.
+  const [swapLockedExfer, setSwapLockedExfer] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const all = await rpc<{ direction: string; status: string; amount_in: string }[]>("swap_list");
+        if (cancelled) return;
+        const sum = (all ?? [])
+          .filter((s) => s.direction === "exfer_to_bnb" && !TERMINAL_SWAP.includes(s.status))
+          .reduce((acc, s) => acc + (Number(s.amount_in) || 0), 0);
+        setSwapLockedExfer(sum);
+      } catch {
+        /* swap engine off / transient — keep the last value */
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 15_000);
+    // A just-executed swap pings this — show the line immediately.
+    const unsub = onSwapChanged(() => void load());
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      unsub();
+    };
+  }, []);
 
   // `balance` is null until the first successful load. Show skeletons while
   // it's loading, but if that first load FAILED show an error+retry instead
@@ -504,6 +543,26 @@ export function Home({
               still-confirming state lives only on the address row (a small
               dot) and in the address detail. */}
         </button>
+
+        {/* EXFER locked in an active swap — plain text, no icon. The amount has
+            left the hero total but is safe on-chain; tap through to the Swap
+            tab where the in-progress card shows the live phase. */}
+        {swapLockedExfer > 0 && (
+          <button
+            onClick={onGoSwap}
+            className="tap"
+            style={{
+              display: "block", width: "100%", background: "none", border: 0,
+              padding: "0 0 14px", margin: "-8px 0 0", cursor: "pointer",
+              font: "inherit", textAlign: "left",
+              fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.5,
+            }}
+          >
+            {t("swap.lockedLine", {
+              amt: swapLockedExfer.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+            })}
+          </button>
+        )}
 
         <div style={{ display: "flex", gap: 10, padding: "4px 0 24px" }}>
           <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />

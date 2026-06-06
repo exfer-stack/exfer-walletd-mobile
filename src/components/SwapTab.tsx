@@ -2,10 +2,11 @@
 // a draggable candlestick chart, then the swap CTA, in-flight swaps, and the
 // liquidity entry. The BNB asset card stays on the wallet tab as a holding.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import { rpc } from "../lib/rpc";
 import { usePrice, getKlines, circulatingSupplyExfer, getBlockHeight, type Candle } from "../lib/market";
+import { derivePhase, formatEta, GRACE_SEC } from "../lib/swapPhase";
 import { useT, type MsgKey } from "../lib/i18n";
 import { Spinner, BnbMark } from "./ui";
 import { PriceChart } from "./PriceChart";
@@ -21,6 +22,12 @@ interface InflightSwap {
   status: string;
   amount_in: string;
   amount_out: string;
+  // Phase-derivation fields (see src/lib/swapPhase.ts) — present on current
+  // walletd; optional so a cached/older record still renders.
+  expires_at?: number | null;
+  exfer_timeout_height?: number | null;
+  bsc_timeout_sec?: number | null;
+  created_at?: number | null;
 }
 
 // Module cache so the chart + liquidity entry paint instantly on tab re-entry
@@ -137,13 +144,16 @@ function CoinPair({ badge }: { badge: "swap" | "add" }) {
 
 /** Leading mark for an in-progress row: a distinct glyph (⇄ for a swap, + for a
  *  liquidity op) over a spinning ring, so the two kinds are told apart at a
- *  glance instead of sharing one anonymous spinner. */
-function InflightIcon({ kind }: { kind: "swap" | "lp" }) {
+ *  glance instead of sharing one anonymous spinner. `spin: false` drops the
+ *  ring — an unmatched swap is WAITING on its auto-refund, not progressing. */
+function InflightIcon({ kind, spin = true }: { kind: "swap" | "lp"; spin?: boolean }) {
   return (
     <span style={{ position: "relative", flex: "0 0 auto", width: 30, height: 30, display: "inline-grid", placeItems: "center" }}>
-      <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--accent)" }}>
-        <Spinner size={30} />
-      </span>
+      {spin && (
+        <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--accent)" }}>
+          <Spinner size={30} />
+        </span>
+      )}
       <span style={{ display: "grid", placeItems: "center", color: "var(--text-dim)" }}>
         {kind === "swap" ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -177,7 +187,7 @@ export function SwapTab({
   onLiquidity: (resumeAddId?: string) => void;
   theme: "dark" | "light";
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const price = usePrice(); // pool-sourced EXFER/USD (cached → no flicker)
   const [interval, setInterval] = useState<string>("1d");
   const [candles, setCandles] = useState<Candle[]>(candlesCache["1d"] ?? []);
@@ -190,6 +200,11 @@ export function SwapTab({
   // Chart is expanded by default (fills the page, more useful than a sparkline);
   // the toggle choice is remembered, so collapsing it sticks.
   const [chartOpen, setChartOpen] = useState(() => loadCache("swaptab-chart-open-v1", true));
+  // EXFER tip height — only needed to turn a sell's refund-timeout HEIGHT into
+  // a countdown on an unmatched card. Fetched lazily (throttled to ~30s) from
+  // the refresh loop below, and only while some swap actually needs it.
+  const [tipHeight, setTipHeight] = useState<number | null>(null);
+  const lastHeightAt = useRef(0);
 
   // Circulating EXFER supply, computed from the tip height (no supply RPC). It
   // barely moves (1 EXFER / 10s on ~69M), so fetch once per mount.
@@ -235,6 +250,21 @@ export function SwapTab({
         const all = await rpc<InflightSwap[]>("swap_list");
         inflightCache = (all ?? []).filter((s) => !TERMINAL_SWAP.includes(s.status));
         if (!cancelled) setInflight(inflightCache);
+        // A sell sitting unmatched needs the EXFER tip to render its
+        // auto-refund countdown; fetch it at most every ~30s.
+        const nowSec = Math.floor(Date.now() / 1000);
+        const needsHeight = inflightCache.some(
+          (s) =>
+            s.status === "user_locked" &&
+            s.direction === "exfer_to_bnb" &&
+            s.expires_at != null &&
+            nowSec > s.expires_at + GRACE_SEC,
+        );
+        if (needsHeight && Date.now() - lastHeightAt.current > 30_000) {
+          lastHeightAt.current = Date.now();
+          const h = await getBlockHeight();
+          if (!cancelled && h != null) setTipHeight(h);
+        }
       } catch { /* keep the last cached list rather than blanking the card */ }
       // Drop any LP add whose deposit has gone terminal (the status read is a
       // cheap DB lookup via walletd, not a node-RPC hit).
@@ -396,18 +426,37 @@ export function SwapTab({
         {(inflight.length > 0 || lpOps.length > 0) && (
           <div style={{ marginBottom: 16 }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>{t("swapTab.inProgress")}</div>
-            {inflight.map((s) => (
-              <button key={s.swap_id} onClick={() => onResumeSwap(s.swap_id)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
-                <InflightIcon kind="swap" />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
-                    {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} → {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
+            {inflight.map((s) => {
+              // Derived phase (src/lib/swapPhase.ts): an unmatched swap shows a
+              // plain "auto-refund in {eta}" line WITHOUT the progress spinner —
+              // it's waiting on a timeout, not making forward motion.
+              const nowSec = Math.floor(Date.now() / 1000);
+              const phase = derivePhase(s, nowSec, tipHeight);
+              const unmatched = phase.kind === "unmatched" || phase.kind === "refundable";
+              const eta =
+                phase.kind === "unmatched" && phase.etaSec != null
+                  ? formatEta(phase.etaSec, lang)
+                  : phase.kind === "refundable"
+                    ? formatEta(60, lang)
+                    : t("swap.etaFewHours");
+              const ageMin = s.created_at ? Math.max(1, Math.floor((nowSec - s.created_at) / 60)) : null;
+              const statusLine = unmatched ? t("swap.cardUnmatched", { eta }) : swapStatusText(t, s.status);
+              return (
+                <button key={s.swap_id} onClick={() => onResumeSwap(s.swap_id)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
+                  <InflightIcon kind="swap" spin={!unmatched} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13.5, fontWeight: 600 }}>
+                      {fmtAmt(s.amount_in)} {s.direction === "exfer_to_bnb" ? "EXFER" : "BNB"} → {fmtAmt(s.amount_out)} {s.direction === "exfer_to_bnb" ? "BNB" : "EXFER"}
+                    </span>
+                    <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>
+                      {statusLine}
+                      {ageMin != null ? ` · ${t("swap.cardAge", { n: ageMin })}` : ""}
+                    </span>
                   </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{swapStatusText(t, s.status)}</span>
-                </span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
-              </button>
-            ))}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}><path d="M9 6l6 6-6 6" /></svg>
+                </button>
+              );
+            })}
             {lpOps.map((op) => (
               <button key={op.id} onClick={() => onLiquidity(op.kind === "add" ? op.id : undefined)} className="card" style={{ width: "100%", display: "flex", alignItems: "center", padding: "11px 13px", marginBottom: 6, gap: 11, textAlign: "left" }}>
                 <InflightIcon kind="lp" />

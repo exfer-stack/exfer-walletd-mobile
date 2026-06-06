@@ -25,7 +25,8 @@ import { Icon } from "../../lib/icons";
 import type { WalletEntry } from "../../lib/types";
 import { Sheet, CopyButton, Spinner, AddrAvatar, BnbMark, StagedStepper } from "../ui";
 import { Qr } from "../Qr";
-import { usePrice, useBnbUsd } from "../../lib/market";
+import { usePrice, useBnbUsd, getBlockHeight } from "../../lib/market";
+import { derivePhase, formatEta } from "../../lib/swapPhase";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 import { recordSwapUsd } from "../../lib/swapPrice";
 import { SwapTimingHelp } from "../SwapTimingHelp";
@@ -154,6 +155,13 @@ interface SwapRec {
   network_fee_bnb?: string | null;
   /** Unix seconds when this firm quote stops being honored by the pool. */
   expires_at?: number | null;
+  /** Sell (lock on EXFER): block height at which the refund unlocks. */
+  exfer_timeout_height?: number | null;
+  /** Buy (lock on BSC): unix seconds at which the refund unlocks. */
+  bsc_timeout_sec?: number | null;
+  /** Unix seconds — when the swap record was created / last touched. */
+  created_at?: number | null;
+  updated_at?: number | null;
   our_bsc_address?: string | null;
   error?: string | null;
   // Tx references for each leg, passed through from walletd's SwapRecord
@@ -227,7 +235,7 @@ export function SwapSheet({
 }) {
   const { balance, refresh, suspendPolling } = useWallet();
   const toast = useToast();
-  const { t } = useT();
+  const { t, lang } = useT();
   const price = usePrice();
   const bnbUsd = useBnbUsd();
 
@@ -780,15 +788,44 @@ export function SwapSheet({
     return () => window.clearInterval(id);
   }, [step, expiresAt, requote]);
 
-  // Elapsed seconds on the progress screen, for a "taking longer than usual" hint.
+  // Swap age on the progress screen, for a "taking longer than usual" hint.
+  // Anchored to the record's created_at (fallback: mount time) so reopening
+  // the sheet doesn't reset the clock — a resumed 10-minute-old swap is 10
+  // minutes old, not 0s. The 1s tick also drives the derived-phase clock and
+  // the unmatched auto-refund countdown below.
+  const createdAtMs = live?.created_at ? live.created_at * 1000 : null;
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (step !== 3) return;
-    const t0 = Date.now();
-    setElapsed(0);
-    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    const t0 = createdAtMs ?? Date.now();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - t0) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [step]);
+  }, [step, createdAtMs]);
+
+  // EXFER tip height — needed only to turn a sell's refund timeout HEIGHT into
+  // seconds for the unmatched countdown. Polled lazily (~30s) and only while
+  // the swap could need it (a sell sitting in user_locked); buys carry a plain
+  // unix timeout. Unavailable (null) degrades the copy to "a few hours".
+  const [chainHeight, setChainHeight] = useState<number | null>(null);
+  const needHeight =
+    step === 3 && live?.status === "user_locked" && live?.direction === "exfer_to_bnb";
+  useEffect(() => {
+    if (!needHeight) return;
+    let cancelled = false;
+    const tick = () => {
+      void getBlockHeight().then((h) => {
+        if (!cancelled && h != null) setChainHeight(h);
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [needHeight]);
 
   // On a terminal state, just a haptic. We DON'T auto-dismiss the success
   // screen anymore (item [11]) — that stole the moment the user wants to read
@@ -1370,11 +1407,31 @@ export function SwapSheet({
   }
 
   // ---------- step 3: progress ----------
-  const s = live?.status ?? "user_locked";
-  const terminal = ["completed", "refunded", "failed"].includes(s);
+  // The DERIVED phase (src/lib/swapPhase.ts) — never fabricate a status while
+  // the record is still loading, and treat "user_locked past the quote expiry"
+  // as unmatched-awaiting-auto-refund instead of a stuck "matching" bar. The 1s
+  // `elapsed` tick above re-renders this, keeping nowSec and the countdown live.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const phase = derivePhase(live, nowSec, chainHeight);
+  const s = live?.status ?? "";
   const inUnit = live?.direction === "exfer_to_bnb" ? "EXFER" : "BNB";
   const outUnit = live?.direction === "exfer_to_bnb" ? "BNB" : "EXFER";
   const amounts = live ? `${fmtAmt(live.amount_in)} ${inUnit} → ${fmtAmt(live.amount_out)} ${outUnit}` : "";
+  const terminal = ["completed", "refunded", "failed"].includes(s);
+  const swapId = live?.swap_id ?? watchId ?? "";
+
+  // Resumed swap, record not loaded yet: a minimal reading state — NOT a
+  // fabricated "step 1 of 3" stepper for a swap whose status we don't know.
+  if (phase.kind === "loading") {
+    return (
+      <Sheet title={t("swap.submittedTitle")} onClose={onClose}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "44px 0" }}>
+          <Spinner size={22} />
+          <div style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.loadingStatus")}</div>
+        </div>
+      </Sheet>
+    );
+  }
 
   // A "quoted" swap was never confirmed — no funds moved. Be honest instead of
   // claiming funds are locked (the old UI's biggest correctness bug).
@@ -1401,7 +1458,6 @@ export function SwapSheet({
     const kind = s === "completed" ? "success" : s === "refunded" ? "refunded" : "failed";
     const title =
       s === "completed" ? t("swap.completedTitle") : s === "refunded" ? t("swap.refundedTitle") : t("swap.failedTitle");
-    const swapId = live?.swap_id ?? watchId ?? "";
     // failed/refunded keep a persistent "funds are safe / refunded" line, a
     // copyable swap ID + Help, and the raw error tucked into Details (item [10]).
     const notTerminalSuccess = s !== "completed";
@@ -1474,16 +1530,61 @@ export function SwapSheet({
     );
   }
 
-  // In-progress (user_locked / pool_locked / claiming): a 3-step checklist so
-  // "in progress" reads as measurable forward motion, not an endless spinner.
-  const doneCount = s === "pool_locked" || s === "claiming" ? 2 : 1;
+  // Unmatched / refundable: the quote expired and the pool never took the other
+  // side. This is a DIFFERENT destination, not a stalled progress bar — no
+  // stepper, no spinner. Funds are locked on-chain and return automatically at
+  // the HTLC timeout; before that timeout a manual refund is protocol-impossible,
+  // so the refund button exists ONLY once the timeout has passed (refundable).
+  if (phase.kind === "unmatched" || phase.kind === "refundable") {
+    const eta =
+      phase.kind === "unmatched" && phase.etaSec != null
+        ? formatEta(phase.etaSec, lang)
+        : phase.kind === "refundable"
+          ? formatEta(60, lang) // timeout passed; the auto-refund lands shortly
+          : t("swap.etaFewHours");
+    return (
+      <Sheet
+        title={t("swap.unmatchedTitle")}
+        onClose={closeSettling}
+        footer={<button className="btn btn-block" onClick={closeSettling}>{t("swap.closeKeepSettling")}</button>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "14px 0 4px" }}>
+          {amounts && (
+            <div style={{ textAlign: "center", fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>
+          )}
+          <div style={{ color: "var(--text-dim)", fontSize: 13, lineHeight: 1.6, textAlign: "center" }}>
+            {t("swap.unmatchedBody", { eta })}
+          </div>
+          {phase.kind === "unmatched" ? (
+            // Live countdown to the automatic refund — this line is the
+            // destination; there is no button to press before the timeout.
+            <div style={{ textAlign: "center", fontSize: 14, fontWeight: 600 }}>
+              {t("swap.autoRefundIn", { eta })}
+            </div>
+          ) : (
+            <>
+              <div style={{ textAlign: "center", fontSize: 13, color: "var(--text-dim)" }}>
+                {t("swap.refundingAuto")}
+              </div>
+              <button className="btn-ghost btn-sm" style={{ alignSelf: "center" }} disabled={busy} onClick={manualRefund}>
+                {busy ? <Spinner size={13} /> : t("swap.refundNow")}
+              </button>
+            </>
+          )}
+          <TxRefs rec={live} t={t} onCopied={onRefCopied} />
+        </div>
+      </Sheet>
+    );
+  }
+
+  // In-progress (matching / settling): a 3-step checklist so "in progress"
+  // reads as measurable forward motion, not an endless spinner.
+  const doneCount = phase.kind === "settling" ? 2 : 1;
   const stepLabels = [t("swap.stepLocked"), t("swap.stepMatched"), t("swap.stepSettling")];
   // Raised threshold (item [9]): a healthy swap is ~60s and can run to ~2 min on
   // a slow block. Don't cry "taking long" until ~165s so the happy path never
   // looks broken.
   const stuck = elapsed > 165;
-  const canRefund = ["user_locked", "pool_locked"].includes(s);
-  const swapId = live?.swap_id ?? watchId ?? "";
   return (
     <Sheet
       title={t("swap.submittedTitle")}
@@ -1513,14 +1614,13 @@ export function SwapSheet({
         {stuck && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
             <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t("swap.takingLong")}</div>
-            {canRefund ? (
-              <button className="btn-ghost btn-sm" disabled={busy} onClick={manualRefund}>
-                {busy ? <Spinner size={13} /> : t("swap.refundNow")}
-              </button>
-            ) : (
-              // claiming can't be self-refunded (the pool is mid-claim) — give a
-              // copyable swap ID + Help instead of a dead end (item [10]).
-              swapId && <SwapIdHelp swapId={swapId} t={t} onCopied={onRefCopied} onHelp={openHelp} />
+            {/* No refund button here: before the HTLC timeout a refund is
+                protocol-impossible (it only toasted a failure). The unmatched
+                panel above takes over once the quote expires unmatched, and the
+                manual refund appears only in its refundable state. For a stuck
+                settling swap (the pool is mid-claim), offer the swap ID + Help. */}
+            {phase.kind === "settling" && swapId && (
+              <SwapIdHelp swapId={swapId} t={t} onCopied={onRefCopied} onHelp={openHelp} />
             )}
           </div>
         )}

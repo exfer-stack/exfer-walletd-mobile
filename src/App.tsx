@@ -247,6 +247,7 @@ function Shell() {
                 onReceive={() => setOverlay({ type: "receive" })}
                 onSend={() => setOverlay({ type: "send" })}
                 onOpenAddress={(address) => setOverlay({ type: "address", address })}
+                onGoSwap={() => setTab("swap")}
               />
             )}
             {tab === "swap" && (

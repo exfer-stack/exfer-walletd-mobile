@@ -42,7 +42,11 @@ interface Position {
   value_bnb: string;
   value_exfer: string;
 }
-type ResultKind = "added" | "refunded" | "removed" | "failed";
+// "stillProcessing": the status poll ran out of patience but the deposit is NOT
+// failed — it finishes (or auto-refunds) in the background. "sentPartial": the
+// EXFER leg broadcast but a later step threw; the deposit auto-returns on
+// expiry, so a retry would double-send. Both render neutral, never the red X.
+type ResultKind = "added" | "refunded" | "removed" | "failed" | "stillProcessing" | "sentPartial";
 
 function sig(n: number, d = 6): string {
   if (!isFinite(n) || n === 0) return "0";
@@ -268,12 +272,21 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       try {
         const status = await pollDeposit(resumeAddId);
         if (cancelled) return;
+        if (status === "timeout") {
+          // Keep the LpOp tracked — the deposit is still processing.
+          setResult({ kind: "stillProcessing" });
+          setStep("done");
+          return;
+        }
         removeLpOp(resumeAddId);
         await load(); await refresh();
         if (status === "completed") {
           const pp = await rpc<Position>("lp_position", { address: exferAddr.toLowerCase() }).catch(() => null);
           buzz([0, 30, 40, 30]);
           setResult({ kind: "added", exfer: pp?.value_exfer, bnb: pp?.value_bnb });
+        } else if (status === "failed") {
+          buzz(60);
+          setResult({ kind: "failed" });
         } else {
           buzz(60);
           setResult({ kind: "refunded" });
@@ -322,17 +335,33 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       toast.error(t("swap.notConfirmedTitle"), ""); return;
     }
     setBusy(true); setErr(null); setStage(0); setStep("progress");
+    // True once the EXFER transfer has broadcast: from that point a thrown
+    // later step (e.g. bsc_send_bnb) is NOT a clean failure — money already
+    // moved, the deposit auto-returns on expiry, and a retry would double-send.
+    let exferSent = false;
+    let intentId: string | null = null;
     try {
       const intent = await rpc<{ id: string; deposit_exfer_address: string; deposit_bsc_address: string }>(
         "lp_deposit_start", { exfer_address: exferAddr, bsc_address: bscAddr });
+      intentId = intent.id;
       // Track it so the Swap tab's "in progress" list shows it — and so it's
       // still visible if the user closes this sheet ("safe to close" hint).
       addLpOp({ id: intent.id, kind: "add", exfer: amount, bnb: sig(bnbNeeded, 4), startedAt: Date.now() });
       setStage(0);
       await rpc("transfer", { from: exferAddr, outputs: [{ to: intent.deposit_exfer_address, amount: parseExferAmount(amount) }], fee_rate: FEE_RATE });
+      exferSent = true;
       await rpc("bsc_send_bnb", { to: intent.deposit_bsc_address, amount: sig(bnbNeeded, 8) });
       setStage(1);
       const status = await pollDeposit(intent.id);
+      if (status === "timeout") {
+        // Slow, not dead: keep the LpOp tracked (the Swap tab keeps watching
+        // it) and show a neutral "still processing" — never the red "failed".
+        await load(); await refresh();
+        setResult({ kind: "stillProcessing" });
+        toast.info(t("lp.stillProcessingTitle"), t("lp.stillProcessingBody"));
+        setStep("done");
+        return;
+      }
       removeLpOp(intent.id);
       await load(); await refresh();
       if (status === "completed") {
@@ -340,7 +369,11 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
         buzz([0, 30, 40, 30]);
         setResult({ kind: "added", exfer: pp?.value_exfer, bnb: pp?.value_bnb });
         toast.success(t("lp.addedTitle"), t("lp.addedBody"));
+      } else if (status === "failed") {
+        buzz(60);
+        setResult({ kind: "failed" });
       } else {
+        // expired / refunded — both mean the legs were (or will be) returned.
         buzz(60);
         setResult({ kind: "refunded" });
         toast.info(t("lp.refundedTitle"), t("lp.refundedBody"));
@@ -348,22 +381,36 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       setStep("done"); setAmount("");
     } catch (e) {
       buzz(60);
-      setErr(humanizeError(e));
-      setResult({ kind: "failed" });
+      if (exferSent) {
+        // EXFER is out the door; don't say "failed — try again" (a retry would
+        // send it twice) and keep the LpOp so the deposit stays visible.
+        setErr(null);
+        setResult({ kind: "sentPartial" });
+      } else {
+        // Nothing moved — a clean failure, safe to retry. Drop the tracked op.
+        if (intentId) removeLpOp(intentId);
+        setErr(humanizeError(e));
+        setResult({ kind: "failed" });
+      }
       setStep("done");
     } finally { setBusy(false); }
   }
 
-  function pollDeposit(id: string): Promise<"completed" | "expired"> {
-    return new Promise((resolve, reject) => {
+  // Resolves with the deposit's terminal status, or "timeout" when we stop
+  // watching after 5 min. A timeout is NOT a failure (the deposit keeps
+  // processing server-side), so it must never reject into the failed path.
+  function pollDeposit(id: string): Promise<"completed" | "expired" | "refunded" | "failed" | "timeout"> {
+    return new Promise((resolve) => {
       const t0 = Date.now();
       const tick = async () => {
         try {
           const s = await rpc<{ status: string }>("lp_deposit_status", { id });
           if (s.status === "completed") { setStage(2); return resolve("completed"); }
           if (s.status === "expired") return resolve("expired");
+          if (s.status === "refunded") return resolve("refunded");
+          if (s.status === "failed") return resolve("failed");
         } catch { /* transient */ }
-        if (Date.now() - t0 > 5 * 60_000) return reject(new Error(t("lp.timedOut")));
+        if (Date.now() - t0 > 5 * 60_000) return resolve("timeout");
         window.setTimeout(tick, 4000);
       };
       tick();
@@ -388,7 +435,9 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
       await load(); await refresh();
       buzz([0, 30, 40, 30]);
       setResult({ kind: "removed", exfer: owed.exfer, bnb: owed.bnb });
-      toast.success(t("lp.removeQueuedTitle"), t("lp.removeQueuedBody"));
+      // Queued framing, not instant success: the pool pays both legs out in
+      // the background — nothing has landed in the wallet yet.
+      toast.info(t("lp.withdrawQueuedTitle"), t("lp.withdrawQueuedBody"));
       setStep("done");
     } catch (e) {
       setErr(humanizeError(e));
@@ -426,15 +475,34 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
     );
   }
 
-  // ── result (added / refunded / removed / failed) ──
+  // ── result (added / removed-queued / refunded / failed / neutral states) ──
   if (step === "done" && result) {
     const k = result.kind;
-    const badge = k === "added" || k === "removed" ? "success" : k === "refunded" ? "refunded" : "failed";
-    const heading = k === "added" ? t("lp.addedHeading") : k === "removed" ? t("lp.removedHeading") : k === "refunded" ? t("lp.refundedTitle") : t("lp.failedHeading");
+    // Only a confirmed add earns the green check. A withdraw is QUEUED (both
+    // legs pay out in the background) — amber "returning to you", not success.
+    // stillProcessing / sentPartial keep a spinner: genuinely still working.
+    const badge: "success" | "refunded" | "failed" | null =
+      k === "added" ? "success"
+      : k === "removed" || k === "refunded" ? "refunded"
+      : k === "failed" ? "failed"
+      : null;
+    const heading =
+      k === "added" ? t("lp.addedHeading")
+      : k === "removed" ? t("lp.withdrawQueuedTitle")
+      : k === "refunded" ? t("lp.refundedTitle")
+      : k === "stillProcessing" || k === "sentPartial" ? t("lp.stillProcessingTitle")
+      : t("lp.failedHeading");
+    const body =
+      k === "added" ? t("lp.addedDoneBody")
+      : k === "removed" ? t("lp.withdrawQueuedBody")
+      : k === "refunded" ? t("lp.refundedBody")
+      : k === "stillProcessing" ? t("lp.stillProcessingBody")
+      : k === "sentPartial" ? t("lp.sentPartialBody")
+      : (err || t("lp.failedBody"));
     return (
       <Sheet title={t("lp.title")} onClose={onClose} footer={<button className="btn btn-block" onClick={() => { setResult(null); setStep("overview"); }}>{t("swap.done")}</button>}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "22px 0" }}>
-          <ResultBadge kind={badge} />
+          {badge ? <ResultBadge kind={badge} /> : <Spinner size={28} />}
           <div style={{ fontSize: 18, fontWeight: 700 }}>{heading}</div>
           {(k === "added" || k === "removed") && result.exfer && (
             <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>
@@ -442,7 +510,7 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
             </div>
           )}
           <div style={{ color: "var(--text-faint)", fontSize: 13, textAlign: "center", lineHeight: 1.5, padding: "0 12px" }}>
-            {k === "added" ? t("lp.addedDoneBody") : k === "removed" ? t("lp.removeQueuedBody") : k === "refunded" ? t("lp.refundedBody") : (err || t("lp.failedBody"))}
+            {body}
           </div>
         </div>
       </Sheet>
