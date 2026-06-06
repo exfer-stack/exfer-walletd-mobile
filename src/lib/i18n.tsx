@@ -622,6 +622,7 @@ const EN = {
   "swap.completedTitle": "Swap complete",
   "swap.refundedTitle": "Swap refunded",
   "swap.failedTitle": "Swap failed",
+  "swap.refundFailedTitle": "Refund not completed",
   "swap.viewActivity": "View in Activity",
   "swap.expired": "Quote expired — start over",
   "swap.amountInvalid": "Enter a valid amount",
@@ -709,6 +710,8 @@ const EN = {
   "err.amountTooSmall": "Amount too small — it would be lost to network fees. Try a larger amount.",
   "err.needBnb": "Your BSC address needs a little BNB for gas first.",
   "err.unsafeTimeout": "The pool returned unsafe terms; the swap was cancelled to protect your funds.",
+  "err.refundNotYet":
+    "Refund is time-locked on-chain: it unlocks when the swap's safety window ends, then happens automatically. Your funds are protected — nothing to do.",
   "err.bnbWalletNeeded": "Set up your BNB wallet first.",
   "home.swap": "Swap",
 
@@ -1314,6 +1317,7 @@ const ZH: Record<MsgKey, string> = {
   "swap.completedTitle": "兑换完成",
   "swap.refundedTitle": "兑换已退款",
   "swap.failedTitle": "兑换失败",
+  "swap.refundFailedTitle": "退款未完成",
   "swap.viewActivity": "在动态中查看",
   "swap.expired": "报价已过期——请重新开始",
   "swap.amountInvalid": "请输入有效金额",
@@ -1401,6 +1405,8 @@ const ZH: Record<MsgKey, string> = {
   "err.amountTooSmall": "金额太小,会被网络手续费吃掉,请加大金额。",
   "err.needBnb": "你的 BSC 地址需要先充一点 BNB 付手续费。",
   "err.unsafeTimeout": "兑换池返回了不安全的条款,已为你的资金安全取消本次兑换。",
+  "err.refundNotYet":
+    "退款受链上时间锁保护：安全期结束后才会解锁，到期会自动原路退回。资金是安全的，无需任何操作。",
   "err.bnbWalletNeeded": "请先创建你的 BNB 钱包。",
   "home.swap": "兑换",
 

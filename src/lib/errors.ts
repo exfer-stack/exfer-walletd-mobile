@@ -59,6 +59,15 @@ const PATTERNS: { test: RegExp; key: MsgKey }[] = [
     key: "err.unsafeTimeout",
   },
   {
+    // walletd's early-reclaim guard (-32037 "htlc timeout not reached"): a
+    // protocol-mandated WAIT, not a failure — and critically not a network
+    // problem, which the broad err.network pattern below would otherwise claim
+    // (its /timeout/ matches this message; that mislabel told a user with
+    // safely-locked funds that his network was broken). Must stay above it.
+    test: /timeout not reached|TimeoutNotReached|-32037/i,
+    key: "err.refundNotYet",
+  },
+  {
     test: /rate.?limit|too many requests|queries per minute|-32603/i,
     key: "err.busy",
   },

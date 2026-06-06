@@ -720,7 +720,9 @@ export function SwapSheet({
       setLive(r);
       toast.success(t("swap.refundedTitle"), "");
     } catch (e) {
-      toast.error(t("swap.failedTitle"), humanizeError(e));
+      // A failed refund ATTEMPT is not a failed swap — the dominant case is the
+      // HTLC timelock simply not having elapsed yet (humanized separately).
+      toast.error(t("swap.refundFailedTitle"), humanizeError(e));
     } finally {
       setBusy(false);
     }
