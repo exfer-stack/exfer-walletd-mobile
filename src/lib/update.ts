@@ -28,6 +28,9 @@ export interface LatestRelease {
   releaseUrl: string;
   /** Direct .apk asset, when the release attaches one. */
   apkUrl?: string;
+  /** Release body markdown — carries the bilingual changelog (see
+   *  RELEASE_NOTES.md convention: "## What's new" / "## 更新内容"). */
+  notes?: string;
 }
 
 /** Compare dotted versions. >0 if a>b, <0 if a<b, 0 if equal. Non-numeric or
@@ -49,6 +52,7 @@ function parseRelease(raw: string): LatestRelease | null {
     const d = JSON.parse(raw) as {
       tag_name?: string;
       html_url?: string;
+      body?: string;
       assets?: { name?: string; browser_download_url?: string }[];
     };
     if (!d.tag_name) return null;
@@ -57,6 +61,7 @@ function parseRelease(raw: string): LatestRelease | null {
       version: d.tag_name.replace(/^v/, ""),
       releaseUrl: d.html_url || "https://github.com/exfer-stack/exfer-walletd-mobile/releases/latest",
       apkUrl: apk?.browser_download_url,
+      notes: d.body || undefined,
     };
   } catch {
     return null;
@@ -75,6 +80,49 @@ async function fetchLatest(): Promise<LatestRelease | null> {
     raw = await invoke<string>("check_latest_release");
   }
   return parseRelease(raw);
+}
+
+/** Pull the changelog bullets for one language out of a release body.
+ *  Convention (RELEASE_NOTES.md, injected into the release by CI): a
+ *  "## What's new" section followed by a "## 更新内容" section. Returns plain
+ *  lines with markdown bullets stripped; [] when the body doesn't follow the
+ *  convention (old releases carry install boilerplate — showing that as a
+ *  changelog would be worse than showing nothing). */
+export function changelogLines(notes: string | undefined, lang: "en" | "zh"): string[] {
+  if (!notes) return [];
+  for (const sec of notes.split(/^##\s+/m)) {
+    const nl = sec.indexOf("\n");
+    if (nl < 0) continue;
+    const heading = sec.slice(0, nl).trim().toLowerCase();
+    const hit = lang === "zh" ? heading.includes("更新内容") : heading.startsWith("what's new");
+    if (!hit) continue;
+    // Markdown bullets wrap across lines — a continuation line (no bullet
+    // marker) belongs to the previous entry, not a new one.
+    const out: string[] = [];
+    for (const raw of sec.slice(nl + 1).split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      // A horizontal rule ends the changelog: everything after it is release-
+      // page boilerplate (install blurb), not change entries.
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) break;
+      if (/^[-*•]\s+/.test(line)) out.push(line.replace(/^[-*•]\s+/, ""));
+      else if (out.length > 0) out[out.length - 1] += ` ${line}`;
+      else out.push(line);
+    }
+    return out;
+  }
+  return [];
+}
+
+// "Later" memory: one prompt per VERSION, not per launch. Dismissing v1.0.10
+// silences the launch sheet until v1.0.11 ships; Settings → About still shows
+// the update line the whole time.
+const DISMISS_KEY = "exfer-update-dismissed";
+export function dismissedVersion(): string {
+  try { return localStorage.getItem(DISMISS_KEY) || ""; } catch { return ""; }
+}
+export function dismissUpdate(version: string): void {
+  try { localStorage.setItem(DISMISS_KEY, version); } catch { /* ignore */ }
 }
 
 export type UpdateState =

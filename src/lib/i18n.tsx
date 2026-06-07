@@ -488,6 +488,10 @@ const EN = {
   "upd.toastTitle": "Update available",
   "upd.toastBody": "v{v} is out — open Settings to update.",
   "upd.linkCopied": "Download link copied",
+  "upd.sheetTitle": "New version v{v}",
+  "upd.sheetSub": "You're on v{v}",
+  "upd.whatsNew": "What's new",
+  "upd.later": "Later",
 
   // Swap (EXFER ↔ BNB cross-chain)
   "swap.title": "Swap",
@@ -1220,6 +1224,10 @@ const ZH: Record<MsgKey, string> = {
   "upd.toastTitle": "发现新版本",
   "upd.toastBody": "v{v} 已发布——到设置里更新。",
   "upd.linkCopied": "下载链接已复制",
+  "upd.sheetTitle": "新版本 v{v}",
+  "upd.sheetSub": "当前版本 v{v}",
+  "upd.whatsNew": "更新内容",
+  "upd.later": "稍后",
 
   // 兑换(EXFER ↔ BNB 跨链)
   "swap.title": "兑换",

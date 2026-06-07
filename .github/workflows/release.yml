@@ -258,17 +258,31 @@ jobs:
             echo "renamed: $b -> $new"
           done
 
+      # The release body = the changelog (RELEASE_NOTES.md, updated in the
+      # release commit; the in-app update prompt fetches + renders it) followed
+      # by the static install blurb.
+      - name: Compose release body from RELEASE_NOTES.md
+        run: |
+          set -eu
+          # sed range-delete strips the leading HTML comment block (it spans lines)
+          { [ -f RELEASE_NOTES.md ] && sed '/^<!--/,/-->$/d' RELEASE_NOTES.md || true; } > /tmp/release-body.md
+          cat >> /tmp/release-body.md <<'EOF'
+
+          ---
+
+          Mobile wallet for the Exfer blockchain (iOS + Android).
+
+          **Android:** download the `.apk` below and install it — see
+          [the install steps](https://github.com/exfer-stack/exfer-walletd-mobile/blob/main/README.md#install).
+          **iOS:** sideloading isn't possible; an App Store / TestFlight
+          build follows once signing is provisioned.
+          EOF
+
       - name: Attach .aab/.apk to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Exfer Wallet ${{ github.ref_name }}"
-          body: |
-            Mobile wallet for the Exfer blockchain (iOS + Android).
-
-            **Android:** download the `.apk` below and install it — see
-            [the install steps](https://github.com/exfer-stack/exfer-walletd-mobile/blob/main/README.md#install).
-            **iOS:** sideloading isn't possible; an App Store / TestFlight
-            build follows once signing is provisioned.
+          body_path: /tmp/release-body.md
           files: |
             src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk

@@ -10,11 +10,12 @@ import { biometricStatus, biometricUnlock } from "./lib/biometric";
 import { biometricLockEnabled, lockWallet, unlockWallet } from "./lib/biolock";
 import { devmock } from "./lib/devmock";
 import wordmark from "./assets/wordmark.png";
-import { ToastProvider, ToastHost, useToast } from "./lib/toast";
-import { checkForUpdate } from "./lib/update";
+import { ToastProvider, ToastHost } from "./lib/toast";
+import { checkForUpdate, dismissedVersion, type LatestRelease } from "./lib/update";
+import { UpdateSheet } from "./components/sheets/UpdateSheet";
 import { WalletProvider } from "./lib/wallet";
 import { BalanceProvider } from "./lib/balance";
-import { I18nProvider, useT, tStatic, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
+import { I18nProvider, useT, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
 import {
   ACCENTS,
   isAccentKey,
@@ -73,8 +74,9 @@ export default function App() {
 }
 
 function Shell() {
-  const toast = useToast();
   const updateNotified = useRef(false);
+  // A newer published release the user hasn't dismissed → launch prompt.
+  const [updatePrompt, setUpdatePrompt] = useState<LatestRelease | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(readTheme);
   const [accent, setAccentState] = useState<AccentKey>(readAccent);
   const [hideBalance, setHideState] = useState<boolean>(readHide);
@@ -191,21 +193,19 @@ function Shell() {
     })();
   }, [walletReady]);
 
-  // Auto-check for a newer release once the wallet is ready, and nudge the
-  // user once per session if one's out (the full prompt + download lives in
-  // Settings → About). Cached for an hour, so this rarely hits the network.
+  // Auto-check for a newer release once the wallet is ready. A new version the
+  // user hasn't dismissed opens the update sheet (version + changelog +
+  // download); "Later" silences THAT version only, and Settings → About keeps
+  // the manual path. Cached for an hour, so this rarely hits the network.
   useEffect(() => {
     if (!walletReady || updateNotified.current) return;
     void checkForUpdate(false).then((u) => {
       if (u.status === "available" && !updateNotified.current) {
         updateNotified.current = true;
-        toast.info(
-          tStatic("upd.toastTitle"),
-          tStatic("upd.toastBody", { v: u.release.version }),
-        );
+        if (u.release.version !== dismissedVersion()) setUpdatePrompt(u.release);
       }
     });
-  }, [walletReady, toast]);
+  }, [walletReady]);
 
   const ac = ACCENTS[accent];
   const phoneStyle: CSSProperties = {
@@ -316,6 +316,11 @@ function Shell() {
                 onClose={() => setOverlay(null)}
                 onSend={(address) => setOverlay({ type: "send", from: address })}
               />
+            )}
+            {/* Launch update prompt — only when no other sheet is up, so it
+                never buries an in-progress flow the user just resumed. */}
+            {updatePrompt && !overlay && (
+              <UpdateSheet release={updatePrompt} onClose={() => setUpdatePrompt(null)} />
             )}
           </WalletProvider>
         )}
