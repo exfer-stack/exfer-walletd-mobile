@@ -108,12 +108,17 @@ function ExferMark({ size = 26 }: { size?: number }) {
 }
 
 /** One row of a token pair: logo · name · right-aligned amount. */
-function TokenRow({ kind, amount }: { kind: "exfer" | "bnb"; amount: string }) {
+function TokenRow({ kind, amount, delta, deltaTint }: { kind: "exfer" | "bnb"; amount: string; delta?: string; deltaTint?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0" }}>
       {kind === "exfer" ? <ExferMark /> : <BnbMark size={26} />}
       <span style={{ flex: 1, fontWeight: 600, fontSize: 14.5 }}>{kind === "exfer" ? "EXFER" : "BNB"}</span>
-      <span style={{ fontWeight: 600, fontSize: 14.5, fontVariantNumeric: "tabular-nums" }}>{amount}</span>
+      <span style={{ textAlign: "right" }}>
+        <span style={{ display: "block", fontWeight: 600, fontSize: 14.5, fontVariantNumeric: "tabular-nums" }}>{amount}</span>
+        {/* Per-leg P&L rides its own asset row (the deposited line below the
+            earnings grid is the reference) instead of a separate text dump. */}
+        {delta && <span style={{ display: "block", fontSize: 11, fontVariantNumeric: "tabular-nums", color: deltaTint, marginTop: 1 }}>{delta}</span>}
+      </span>
     </div>
   );
 }
@@ -734,54 +739,52 @@ export function LiquiditySheet({ onClose, resumeAddId }: { onClose: () => void; 
             <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>{shortAddress(exferAddr)}</div>
             <div style={{ marginTop: 10 }}>
               <div style={{ height: 1, background: "var(--border)" }} />
-              <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))} />
+              {/* Per-leg P&L sits under each asset's amount (legs below display
+                  precision — float dust like -6e-16 BNB — stay hidden). */}
+              <TokenRow kind="exfer" amount={sig(Number(pos.value_exfer))}
+                delta={earn && Math.abs(earn.exfer) >= 0.01 ? signed(earn.exfer, fmtExfer2) : undefined}
+                deltaTint={earn ? earnTint(earn.exfer) : undefined} />
               <div style={{ height: 1, background: "var(--border)" }} />
-              <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)} />
+              <TokenRow kind="bnb" amount={sig(Number(pos.value_bnb), 4)}
+                delta={earn && Math.abs(earn.bnb) >= 1e-8 ? signed(earn.bnb, (a) => sig(a)) : undefined}
+                deltaTint={earn ? earnTint(earn.bnb) : undefined} />
               {earn && (
                 <>
                   <div style={{ height: 1, background: "var(--border)" }} />
+                  {/* Two quiet stat cells (same language as the swap card's
+                      grid), then one faint cost-basis reference line — instead
+                      of the old four-line text dump. */}
                   <div style={{ padding: "10px 0 12px" }}>
-                    {/* Pure fee earnings first — the pool's actual performance,
-                        monotone non-decreasing (tiny accounting noise clamped). */}
-                    {pos.fee_growth_pct != null && (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                        <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.feeEarned")}</span>
-                        <span style={{ fontWeight: 700, fontSize: 13.5, color: "#34d399", fontVariantNumeric: "tabular-nums" }}>
-                          +{(Math.max(0, pos.fee_growth_pct) * 100).toFixed(2)}%
-                          {/* The ≈$ suffix only once it clears display precision —
-                              "+$0.0000000352" is noise, not information. */}
-                          {haveSpots && earnBasisUsd * Math.max(0, pos.fee_growth_pct) >= 0.01 &&
-                            ` (≈ +$${usd(earnBasisUsd * Math.max(0, pos.fee_growth_pct))})`}
-                        </span>
-                      </div>
-                    )}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 12.5, color: "var(--text-faint)" }}>{t("lp.totalPnl")}</span>
-                      {/* Combined P&L — honest full picture; the two legs
-                          routinely have OPPOSITE signs (AMM price drift). */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      {/* Pure fee earnings — the pool's actual performance,
+                          monotone non-decreasing (accounting noise clamped).
+                          The ≈$ suffix only once it clears display precision. */}
+                      {pos.fee_growth_pct != null && (
+                        <div>
+                          <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>{t("lp.feeEarned")}</div>
+                          <div style={{ marginTop: 2, fontWeight: 700, fontSize: 13.5, color: "#34d399", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                            +{(Math.max(0, pos.fee_growth_pct) * 100).toFixed(2)}%
+                            {haveSpots && earnBasisUsd * Math.max(0, pos.fee_growth_pct) >= 0.01 && (
+                              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-faint)", marginLeft: 5 }}>≈ ${usd(earnBasisUsd * Math.max(0, pos.fee_growth_pct))}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {/* Combined P&L — the legs routinely have OPPOSITE signs
+                          (AMM price drift), so only the $ total is headline. */}
                       {haveSpots && (
-                        <span style={{ fontWeight: 700, fontSize: 13.5, color: earnTint(earnUsd), fontVariantNumeric: "tabular-nums" }}>
-                          ≈ {signed(earnUsd, (a) => `$${usd(a)}`)}
-                          {earnBasisUsd > 0 && ` (${signed(earnUsd / earnBasisUsd * 100, (a) => a.toFixed(1))}%)`}
-                        </span>
+                        <div>
+                          <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>{t("lp.totalPnl")}</div>
+                          <div style={{ marginTop: 2, fontWeight: 700, fontSize: 13.5, color: earnTint(earnUsd), fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                            {signed(earnUsd, (a) => `$${usd(a)}`)}
+                            {earnBasisUsd > 0 && (
+                              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-faint)", marginLeft: 5 }}>{signed(earnUsd / earnBasisUsd * 100, (a) => a.toFixed(1))}%</span>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
-                    {/* Per-leg deltas. A leg below display precision (float dust
-                        like -6e-16 BNB) is hidden rather than printed as noise. */}
-                    {(Math.abs(earn.exfer) >= 0.01 || Math.abs(earn.bnb) >= 1e-8) && (
-                      <div className="mono" style={{ fontSize: 12, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>
-                        {Math.abs(earn.exfer) >= 0.01 && (
-                          <span style={{ color: earnTint(earn.exfer) }}>{signed(earn.exfer, fmtExfer2)} EXFER</span>
-                        )}
-                        {Math.abs(earn.exfer) >= 0.01 && Math.abs(earn.bnb) >= 1e-8 && (
-                          <span style={{ color: "var(--text-faint)" }}> · </span>
-                        )}
-                        {Math.abs(earn.bnb) >= 1e-8 && (
-                          <span style={{ color: earnTint(earn.bnb) }}>{signed(earn.bnb, (a) => sig(a))} BNB</span>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 5 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8 }}>
                       {t("lp.depositedLine", { exfer: fmtExfer2(earn.depExfer), bnb: sig(earn.depBnb) })}
                     </div>
                   </div>
