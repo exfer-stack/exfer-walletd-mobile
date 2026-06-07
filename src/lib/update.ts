@@ -29,7 +29,7 @@ export interface LatestRelease {
   /** Direct .apk asset, when the release attaches one. */
   apkUrl?: string;
   /** Release body markdown — carries the bilingual changelog (see
-   *  RELEASE_NOTES.md convention: "## What's new" / "## 更新内容"). */
+   *  RELEASE_NOTES.md convention: "## What's new"). */
   notes?: string;
 }
 
@@ -82,19 +82,19 @@ async function fetchLatest(): Promise<LatestRelease | null> {
   return parseRelease(raw);
 }
 
-/** Pull the changelog bullets for one language out of a release body.
+/** Pull the changelog bullets out of a release body (English-only by convention).
  *  Convention (RELEASE_NOTES.md, injected into the release by CI): a
- *  "## What's new" section followed by a "## 更新内容" section. Returns plain
+ *  "## What's new" section. Returns plain
  *  lines with markdown bullets stripped; [] when the body doesn't follow the
  *  convention (old releases carry install boilerplate — showing that as a
  *  changelog would be worse than showing nothing). */
-export function changelogLines(notes: string | undefined, lang: "en" | "zh"): string[] {
+export function changelogLines(notes: string | undefined): string[] {
   if (!notes) return [];
   for (const sec of notes.split(/^##\s+/m)) {
     const nl = sec.indexOf("\n");
     if (nl < 0) continue;
     const heading = sec.slice(0, nl).trim().toLowerCase();
-    const hit = lang === "zh" ? heading.includes("更新内容") : heading.startsWith("what's new");
+    const hit = heading.startsWith("what's new");
     if (!hit) continue;
     // Markdown bullets wrap across lines — a continuation line (no bullet
     // marker) belongs to the previous entry, not a new one.

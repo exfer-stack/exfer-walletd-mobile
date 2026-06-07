@@ -17,10 +17,10 @@ import {
 } from "../../lib/update";
 
 export function UpdateSheet({ release, onClose }: { release: LatestRelease; onClose: () => void }) {
-  const { lang, t } = useT();
+  const { t } = useT();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const lines = changelogLines(release.notes, lang);
+  const lines = changelogLines(release.notes);
 
   function later() {
     dismissUpdate(release.version);
