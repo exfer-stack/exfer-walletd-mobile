@@ -98,11 +98,17 @@ function ChangePill({ pct }: { pct: number }) {
 }
 
 /** One market-stat cell: a small muted label over a tabular value. */
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      {/* nowrap: a narrow column must never break "598.5K EXFER" after the
+          number and strand the unit on its own line — the unit rides along as
+          a smaller muted suffix instead (same pattern as desktop's Stat sub). */}
+      <span style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {value}
+        {sub && <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--text-faint)", marginLeft: 4 }}>{sub}</span>}
+      </span>
     </div>
   );
 }
@@ -480,7 +486,8 @@ export function SwapTab({
             />
             <Stat
               label={t("swap.statVol")}
-              value={dayStats?.vol ? `${compact(dayStats.vol.volExfer24h)} EXFER` : "—"}
+              value={dayStats?.vol ? compact(dayStats.vol.volExfer24h) : "—"}
+              sub={dayStats?.vol ? "EXFER" : undefined}
             />
             <Stat
               label={t("swap.statTradesShort")}
