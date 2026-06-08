@@ -793,6 +793,10 @@ const EN = {
 
   // ── Governance / community voting ──────────────────────────────────────
   "nav.governance": "Governance",
+  // Home card (shown only when ≥1 open proposal) + Settings entry row.
+  "gov.homeCard": "Governance · {n} open · Vote",
+  "gov.settingsRow": "Governance",
+  "gov.settingsSub": "Community proposals & voting",
   "gov.title": "Governance",
   "gov.tagline": "Hold to vote — shape EXFER's future",
   // first-run 3-step primer
@@ -1616,6 +1620,9 @@ const ZH: Record<MsgKey, string> = {
 
   // ── 治理 / 社区投票 ────────────────────────────────────────────────────
   "nav.governance": "治理",
+  "gov.homeCard": "治理 · {n} 个提案进行中 · 去投票",
+  "gov.settingsRow": "治理",
+  "gov.settingsSub": "社区提案与投票",
   "gov.title": "治理",
   "gov.tagline": "持币就能投票,决定 EXFER 的未来",
   "gov.primer1": "选择地址进行投票",

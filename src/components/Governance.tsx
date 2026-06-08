@@ -98,7 +98,7 @@ function effectiveStatus(p: Proposal, nowSec: number): ProposalStatus {
 
 // ── list screen ────────────────────────────────────────────────────────────
 
-export function Governance() {
+export function Governance({ onBack }: { onBack?: () => void }) {
   const { t } = useT();
   const nowMs = useNow();
   const nowSec = Math.floor(nowMs / 1000);
@@ -144,7 +144,32 @@ export function Governance() {
   return (
     <div className="screen">
       <div className="screen-pad">
-        <div className="h-row" style={{ padding: "12px 4px 4px" }}>
+        <div className="h-row" style={{ padding: "12px 4px 4px", gap: 8 }}>
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label="Back"
+              className="tap"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                marginLeft: -6,
+                borderRadius: 999,
+                border: 0,
+                background: "transparent",
+                color: "var(--text)",
+                cursor: "pointer",
+                flex: "0 0 auto",
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+          )}
           <div className="title-xl">{t("gov.title")}</div>
         </div>
         <div

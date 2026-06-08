@@ -27,6 +27,7 @@ import { CreateBnbWalletSheet } from "./sheets/CreateBnbWalletSheet";
 import { useBscWallet, revealBscMnemonic } from "../lib/bscWallet";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { humanizeError } from "../lib/errors";
+import { getProposals, cachedProposals, type Proposal } from "../lib/governance";
 
 /** 24h change pill — green ▲ for up, red ▼ for down, muted for flat. */
 function ChangePill({ pct }: { pct: number }) {
@@ -140,17 +141,103 @@ let bnbMidCache: number | null = null;
 // from the balance hero. Surfaced as a quiet one-liner under the headline.
 const TERMINAL_SWAP = ["quoted", "expired", "completed", "refunded", "failed"];
 
+/** Count proposals that are currently open for voting. Mirrors Governance's
+ *  effective-status logic: a proposal is "open" when it isn't finalized and now
+ *  falls inside its voting window — so a server still reporting `status:"open"`
+ *  past close_time (or before open_time) is NOT counted. */
+function countOpen(list: Proposal[] | null): number {
+  if (!list) return 0;
+  const now = Math.floor(Date.now() / 1000);
+  return list.filter(
+    (p) =>
+      p.status !== "finalized" &&
+      now >= p.window.open_time &&
+      now < p.window.close_time,
+  ).length;
+}
+
+/** Home governance card. Renders ONLY when ≥1 proposal is open for voting.
+ *  Seeds from the SWR cache so it paints instantly with no spinner, then
+ *  refreshes in the background. Fully fail-silent: any vote-server error (or
+ *  0 open) renders nothing — Home must never break or slow because of
+ *  governance. */
+function GovernanceCard({ onOpen }: { onOpen: () => void }) {
+  const { t } = useT();
+  const [count, setCount] = useState<number>(() => countOpen(cachedProposals()));
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await getProposals();
+        if (!cancelled) setCount(countOpen(list));
+      } catch {
+        // Vote server unreachable — keep whatever the cache gave us (often 0),
+        // never surface an error on Home.
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  if (count <= 0) return null;
+
+  return (
+    <button
+      onClick={onOpen}
+      className="card"
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 14px",
+        marginBottom: 14,
+        textAlign: "left",
+      }}
+    >
+      <span
+        style={{
+          flex: "0 0 auto",
+          width: 36,
+          height: 36,
+          borderRadius: 11,
+          display: "grid",
+          placeItems: "center",
+          background: "color-mix(in srgb, var(--accent) 15%, transparent)",
+          color: "var(--accent)",
+        }}
+      >
+        <Icon name="vote" size={20} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>
+        {t("gov.homeCard", { n: count })}
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
 export function Home({
   onReceive,
   onSend,
   onOpenAddress,
   onGoSwap,
+  onGovernance,
 }: {
   onReceive: () => void;
   onSend: () => void;
   onOpenAddress: (address: string) => void;
   /** Navigate to the Swap tab (the locked-in-swap line taps through to it). */
   onGoSwap: () => void;
+  /** Open the Governance screen (the open-proposals card taps through to it). */
+  onGovernance: () => void;
 }) {
   const { balance, error, refresh } = useWallet();
   const price = usePrice();
@@ -568,6 +655,10 @@ export function Home({
           <PrimaryAction icon="receive" label={t("home.receive")} onClick={onReceive} variant="secondary" />
           <PrimaryAction icon="send" label={t("home.send")} onClick={onSend} variant="primary" />
         </div>
+
+        {/* Governance — shown only when there's ≥1 open proposal (else nothing).
+            Self-contained + fail-silent so it never slows or breaks Home. */}
+        <GovernanceCard onOpen={onGovernance} />
 
         {/* BNB — three states:
             1. No key yet (seedless wallet, created=false): a "Set up your BNB

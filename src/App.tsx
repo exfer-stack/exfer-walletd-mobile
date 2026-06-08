@@ -85,6 +85,9 @@ function Shell() {
 
   const [boot, setBoot] = useState<BootstrapStatus | null>(null);
   const [tab, setTab] = useState<Tab>("wallet");
+  // The tab we were on before opening Governance — Governance is no longer a
+  // bottom tab, so its header ← returns here (defaults to wallet).
+  const [prevTab, setPrevTab] = useState<Tab>("wallet");
   const [overlay, setOverlay] = useState<Overlay>(null);
   // Fresh-install intro: show the Welcome pitch before the onboarding form.
   // Only relevant pre-wallet (onboarding is the only place it gates); once a
@@ -249,6 +252,10 @@ function Shell() {
                 onSend={() => setOverlay({ type: "send" })}
                 onOpenAddress={(address) => setOverlay({ type: "address", address })}
                 onGoSwap={() => setTab("swap")}
+                onGovernance={() => {
+                  setPrevTab("wallet");
+                  setTab("governance");
+                }}
               />
             )}
             {tab === "swap" && (
@@ -260,7 +267,7 @@ function Shell() {
               />
             )}
             {tab === "activity" && <Activity />}
-            {tab === "governance" && <Governance />}
+            {tab === "governance" && <Governance onBack={() => setTab(prevTab)} />}
             {tab === "settings" && (
               <Settings
                 theme={theme}
@@ -272,16 +279,23 @@ function Shell() {
                 lang={lang}
                 setLang={setLang}
                 onWiped={reboot}
+                onGovernance={() => {
+                  setPrevTab("settings");
+                  setTab("governance");
+                }}
               />
             )}
 
-            <nav className="tabbar">
-              <TabButton id="wallet" icon="wallet" labelKey="nav.wallet" active={tab} onClick={setTab} />
-              <TabButton id="swap" icon="refresh" labelKey="nav.swap" active={tab} onClick={setTab} />
-              <TabButton id="activity" icon="activity" labelKey="nav.activity" active={tab} onClick={setTab} />
-              <TabButton id="governance" icon="vote" labelKey="nav.governance" active={tab} onClick={setTab} />
-              <TabButton id="settings" icon="settings" labelKey="nav.settings" active={tab} onClick={setTab} />
-            </nav>
+            {/* Governance is reached from the Home card / Settings row, not a
+                bottom tab — keep the bar at four tabs. */}
+            {tab !== "governance" && (
+              <nav className="tabbar">
+                <TabButton id="wallet" icon="wallet" labelKey="nav.wallet" active={tab} onClick={setTab} />
+                <TabButton id="swap" icon="refresh" labelKey="nav.swap" active={tab} onClick={setTab} />
+                <TabButton id="activity" icon="activity" labelKey="nav.activity" active={tab} onClick={setTab} />
+                <TabButton id="settings" icon="settings" labelKey="nav.settings" active={tab} onClick={setTab} />
+              </nav>
+            )}
 
             {overlay?.type === "receive" && (
               <ReceiveSheet onClose={() => setOverlay(null)} />

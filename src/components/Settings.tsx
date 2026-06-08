@@ -53,6 +53,7 @@ export function Settings({
   lang,
   setLang,
   onWiped,
+  onGovernance,
 }: {
   theme: ThemeMode;
   setTheme: (t: ThemeMode) => void;
@@ -63,6 +64,8 @@ export function Settings({
   lang: Lang;
   setLang: (l: Lang) => void;
   onWiped: () => void;
+  /** Navigate to the Governance screen (Governance is no longer a bottom tab). */
+  onGovernance: () => void;
 }) {
   const toast = useToast();
   const { t } = useT();
@@ -280,6 +283,19 @@ export function Settings({
             label={t("set.indexer")}
             sub={indexerUrl || t("set.indexerDefault")}
             onClick={() => setIndexerOpen(true)}
+            right={<Icon name="chevron" size={18} stroke={2} />}
+          />
+        </div>
+
+        {/* Governance — permanent entry (always reachable, even with no open
+            proposals; the Home card only appears when there are open ones). */}
+        <Section label={t("gov.title")} />
+        <div className="list" style={{ marginBottom: 10 }}>
+          <SettingRow
+            icon="vote"
+            label={t("gov.settingsRow")}
+            sub={t("gov.settingsSub")}
+            onClick={onGovernance}
             right={<Icon name="chevron" size={18} stroke={2} />}
           />
         </div>
