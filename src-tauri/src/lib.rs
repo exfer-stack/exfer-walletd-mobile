@@ -579,6 +579,185 @@ async fn check_latest_release() -> Result<String, String> {
     resp.text().await.map_err(|e| format!("reading release body: {e}"))
 }
 
+// ── exfer-vote (community governance) proxy ─────────────────────────────────
+//
+// The wallet talks to the `exfer-vote` community service exclusively through
+// these two commands (the webview never makes the HTTPS call itself — same rule
+// as the price / release fetchers above). `governance.ts` passes bare API paths
+// (`/proposals`, `/votes`, …); we join them onto the configured vote base URL.
+//
+// The base URL is set at build time via the `EXFER_VOTE_BASE` env var (no
+// trailing slash), e.g. `https://vote.exfer.dev`. Left unset, the commands
+// return a clear error so the failure is legible rather than a silent 404.
+//
+// TLS: the design calls for the vote server's self-signed CA to be pinned the
+// same way the swap pool's is (POOL_CA_PEM, pinned inside walletd). The CA is
+// embedded at build time via `EXFER_VOTE_CA_PEM` (the PEM *content*, not a
+// path — exactly like POOL_CA_PEM). When set, `vote_client()` trusts ONLY that
+// CA; rotating the cert requires a new mobile build, like the pool cert. When
+// unset, it falls back to the standard public-root client, so the same binary
+// also works against an exfer-vote endpoint fronted by a publicly-trusted cert.
+const VOTE_BASE: Option<&str> = Some("https://64.176.231.198:8443");
+const VOTE_CA_PEM: Option<&str> = Some(SEOUL_VOTE_CA_PEM);
+
+/// The exfer-vote (Seoul) server's self-signed TLS certificate (PEM), PINNED by
+/// `vote_client()` (it trusts ONLY this cert for the governance connection).
+/// The SAN includes the IP 64.176.231.198 so hostname verification passes
+/// against the bare-IP base URL. Rotating the vote cert means shipping a new
+/// build with the new PEM here — exactly like POOL_CA_PEM for the swap pool.
+const SEOUL_VOTE_CA_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIIBpjCCAU2gAwIBAgIUCMB6+J7/6xD6vuAwUozzHZcIp8QwCgYIKoZIzj0EAwIw
+GzEZMBcGA1UEAwwQZXhmZXItdm90ZS1zZW91bDAeFw0yNjA2MDgwNjA3MjNaFw00
+NjA2MDMwNjA3MjNaMBsxGTAXBgNVBAMMEGV4ZmVyLXZvdGUtc2VvdWwwWTATBgcq
+hkjOPQIBBggqhkjOPQMBBwNCAASan/94S76lA/AsQGfyXGOmALMWvg2+Uo1fY+Jy
+sBV/gPAum+Mn4yW0kozeBJKaG1STbGGGrJyCly/zosLEaDG4o28wbTAdBgNVHQ4E
+FgQU8V/mjuc19AUdatnaPk6XVYGmb9IwHwYDVR0jBBgwFoAU8V/mjuc19AUdatna
+Pk6XVYGmb9IwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARhwRAsOfGgglsb2Nh
+bGhvc3QwCgYIKoZIzj0EAwIDRwAwRAIgEw+iUc78uM233NLeH0uIAw4JfC8Ke70Z
+hCz5eYkCSboCIFZsW7wfX9aS5pOS0/r61dvu+RooEJMCisoky75o0yVX
+-----END CERTIFICATE-----
+";
+
+/// Build the HTTPS client used for exfer-vote calls. If a CA PEM was embedded
+/// at build time, trust ONLY that CA (self-signed pinning); otherwise fall back
+/// to the public-root client. A malformed embedded PEM is a hard error rather
+/// than a silent downgrade to public roots — a misconfigured build should fail
+/// loudly, not quietly accept the wrong trust anchor.
+fn vote_client() -> Result<reqwest::Client, String> {
+    let pem = match VOTE_CA_PEM.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(pem) => pem,
+        None => return public_https_client(),
+    };
+    let mut roots = rustls::RootCertStore::empty();
+    let mut reader = std::io::BufReader::new(pem.as_bytes());
+    let mut added = 0usize;
+    for cert in rustls_pemfile::certs(&mut reader) {
+        let cert = cert.map_err(|e| format!("reading vote CA PEM: {e}"))?;
+        roots
+            .add(cert)
+            .map_err(|e| format!("adding vote CA to root store: {e}"))?;
+        added += 1;
+    }
+    if added == 0 {
+        return Err("EXFER_VOTE_CA_PEM contained no certificates".into());
+    }
+    let tls = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    reqwest::ClientBuilder::new()
+        .use_preconfigured_tls(tls)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("building vote http client: {e}"))
+}
+
+fn vote_url(path: &str) -> Result<String, String> {
+    let base = VOTE_BASE
+        .map(|b| b.trim().trim_end_matches('/'))
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| {
+            "Governance isn't configured in this build (EXFER_VOTE_BASE unset).".to_string()
+        })?;
+    if !path.starts_with('/') {
+        return Err("vote api path must start with '/'".into());
+    }
+    Ok(format!("{base}{path}"))
+}
+
+/// Parse an exfer-vote HTTP response into JSON, mapping a non-2xx status to a
+/// legible error (preferring the server's `{error|message}` if present).
+async fn vote_finish(resp: reqwest::Response) -> Result<Value, String> {
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("reading vote body: {e}"))?;
+    let json: Value = if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).map_err(|e| format!("vote server sent invalid JSON: {e}"))?
+    };
+    if !status.is_success() {
+        let msg = json
+            .get("error")
+            .or_else(|| json.get("message"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("vote server returned {status}"));
+        return Err(msg);
+    }
+    Ok(json)
+}
+
+/// GET a path on the exfer-vote service (list / detail / my-vote / results).
+/// Returns the parsed JSON body; `governance.ts` normalizes it.
+#[tauri::command]
+async fn vote_api_get(path: String) -> Result<Value, String> {
+    let url = vote_url(&path)?;
+    let resp = vote_client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("vote request failed: {e}"))?;
+    vote_finish(resp).await
+}
+
+/// POST a JSON body to a path on the exfer-vote service (`/votes`). `body` is a
+/// pre-serialized JSON string (the `{ payload, signature, pubkey }` envelope);
+/// the signed `payload` string is carried through verbatim, never re-serialized.
+#[tauri::command]
+async fn vote_api_post(path: String, body: String) -> Result<Value, String> {
+    let url = vote_url(&path)?;
+    let resp = vote_client()?
+        .post(url)
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("vote request failed: {e}"))?;
+    vote_finish(resp).await
+}
+
+/// GET an attachment's raw bytes from the exfer-vote service (`/media/:id`),
+/// routed through the SAME CA-pinned client as the JSON API so the pinned trust
+/// anchor is preserved — the webview must never hit the host directly for media.
+/// Returns `{ content_type, body_hex }`; the JS side hex-decodes the bytes and
+/// either renders them as an inline blob (`image` kinds) or saves them to the
+/// device (`file` kinds). The body is capped to guard against a hostile/oversized
+/// response (uploads are already capped server-side; this is belt-and-suspenders).
+#[tauri::command]
+async fn vote_media_get(path: String) -> Result<Value, String> {
+    // Hard ceiling on what we'll pull into memory + ferry across the IPC bridge.
+    const MAX_MEDIA_BYTES: usize = 16 * 1024 * 1024;
+    let url = vote_url(&path)?;
+    let resp = vote_client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("media request failed: {e}"))?;
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("reading media body: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("vote server returned {status}"));
+    }
+    if bytes.len() > MAX_MEDIA_BYTES {
+        return Err("attachment exceeds the maximum download size".into());
+    }
+    Ok(serde_json::json!({
+        "content_type": content_type,
+        "body_hex": hex::encode(&bytes),
+    }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -671,6 +850,9 @@ pub fn run() {
             get_market_klines,
             get_bnb_price,
             check_latest_release,
+            vote_api_get,
+            vote_api_post,
+            vote_media_get,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

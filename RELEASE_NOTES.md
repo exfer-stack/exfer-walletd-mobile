@@ -6,5 +6,6 @@
 
 ## What's new
 
-- The app now offers updates: when a new version ships, a prompt shows what
-  changed and downloads it for you.
+- **Governance** — vote on community proposals right in the wallet. Your voting
+  power is your EXFER balance: pick which address votes, cast a signed vote, and
+  watch live results. Proposals can include images and downloadable files.

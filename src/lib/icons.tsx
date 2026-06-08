@@ -216,6 +216,59 @@ export function Icon({ name, size = 24, stroke = 2 }: IconProps): JSX.Element | 
           <path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
         </svg>
       );
+    // ── governance ──────────────────────────────────────────────────
+    case "vote":
+      // shield + check — the bottom-tab "治理 / Governance" mark
+      return (
+        <svg {...c}>
+          <path d="M12 2l9 5v6c0 5-3.5 8-9 9-5.5-1-9-4-9-9V7z" />
+          <path d="M9 12l2 2 4-4" />
+        </svg>
+      );
+    case "card":
+      // credit-card-style mark used for an address row
+      return (
+        <svg {...c}>
+          <rect x="2" y="6" width="20" height="14" rx="2.5" />
+          <path d="M16 13h.01" />
+          <path d="M2 10h20" />
+        </svg>
+      );
+    case "info":
+      return (
+        <svg {...c}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8h.01M11 12h1v4h1" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...c}>
+          <rect x="3" y="4" width="18" height="17" rx="2" />
+          <path d="M3 9h18M8 2v4M16 2v4" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...c}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
+    case "alert":
+      return (
+        <svg {...c}>
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+          <path d="M12 9v4M12 17h.01" />
+        </svg>
+      );
+    case "lock":
+      return (
+        <svg {...c}>
+          <rect x="4" y="11" width="16" height="9" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+      );
     default:
       return null;
   }

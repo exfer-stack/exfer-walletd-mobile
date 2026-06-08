@@ -23,6 +23,7 @@ export default defineConfig(async ({ mode }) => {
   // @ts-expect-error process is a nodejs global
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = env.VITE_WALLETD_PROXY_TARGET;
+  const voteProxyTarget = env.VITE_VOTE_PROXY_TARGET;
 
   return {
     plugins: [react()],
@@ -92,6 +93,21 @@ export default defineConfig(async ({ mode }) => {
                 target: proxyTarget,
                 changeOrigin: true,
                 rewrite: (p: string) => p.replace(/^\/__walletd/, ""),
+              },
+            }
+          : {}),
+        // /__vote → a real exfer-vote service. Activated by
+        //   VITE_VOTE_PROXY_TARGET in .env.local (strips the prefix so the
+        //   service sees bare `/proposals`, `/votes`, …). `secure: false`
+        //   because exfer-vote serves a self-signed cert in dev. Leave unset
+        //   for the in-browser mock (see lib/devmock.ts).
+        ...(voteProxyTarget
+          ? {
+              "/__vote": {
+                target: voteProxyTarget,
+                changeOrigin: true,
+                secure: false,
+                rewrite: (p: string) => p.replace(/^\/__vote/, ""),
               },
             }
           : {}),
