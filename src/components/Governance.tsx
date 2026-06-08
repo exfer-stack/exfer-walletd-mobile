@@ -182,19 +182,19 @@ export function Governance({ onBack }: { onBack?: () => void }) {
         <div className="primer">
           <div className="step">
             <span className="ic">
-              <Icon name="card" size={17} />
+              <Icon name="wallet" size={21} />
             </span>
             <span className="tx">{t("gov.primer1")}</span>
           </div>
           <div className="step">
             <span className="ic">
-              <Icon name="shield" size={17} />
+              <Icon name="coins" size={21} />
             </span>
             <span className="tx">{t("gov.primer2")}</span>
           </div>
           <div className="step">
             <span className="ic">
-              <Icon name="info" size={17} />
+              <Icon name="clock" size={21} />
             </span>
             <span className="tx">{t("gov.primer3")}</span>
           </div>

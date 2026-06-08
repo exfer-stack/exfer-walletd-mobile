@@ -6,6 +6,10 @@
 
 ## What's new
 
-- **Governance** — vote on community proposals right in the wallet. Your voting
-  power is your EXFER balance: pick which address votes, cast a signed vote, and
-  watch live results. Proposals can include images and downloadable files.
+- **Governance is now "Vote".** The bottom bar is back to four tabs — an open
+  vote shows up as a card on your wallet home (with the proposal and a
+  countdown), plus an entry in Settings.
+- **Faster Vote screen** — it reopens instantly and refreshes in the background.
+- **Fingerprint confirmation** before you cast a vote.
+- **Clearer icons and wording** — voting spends no EXFER (it only signs with
+  your wallet), and you keep holding to keep your voting power.

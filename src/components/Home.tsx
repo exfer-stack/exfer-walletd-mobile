@@ -145,46 +145,75 @@ const TERMINAL_SWAP = ["quoted", "expired", "completed", "refunded", "failed"];
  *  effective-status logic: a proposal is "open" when it isn't finalized and now
  *  falls inside its voting window — so a server still reporting `status:"open"`
  *  past close_time (or before open_time) is NOT counted. */
-function countOpen(list: Proposal[] | null): number {
-  if (!list) return 0;
-  const now = Math.floor(Date.now() / 1000);
-  return list.filter(
-    (p) =>
-      p.status !== "finalized" &&
-      now >= p.window.open_time &&
-      now < p.window.close_time,
-  ).length;
-}
-
 /** Home governance card. Renders ONLY when ≥1 proposal is open for voting.
  *  Seeds from the SWR cache so it paints instantly with no spinner, then
  *  refreshes in the background. Fully fail-silent: any vote-server error (or
  *  0 open) renders nothing — Home must never break or slow because of
  *  governance. */
+/** Open proposals (in window, not finalized), soonest-ending first. */
+function openProposals(list: Proposal[] | null): Proposal[] {
+  if (!list) return [];
+  const now = Math.floor(Date.now() / 1000);
+  return list
+    .filter(
+      (p) =>
+        p.status !== "finalized" &&
+        now >= p.window.open_time &&
+        now < p.window.close_time,
+    )
+    .sort((a, b) => a.window.close_time - b.window.close_time);
+}
+
+/** Compact, locale-aware "time remaining" ("6d 20h" / "6天20小时"). */
+function timeLeft(sec: number, lang: string): string {
+  const s = Math.max(0, sec);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (lang === "zh") {
+    if (d > 0) return `${d}天${h}小时`;
+    if (h > 0) return `${h}小时${m}分`;
+    return `${Math.max(m, 1)}分钟`;
+  }
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${Math.max(m, 1)}m`;
+}
+
 function GovernanceCard({ onOpen }: { onOpen: () => void }) {
-  const { t } = useT();
-  const [count, setCount] = useState<number>(() => countOpen(cachedProposals()));
+  const { t, lang } = useT();
+  const [open, setOpen] = useState<Proposal[]>(() => openProposals(cachedProposals()));
+  // Tick so the countdown stays fresh while the screen is up.
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         const list = await getProposals();
-        if (!cancelled) setCount(countOpen(list));
+        if (!cancelled) setOpen(openProposals(list));
       } catch {
-        // Vote server unreachable — keep whatever the cache gave us (often 0),
-        // never surface an error on Home.
+        // Vote server unreachable — keep whatever the cache gave us (often
+        // none), never surface an error on Home.
       }
     };
     void load();
-    const id = window.setInterval(load, 60_000);
+    const id = window.setInterval(() => {
+      void load();
+      setTick((n) => n + 1);
+    }, 60_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
   }, []);
 
-  if (count <= 0) return null;
+  if (open.length === 0) return null;
+
+  const hot = open[0];
+  const nowSec = Math.floor(Date.now() / 1000);
+  const left = timeLeft(hot.window.close_time - nowSec, lang);
+  const multi = open.length > 1;
 
   return (
     <button
@@ -200,22 +229,18 @@ function GovernanceCard({ onOpen }: { onOpen: () => void }) {
         textAlign: "left",
       }}
     >
-      <span
-        style={{
-          flex: "0 0 auto",
-          width: 36,
-          height: 36,
-          borderRadius: 11,
-          display: "grid",
-          placeItems: "center",
-          background: "color-mix(in srgb, var(--accent) 15%, transparent)",
-          color: "var(--accent)",
-        }}
-      >
+      <span className="gov-home-ic">
         <Icon name="vote" size={20} />
       </span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>
-        {t("gov.homeCard", { n: count })}
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="gov-home-l1">
+          {multi ? t("gov.homeMulti", { n: open.length }) : hot.title[lang]}
+        </span>
+        <span className="gov-home-l2">
+          {multi
+            ? t("gov.homeMetaN", { x: left })
+            : t("gov.homeMeta1", { x: left })}
+        </span>
       </span>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
         <path d="M9 6l6 6-6 6" />

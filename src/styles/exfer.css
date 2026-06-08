@@ -934,7 +934,7 @@ html.scanning #root { visibility: hidden !important; }
 }
 .primer .step + .step { border-left: 1px solid var(--border-soft); }
 .primer .step .ic {
-  width: 30px; height: 30px; border-radius: 999px;
+  width: 36px; height: 36px; border-radius: 999px;
   display: grid; place-items: center;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
@@ -947,6 +947,24 @@ html.scanning #root { visibility: hidden !important; }
   display: grid; place-items: center;
   color: var(--text-faint); cursor: pointer;
   background: transparent; border: 0;
+}
+
+/* Home "voting open" card — plain surface, in line with the BNB asset card. */
+.gov-home-ic {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 11px;
+  display: grid; place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.gov-home-l1 {
+  display: block; font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gov-home-l2 {
+  display: block; margin-top: 2px;
+  font-size: 12px; font-weight: 500; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 /* inline stat chip (proposal description) */

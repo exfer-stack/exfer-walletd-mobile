@@ -218,11 +218,12 @@ export function Icon({ name, size = 24, stroke = 2 }: IconProps): JSX.Element | 
       );
     // ── governance ──────────────────────────────────────────────────
     case "vote":
-      // shield + check — the bottom-tab "治理 / Governance" mark
+      // ballot box with a check inside (vertically centred) — the "vote" mark
       return (
         <svg {...c}>
-          <path d="M12 2l9 5v6c0 5-3.5 8-9 9-5.5-1-9-4-9-9V7z" />
-          <path d="M9 12l2 2 4-4" />
+          <rect x="3.5" y="7.5" width="17" height="13" rx="2" />
+          <path d="M8 7.5V5.2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1V7.5" />
+          <path d="m8.7 14 2.3 2.3 4.3-4.3" />
         </svg>
       );
     case "card":
@@ -232,6 +233,15 @@ export function Icon({ name, size = 24, stroke = 2 }: IconProps): JSX.Element | 
           <rect x="2" y="6" width="20" height="14" rx="2.5" />
           <path d="M16 13h.01" />
           <path d="M2 10h20" />
+        </svg>
+      );
+    case "coins":
+      // stacked coins (vertically centred) — holdings / power threshold
+      return (
+        <svg {...c}>
+          <ellipse cx="12" cy="7.5" rx="6.5" ry="2.8" />
+          <path d="M5.5 7.5v4c0 1.55 2.9 2.8 6.5 2.8s6.5-1.25 6.5-2.8v-4" />
+          <path d="M5.5 11.5v4c0 1.55 2.9 2.8 6.5 2.8s6.5-1.25 6.5-2.8v-4" />
         </svg>
       );
     case "info":
