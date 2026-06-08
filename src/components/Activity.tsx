@@ -15,7 +15,7 @@ import { shortAddress } from "../lib/labels";
 import { addrName, EXPLORER, txExplorerUrl, formatBnb } from "../lib/format";
 import { getSwapUsd } from "../lib/swapPrice";
 import { getBlockHeight } from "../lib/market";
-import { derivePhase, formatEta, GRACE_SEC, type SwapPhase } from "../lib/swapPhase";
+import { derivePhase, formatEta, type SwapPhase } from "../lib/swapPhase";
 import { useT, tStatic, type MsgKey, type Lang } from "../lib/i18n";
 import {
   buildActivityFeed,
@@ -190,21 +190,21 @@ export function Activity() {
   const [tipHeight, setTipHeight] = useState<number | null>(null);
   const lastHeightAt = useRef(0);
   useEffect(() => {
-    const needsHeight = swaps.some(
-      (s) =>
-        s.status === "user_locked" &&
-        s.direction === "exfer_to_bnb" &&
-        s.expires_at != null &&
-        nowSec > s.expires_at + GRACE_SEC,
-    );
-    if (!needsHeight || Date.now() - lastHeightAt.current <= 30_000) return;
+    // Tip height powers two things: a sell's refund countdown, AND placing
+    // confirmed-only transfers (which carry only a block height, no wall-clock
+    // time) correctly in the time-sorted activity feed below. So fetch it
+    // whenever there's activity — not only for an unmatched sell — throttled to
+    // ~30s. (A buy-only / transfer-only wallet otherwise never had a tip height,
+    // so its confirmed transfers couldn't be time-ordered against swaps.)
+    if (swaps.length === 0 && items.length === 0) return;
+    if (Date.now() - lastHeightAt.current <= 30_000) return;
     lastHeightAt.current = Date.now();
     let cancelled = false;
     void getBlockHeight().then((h) => {
       if (!cancelled && h != null) setTipHeight(h);
     });
     return () => { cancelled = true; };
-  }, [swaps, nowSec]);
+  }, [swaps, items, nowSec]);
 
   const ownAddrs = useMemo(
     () => (balance?.entries ?? []).map((e) => e.address),
@@ -280,6 +280,53 @@ export function Activity() {
     [items, swapTxIds],
   );
 
+  // Unified, time-sorted feed. Previously swaps rendered as one block ABOVE all
+  // transfers, so a brand-new transfer was buried under the entire swap history.
+  // Now: in-progress swaps pin to the top (they need attention), and every
+  // terminal swap (Done/refunded/failed) AND every transfer interleaves by time,
+  // newest first — so the latest activity is always at the top regardless of type.
+  const { pinnedSwaps, feed } = useMemo(() => {
+    const ACTIVE = new Set([
+      "loading",
+      "matching",
+      "settling",
+      "unmatched",
+      "refundable",
+      "refunding",
+    ]);
+    const BLOCK_MS = 10_000; // ~target block time
+    const nowMs = Date.now();
+    // Confirmed-only transfers carry just a block height (no wall-clock). Use
+    // the local broadcast `ts` when we have it (our own sends do), else estimate
+    // from the block height vs the tip, else treat as recent until the tip loads.
+    const transferTime = (it: ActivityItem): number => {
+      if (it.ts) {
+        const t = Date.parse(it.ts);
+        if (!Number.isNaN(t)) return t;
+      }
+      if (it.block_height != null && tipHeight != null) {
+        return nowMs - Math.max(0, tipHeight - it.block_height) * BLOCK_MS;
+      }
+      return nowMs;
+    };
+    type Entry =
+      | { kind: "swap"; time: number; s: SwapRow }
+      | { kind: "transfer"; time: number; it: ActivityItem };
+    const pinned: SwapRow[] = [];
+    const rest: Entry[] = [];
+    for (const s of swaps) {
+      const phase = derivePhase(s, nowSec, tipHeight);
+      if (ACTIVE.has(phase.kind)) pinned.push(s);
+      else rest.push({ kind: "swap", time: s.created_at * 1000, s });
+    }
+    for (const it of visibleItems) {
+      rest.push({ kind: "transfer", time: transferTime(it), it });
+    }
+    pinned.sort((a, b) => b.created_at - a.created_at);
+    rest.sort((a, b) => b.time - a.time);
+    return { pinnedSwaps: pinned, feed: rest };
+  }, [swaps, visibleItems, nowSec, tipHeight]);
+
   return (
     <div className="screen">
       <div className="screen-pad">
@@ -310,11 +357,11 @@ export function Activity() {
           </div>
         )}
 
-        {swaps.length > 0 && (
+        {pinnedSwaps.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <div className="eyebrow" style={{ margin: "0 2px 9px" }}>{t("act.swaps")}</div>
             <div style={{ display: "grid", gap: 11 }}>
-              {swaps.map((s) => (
+              {pinnedSwaps.map((s) => (
                 <SwapActivityRow
                   key={s.swap_id}
                   s={s}
@@ -332,7 +379,7 @@ export function Activity() {
               <SkeletonRow key={i} />
             ))}
           </div>
-        ) : visibleItems.length === 0 && swaps.length === 0 ? (
+        ) : feed.length === 0 && pinnedSwaps.length === 0 ? (
           <div
             className="card"
             style={{ padding: "36px 22px", textAlign: "center", marginTop: 8 }}
@@ -358,14 +405,23 @@ export function Activity() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 11 }}>
-            {visibleItems.map((t) => (
-              <ActivityRow
-                key={t.tx_id}
-                item={t}
-                entries={balance?.entries ?? []}
-                onOpen={() => setOpen(t.tx_id)}
-              />
-            ))}
+            {feed.map((e) =>
+              e.kind === "swap" ? (
+                <SwapActivityRow
+                  key={`s:${e.s.swap_id}`}
+                  s={e.s}
+                  phase={derivePhase(e.s, nowSec, tipHeight)}
+                  onOpen={() => setOpenSwap(e.s.swap_id)}
+                />
+              ) : (
+                <ActivityRow
+                  key={`t:${e.it.tx_id}`}
+                  item={e.it}
+                  entries={balance?.entries ?? []}
+                  onOpen={() => setOpen(e.it.tx_id)}
+                />
+              ),
+            )}
           </div>
         )}
       </div>
