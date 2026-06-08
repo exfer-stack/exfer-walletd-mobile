@@ -334,19 +334,54 @@ function nextNonce(): number {
   return n;
 }
 
+// ── stale-while-revalidate cache ─────────────────────────────────────────────
+//
+// The governance screens hit a remote (Seoul) vote server on every entry, with
+// no cache — so re-opening the tab or a proposal blanks to a skeleton and waits
+// on a round-trip every time. These module-level caches let the UI paint the
+// last-known data INSTANTLY (synchronous read) while the live fetch refreshes in
+// the background. They're plain in-memory caches (cleared on app restart); the
+// existing polling keeps them fresh.
+
+let _proposalsCache: Proposal[] | null = null;
+const _proposalCache = new Map<string, Proposal>();
+const _resultsCache = new Map<string, VoteResult>();
+
+/** Last-known proposals list, or null if none fetched yet this session. */
+export function cachedProposals(): Proposal[] | null {
+  return _proposalsCache;
+}
+
+/** Last-known detail for one proposal, or null if not cached. */
+export function cachedProposal(id: string): Proposal | null {
+  return _proposalCache.get(id) ?? null;
+}
+
+/** Last-known results for one proposal, or null if not cached. */
+export function cachedResults(id: string): VoteResult | null {
+  return _resultsCache.get(id) ?? null;
+}
+
 // ── public API ──────────────────────────────────────────────────────────────
 
 /** All proposals (every status), newest/most-relevant first per the server. */
 export async function getProposals(): Promise<Proposal[]> {
   const res = await voteGet<{ proposals?: WireProposal[] } | WireProposal[]>("/proposals");
   const list = Array.isArray(res) ? res : (res?.proposals ?? []);
-  return list.map(normalizeProposal);
+  const proposals = list.map(normalizeProposal);
+  _proposalsCache = proposals;
+  // Seed per-proposal detail cache from the list so first detail open is instant.
+  for (const p of proposals) _proposalCache.set(p.id, p);
+  return proposals;
 }
 
 /** One proposal by id (includes results when closed/finalized). */
 export async function getProposal(id: string): Promise<Proposal> {
   const res = await voteGet<WireProposal>(`/proposals/${encodeURIComponent(id)}`);
-  return normalizeProposal(res);
+  const proposal = normalizeProposal(res);
+  _proposalCache.set(proposal.id, proposal);
+  if (proposal.results) _resultsCache.set(proposal.id, proposal.results);
+  return proposal;
 }
 
 /** This address's current choice on a proposal, or null if it hasn't voted. */
@@ -361,7 +396,7 @@ export async function getMyVote(id: string, address: string): Promise<MyVote | n
 /** Live/provisional tally during the window + final tally after finalize. */
 export async function getResults(id: string): Promise<VoteResult> {
   const res = await voteGet<WireResults>(`/proposals/${encodeURIComponent(id)}/results`);
-  return normalizeResults(res) ?? {
+  const results = normalizeResults(res) ?? {
     finalized_at_height: null,
     spot_check_heights: [],
     total_voters: 0,
@@ -369,6 +404,8 @@ export async function getResults(id: string): Promise<VoteResult> {
     by_option: {},
     finalized: false,
   };
+  _resultsCache.set(id, results);
+  return results;
 }
 
 /** Cast (or change) a vote from `address`:

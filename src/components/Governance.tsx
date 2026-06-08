@@ -22,11 +22,15 @@ import {
   submitVote,
   mediaUrl,
   fetchMediaBytes,
+  cachedProposals,
+  cachedProposal,
+  cachedResults,
   type Proposal,
   type ProposalStatus,
   type VoteResult,
   type Attachment,
 } from "../lib/governance";
+import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { saveBytes } from "../lib/fsfile";
 import type { WalletEntry } from "../lib/types";
 import { useWallet } from "../lib/wallet";
@@ -99,7 +103,10 @@ export function Governance() {
   const nowMs = useNow();
   const nowSec = Math.floor(nowMs / 1000);
 
-  const [proposals, setProposals] = useState<Proposal[] | null>(null);
+  // Seed from the SWR cache so re-entering the tab paints instantly; the fetch
+  // below still refreshes in the background. Only the very first ever load
+  // (empty cache) shows the skeleton.
+  const [proposals, setProposals] = useState<Proposal[] | null>(() => cachedProposals());
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -109,7 +116,10 @@ export function Governance() {
       const list = await getProposals();
       setProposals(list);
     } catch (e) {
-      setProposals([]);
+      // Keep any cached list on a refresh failure (don't blank to the error
+      // card when we already have data to show); only fall back to empty when
+      // we have nothing cached.
+      setProposals((prev) => prev ?? cachedProposals() ?? []);
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
@@ -387,8 +397,11 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const nowMs = useNow(15_000);
   const nowSec = Math.floor(nowMs / 1000);
 
-  const [p, setP] = useState<Proposal | null>(null);
-  const [liveResults, setLiveResults] = useState<VoteResult | null>(null);
+  // Seed from the SWR cache so reopening a proposal paints instantly (the
+  // reload() below refreshes in the background); only a truly-cold open shows
+  // the loading placeholder.
+  const [p, setP] = useState<Proposal | null>(() => cachedProposal(id));
+  const [liveResults, setLiveResults] = useState<VoteResult | null>(() => cachedResults(id));
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [selectedOpt, setSelectedOpt] = useState<string | null>(null);
@@ -513,6 +526,15 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const doVote = useCallback(
     async (optionId: string) => {
       if (!p || !selectedAddr) return;
+      // Require a biometric confirmation before signing the vote — but only when
+      // the device actually has biometrics enrolled. If unlock is cancelled or
+      // fails we silently abort (no error toast); if biometrics aren't available
+      // we proceed so users without a fingerprint set up aren't locked out.
+      const bio = await biometricStatus();
+      if (bio.available) {
+        const ok = await biometricUnlock(t("gov.authVote"));
+        if (!ok) return;
+      }
       setVoting(true);
       try {
         const res = await submitVote(p.id, optionId, selectedAddr);
@@ -734,6 +756,12 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <div className="prevote-warn" style={{ margin: "16px 0 16px" }}>
               <Icon name="alert" size={15} />
               <span>{t("gov.holdWarn")}</span>
+            </div>
+            <div
+              className="faint"
+              style={{ fontSize: 12, textAlign: "center", margin: "0 0 14px", lineHeight: 1.5 }}
+            >
+              {t("gov.noSpend")}
             </div>
             <button
               className="btn btn-block"

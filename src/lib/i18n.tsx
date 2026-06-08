@@ -838,6 +838,8 @@ const EN = {
   "gov.minAgo": "{m}m ago",
   // hold warning + vote
   "gov.holdWarn": "After voting ends, a random time is picked to set your final voting-power share.",
+  "gov.noSpend": "Voting spends no EXFER — it only signs with your wallet.",
+  "gov.authVote": "Confirm your vote",
   "gov.voteWith": "Vote “{opt}” with this address",
   "gov.selectOption": "Select an option to vote",
   "gov.voting": "Signing & submitting…",
@@ -1653,6 +1655,8 @@ const ZH: Record<MsgKey, string> = {
   "gov.secAgo": "{s} 秒前更新",
   "gov.minAgo": "{m} 分前更新",
   "gov.holdWarn": "投票结束后将随机抽取时间点确定最终票权份额。",
+  "gov.noSpend": "投票不消耗你的 EXFER,只用钱包签名。",
+  "gov.authVote": "验证指纹以确认投票",
   "gov.voteWith": "用此地址投「{opt}」",
   "gov.selectOption": "请选择一个选项",
   "gov.voting": "签名并提交中…",
