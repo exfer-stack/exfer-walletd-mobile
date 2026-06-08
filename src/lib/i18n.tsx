@@ -798,7 +798,7 @@ const EN = {
   // first-run 3-step primer
   "gov.primer1": "Vote from one address",
   "gov.primer2": "That address needs ≥ 10,000 EXFER",
-  "gov.primer3": "Final power share is set at a random time after voting ends",
+  "gov.primer3": "Power set at a random time after close",
   // sections
   "gov.secOpen": "Open",
   "gov.secUpcoming": "Upcoming",
@@ -1620,7 +1620,7 @@ const ZH: Record<MsgKey, string> = {
   "gov.tagline": "持币就能投票,决定 EXFER 的未来",
   "gov.primer1": "选择地址进行投票",
   "gov.primer2": "该地址需 ≥ 10,000 EXFER",
-  "gov.primer3": "结束后随机时间点确定最终票权份额",
+  "gov.primer3": "结束后随机时刻定票权",
   "gov.secOpen": "进行中",
   "gov.secUpcoming": "即将开始",
   "gov.secEnded": "已结束",
