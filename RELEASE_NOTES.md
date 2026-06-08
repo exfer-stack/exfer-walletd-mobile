@@ -6,10 +6,4 @@
 
 ## What's new
 
-- **Governance is now "Vote".** The bottom bar is back to four tabs — an open
-  vote shows up as a card on your wallet home (with the proposal and a
-  countdown), plus an entry in Settings.
-- **Faster Vote screen** — it reopens instantly and refreshes in the background.
-- **Fingerprint confirmation** before you cast a vote.
-- **Clearer icons and wording** — voting spends no EXFER (it only signs with
-  your wallet), and you keep holding to keep your voting power.
+- Various bug fixes and stability improvements.
