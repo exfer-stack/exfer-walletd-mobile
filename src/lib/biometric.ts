@@ -27,8 +27,14 @@ export async function biometricStatus(): Promise<{
   }
 }
 
-/** Prompt for a biometric (or device-credential) unlock. Resolves true on
- *  success, false on failure / cancel / unavailability. Never throws. */
+/** Prompt for a biometric (fingerprint / Face ID / Touch ID) unlock. Resolves
+ *  true on success, false on failure / cancel / unavailability. Never throws.
+ *
+ *  We deliberately do NOT pass `allowDeviceCredential` — with it, the OS prompt
+ *  falls back to the phone's lock-screen PIN, which confused users (they expect
+ *  the wallet password they set, not their device PIN). The fallback to the
+ *  actual wallet password is handled by our own lock screen (unlockWithPassword)
+ *  instead. */
 export async function biometricUnlock(
   reason = "Unlock your wallet",
 ): Promise<boolean> {
@@ -37,7 +43,6 @@ export async function biometricUnlock(
     const mod = await import("@tauri-apps/plugin-biometric");
     await mod.authenticate(reason, {
       title: "exfer wallet",
-      allowDeviceCredential: true,
     });
     return true;
   } catch {

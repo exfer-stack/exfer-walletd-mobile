@@ -7,7 +7,13 @@ import type { BootstrapStatus } from "./lib/types";
 import { bootstrapStatus } from "./lib/rpc";
 import { humanizeError } from "./lib/errors";
 import { biometricStatus, biometricUnlock } from "./lib/biometric";
-import { biometricLockEnabled, lockWallet, unlockWallet } from "./lib/biolock";
+import {
+  biometricLockEnabled,
+  lockWallet,
+  unlockWallet,
+  unlockWithPassword,
+} from "./lib/biolock";
+import { PasswordField } from "./components/ui";
 import { devmock } from "./lib/devmock";
 import wordmark from "./assets/wordmark.png";
 import { ToastProvider, ToastHost } from "./lib/toast";
@@ -381,13 +387,21 @@ function LockScreen({
   deciding: boolean;
   onUnlocked: () => void;
 }) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Password fallback: unlock with the wallet password the user SET — not the
+  // device lock-screen PIN. Shown alongside biometric so users always have a
+  // credential they control.
+  const [pwMode, setPwMode] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwErr, setPwErr] = useState(false);
 
   const unlock = useCallback(async () => {
     setBusy(true);
     setFailed(false);
-    const ok = await biometricUnlock("Unlock your wallet");
+    const ok = await biometricUnlock(t("lock.unlock"));
     if (ok) {
       // Bring the embedded walletd back if the lock sealed it (no-op when it's
       // still running). We do NOT gate re-entry on this: a silent-restore miss
@@ -400,19 +414,42 @@ function LockScreen({
       setBusy(false);
       setFailed(true);
     }
-  }, [onUnlocked]);
+  }, [onUnlocked, t]);
 
-  // Prompt automatically on first mount once we know a lock is needed.
+  const submitPw = useCallback(async () => {
+    if (!pw || pwBusy) return;
+    setPwBusy(true);
+    setPwErr(false);
+    try {
+      // unlock_with_password re-seals then unseals walletd with the entered
+      // password; a wrong one rejects (and never drops the saved passphrase).
+      const status = await unlockWithPassword(pw);
+      if (status && status.status === "ready") {
+        setPwBusy(false);
+        onUnlocked();
+        return;
+      }
+      setPwBusy(false);
+      setPwErr(true);
+    } catch {
+      setPwBusy(false);
+      setPwErr(true);
+    }
+  }, [pw, pwBusy, onUnlocked]);
+
+  // Prompt biometric automatically on first mount once we know a lock is
+  // needed — but never re-trigger it once the user has switched to the
+  // password field (that would yank focus / reopen the system sheet).
   useEffect(() => {
-    if (!deciding) void unlock();
-  }, [deciding, unlock]);
+    if (!deciding && !pwMode) void unlock();
+  }, [deciding, pwMode, unlock]);
 
   return (
     <div
       className="screen"
       style={{ display: "grid", placeItems: "center", padding: 40 }}
     >
-      <div style={{ textAlign: "center", maxWidth: 320 }}>
+      <div style={{ textAlign: "center", maxWidth: 320, width: "100%" }}>
         <img
           src={wordmark}
           alt="EXFER"
@@ -425,21 +462,76 @@ function LockScreen({
           }}
           draggable={false}
         />
-        <div className="dim" style={{ fontSize: 14, marginBottom: 18 }}>
-          {deciding
-            ? "Checking…"
-            : failed
-              ? "Unlock cancelled or failed. Try again."
-              : "Locked. Unlock to continue."}
-        </div>
-        <button
-          className="btn btn-block"
-          style={{ padding: "14px" }}
-          disabled={busy || deciding}
-          onClick={unlock}
-        >
-          {busy ? "Unlocking…" : "Unlock"}
-        </button>
+        {pwMode ? (
+          <>
+            <div style={{ textAlign: "left", marginBottom: 14 }}>
+              <label className="field-label">{t("lock.pwLabel")}</label>
+              <PasswordField
+                className="field"
+                autoFocus
+                value={pw}
+                onChange={(e) => {
+                  setPw(e.target.value);
+                  setPwErr(false);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && void submitPw()}
+              />
+              {pwErr && (
+                <div style={{ color: "#ef4444", fontSize: 13, marginTop: 8 }}>
+                  {t("lock.pwWrong")}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-block"
+              style={{ padding: "14px" }}
+              disabled={pwBusy || !pw}
+              onClick={submitPw}
+            >
+              {pwBusy ? t("lock.unlocking") : t("lock.unlock")}
+            </button>
+            <button
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: 10 }}
+              disabled={pwBusy}
+              onClick={() => {
+                setPwMode(false);
+                setPwErr(false);
+              }}
+            >
+              {t("lock.useBiometric")}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="dim" style={{ fontSize: 14, marginBottom: 18 }}>
+              {deciding
+                ? t("lock.checking")
+                : failed
+                  ? t("lock.failed")
+                  : t("lock.locked")}
+            </div>
+            <button
+              className="btn btn-block"
+              style={{ padding: "14px" }}
+              disabled={busy || deciding}
+              onClick={unlock}
+            >
+              {busy ? t("lock.unlocking") : t("lock.unlock")}
+            </button>
+            <button
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: 10 }}
+              disabled={busy || deciding}
+              onClick={() => {
+                setPwMode(true);
+                setFailed(false);
+              }}
+            >
+              {t("lock.usePassword")}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

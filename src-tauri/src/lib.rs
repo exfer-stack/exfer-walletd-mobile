@@ -122,6 +122,44 @@ async fn unlock_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String
     restart(&ctx).await.map_err(|e| e.to_user_string())
 }
 
+/// Unlock the biometric app-lock with the wallet PASSWORD the user set — the
+/// fallback to fingerprint/face, NOT the device's lock-screen PIN.
+///
+/// Verification is the real cryptographic thing, not a stored-copy compare: we
+/// seal the daemon first (so it can't be already-open) and then start it with
+/// the entered password. Only the correct password opens the Argon2id-sealed
+/// seed → `Ready`; anything else yields a non-Ready status and we reject. This
+/// also closes the residual "daemon stayed unsealed" gap on OEM ROMs, since the
+/// password path always re-seals before re-opening.
+///
+/// Unlike [`submit_password`], a WRONG attempt here never deletes the keychain
+/// passphrase: the saved copy is known-good (the wallet was working before the
+/// lock), and dropping it would silently kill silent-unlock on the next launch.
+/// A wrong attempt leaves the daemon sealed — the user just retries, or falls
+/// back to biometric (which silently restores from the untouched keychain).
+#[tauri::command]
+async fn unlock_with_password(
+    app: tauri::AppHandle,
+    ctx: State<'_, AppCtx>,
+    password: String,
+) -> Result<BootstrapStatus, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    // Seal first so the entered password must actually unseal the wallet.
+    stop(&ctx).await;
+    let status = start_with_app(&ctx, &password, Some(app)).await;
+    match status {
+        BootstrapStatus::Ready { .. } => {
+            // Refresh the silent-unlock copy (a no-op when it already matches);
+            // never delete it on the failure path below.
+            if let Err(e) = secrets::set_passphrase(KEYRING_SERVICE, &datadir, &password) {
+                tracing::warn!(error = %e, "could not persist passphrase after password unlock");
+            }
+            Ok(status)
+        }
+        _ => Err("incorrect password".into()),
+    }
+}
+
 /// Validate a .vault blob + its backup password WITHOUT creating a wallet, so
 /// onboarding can reject a wrong password / non-vault file BEFORE submit_password
 /// (which would otherwise create a wallet the app immediately navigates into,
@@ -834,6 +872,7 @@ pub fn run() {
             submit_password,
             lock_wallet,
             unlock_wallet,
+            unlock_with_password,
             rpc,
             preview_mnemonic_import,
             import_mnemonic_scheme,

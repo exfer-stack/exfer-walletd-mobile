@@ -44,6 +44,18 @@ export async function unlockWallet(): Promise<BootstrapStatus | null> {
   }
 }
 
+/** Unlock the app-lock with the wallet PASSWORD the user set (the fallback to
+ *  fingerprint/face — never the device lock-screen PIN). The Rust side verifies
+ *  it by actually unsealing walletd; a wrong password leaves the saved
+ *  passphrase intact. Resolves the resulting status on success; REJECTS on a
+ *  wrong password so the caller can show an error. Returns null outside Tauri. */
+export async function unlockWithPassword(
+  password: string,
+): Promise<BootstrapStatus | null> {
+  if (!inTauri()) return null;
+  return await invoke<BootstrapStatus>("unlock_with_password", { password });
+}
+
 /** Whether the user has enabled biometric unlock. */
 export function biometricLockEnabled(): boolean {
   return localStorage.getItem(BIOMETRIC_LOCK_KEY) === "true";

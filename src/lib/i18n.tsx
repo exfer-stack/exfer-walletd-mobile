@@ -883,6 +883,17 @@ const EN = {
   "gov.downloadFail": "Couldn't download the file",
   "gov.imgFail": "Image unavailable",
   "gov.closeImage": "Close",
+
+  // App-lock screen
+  "lock.checking": "Checking…",
+  "lock.locked": "Locked. Unlock to continue.",
+  "lock.failed": "Unlock cancelled or failed. Try again.",
+  "lock.unlock": "Unlock",
+  "lock.unlocking": "Unlocking…",
+  "lock.usePassword": "Use wallet password",
+  "lock.useBiometric": "Use fingerprint / Face ID",
+  "lock.pwLabel": "Wallet password",
+  "lock.pwWrong": "Incorrect password. Try again.",
 } as const;
 
 export type MsgKey = keyof typeof EN;
@@ -1702,6 +1713,17 @@ const ZH: Record<MsgKey, string> = {
   "gov.downloadFail": "下载失败",
   "gov.imgFail": "图片无法加载",
   "gov.closeImage": "关闭",
+
+  // App-lock screen
+  "lock.checking": "检查中…",
+  "lock.locked": "已锁定，请验证以继续。",
+  "lock.failed": "验证已取消或失败，请重试。",
+  "lock.unlock": "解锁",
+  "lock.unlocking": "解锁中…",
+  "lock.usePassword": "用钱包密码解锁",
+  "lock.useBiometric": "用指纹 / 面容解锁",
+  "lock.pwLabel": "钱包密码",
+  "lock.pwWrong": "密码错误，请重试。",
 };
 
 const DICT: Record<Lang, Record<MsgKey, string>> = { en: EN, zh: ZH };
