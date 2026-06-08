@@ -4,7 +4,7 @@
 //     phrase — imported into the wallet's independent BNB key.
 
 import { useEffect, useState } from "react";
-import { Modal, Field, Spinner } from "../ui";
+import { Modal, Field, PasswordField, Spinner } from "../ui";
 import { useToast } from "../../lib/toast";
 import {
   importWalletKey,
@@ -325,9 +325,8 @@ export function ImportKeyFileModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <Field label={t("imp.filePasswordOpt")}>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
             placeholder={t("imp.filePwPlaceholder")}

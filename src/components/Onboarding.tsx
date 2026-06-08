@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "../lib/icons";
-import { Field, Spinner } from "./ui";
+import { Field, PasswordField, Spinner } from "./ui";
 import { useToast } from "../lib/toast";
 import { submitPassword, pickVaultFile, validateVaultBytes, importVaultBytes, walletExists } from "../lib/rpc";
 import { humanizeError } from "../lib/errors";
@@ -344,9 +344,8 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
               label={t("ob.backupPassword")}
               help={t("ob.backupPasswordHelp")}
             >
-              <input
+              <PasswordField
                 className="field"
-                type="password"
                 value={vaultPw}
                 onChange={(e) => setVaultPw(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}

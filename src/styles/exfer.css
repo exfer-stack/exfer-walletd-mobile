@@ -323,6 +323,9 @@ body {
 .field::placeholder { color: var(--text-faint); }
 .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .field.mono { font-family: "Geist Mono Variable", "Geist Mono", monospace; font-size: 14px; }
+/* Dot-masking for PasswordField: keeps a normal full keyboard on Chinese/OEM
+   IMEs that force a numpad on real type="password" fields. */
+.pw-mask { -webkit-text-security: disc; }
 .field-help { margin-top: 8px; font-size: 12.5px; color: var(--text-faint); line-height: 1.5; }
 
 /* ── swap quote card ────────────────────────────────────────────── */

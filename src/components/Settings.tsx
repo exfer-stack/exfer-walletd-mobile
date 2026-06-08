@@ -27,7 +27,7 @@ import { biometricStatus } from "../lib/biometric";
 import { biometricLockEnabled, setBiometricLock } from "../lib/biolock";
 import type { ThemeMode, AccentKey } from "../lib/theme";
 import { ACCENTS } from "../lib/theme";
-import { AppBar, Modal, Field, SettingRow, CopyButton, Spinner } from "./ui";
+import { AppBar, Modal, Field, PasswordField, SettingRow, CopyButton, Spinner } from "./ui";
 import { ImportKeyFileModal } from "./modals/ImportModals";
 
 interface StatusResp {
@@ -843,9 +843,8 @@ function VaultBackupModal({ onClose }: { onClose: () => void }) {
         label={t("sheet.walletPassword")}
         help={t("vb.pwHelp")}
       >
-        <input
+        <PasswordField
           className="field"
-          type="password"
           autoFocus
           value={pw}
           onChange={(e) => setPw(e.target.value)}
@@ -915,9 +914,8 @@ function VaultRestoreModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <Field label={t("ob.backupPassword")}>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
           />

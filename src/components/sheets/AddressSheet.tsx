@@ -17,6 +17,7 @@ import {
   Sheet,
   Modal,
   Field,
+  PasswordField,
   CopyButton,
   ActionMenu,
   Spinner,
@@ -297,9 +298,8 @@ function RecoveryPhraseModal({
             {t("adr.rpWarn")}
           </div>
           <Field label={t("sheet.walletPassword")}>
-            <input
+            <PasswordField
               className="field"
-              type="password"
               autoFocus
               value={pw}
               onChange={(e) => setPw(e.target.value)}
@@ -560,9 +560,8 @@ function DeleteAddressModal({
         </label>
       )}
       <Field label={t("sheet.walletPassword")}>
-        <input
+        <PasswordField
           className="field"
-          type="password"
           autoFocus
           value={pw}
           onChange={(e) => setPw(e.target.value)}
@@ -627,26 +626,23 @@ function ExportKeyModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <Field label={t("sheet.walletPassword")} help={t("adr.exWalletPwHelp")}>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             value={walletPw}
             onChange={(e) => setWalletPw(e.target.value)}
           />
         </Field>
         <Field label={t("adr.exExportPw")}>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             value={exportPw}
             onChange={(e) => setExportPw(e.target.value)}
             placeholder={t("adr.exExportPwPh")}
           />
         </Field>
         <Field label={t("adr.exConfirmPw")}>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
           />

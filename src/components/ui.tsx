@@ -1,10 +1,12 @@
 // Shared mobile UI primitives, ported from the prototype's components.jsx.
 
 import {
+  forwardRef,
   useCallback,
   useEffect,
   useState,
   type CSSProperties,
+  type InputHTMLAttributes,
   type ReactNode,
 } from "react";
 import { Icon } from "../lib/icons";
@@ -461,6 +463,34 @@ export function Field({
     </div>
   );
 }
+
+/** Masked password input.
+ *
+ *  Some mobile keyboards force a numbers-only "secure keyboard" (designed for
+ *  6-digit payment PINs) whenever they see an HTML `type="password"` field — so
+ *  users typing an alphanumeric wallet password got stuck on a numpad with no
+ *  way to enter letters. We render a normal `type="text"`
+ *  input and mask it visually with `-webkit-text-security: disc` (see
+ *  `.pw-mask` in exfer.css). The IME then shows a full keyboard; the value is
+ *  still rendered as dots. Autofill/autocomplete are disabled — we never want a
+ *  wallet password remembered by the system. Drop-in for `<input type="password"
+ *  className="field" .../>`. */
+export const PasswordField = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement>
+>(({ className, ...rest }, ref) => (
+  <input
+    ref={ref}
+    {...rest}
+    type="text"
+    inputMode="text"
+    autoComplete="off"
+    autoCapitalize="none"
+    spellCheck={false}
+    className={`${className ?? "field"} pw-mask`}
+  />
+));
+PasswordField.displayName = "PasswordField";
 
 export function Spinner({ size = 18 }: { size?: number }) {
   return (

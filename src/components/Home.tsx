@@ -18,7 +18,7 @@ import { shortAddress } from "../lib/labels";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
-import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, Spinner, BnbMark } from "./ui";
+import { AddrAvatar, ActionMenu, PendingDot, Modal, CopyButton, PasswordField, Spinner, BnbMark } from "./ui";
 import { Qr } from "./Qr";
 import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { onSwapChanged } from "../lib/inflightLp";
@@ -1216,9 +1216,8 @@ function ExportBnbKeyModal({ onClose }: { onClose: () => void }) {
         <>
           <div className="banner banner-warn" style={{ marginBottom: 14 }}>{t("home.expWarn")}</div>
           <label className="eyebrow">{t("sheet.walletPassword")}</label>
-          <input
+          <PasswordField
             className="field"
-            type="password"
             autoFocus
             value={pw}
             onChange={(e) => setPw(e.target.value)}
