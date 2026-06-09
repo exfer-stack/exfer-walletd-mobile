@@ -105,7 +105,7 @@ Notes:
 
 - Early test builds are **debug-signed** so they install without a Play account. Android may warn it's from an unknown developer — expected for a sideloaded build. A Play Store listing follows once a release signing key is provisioned.
 - The `.apk` is a **universal** build (bundles the common phone architectures), so it installs on essentially any modern Android device.
-- Minimum **Android 9 (API 28)**.
+- Minimum **Android 7.0 (API 24)**.
 
 ### iOS
 
@@ -146,4 +146,4 @@ camera / biometric setup are in **[`docs/RELEASE.md`](docs/RELEASE.md)**.
 ## App identity
 
 - App id: `com.exfer.wallet` · Product: `exfer-wallet`
-- iOS 14.0+ · Android 9 (API 28)+
+- iOS 13.0+ · Android 7.0 (API 24)+
