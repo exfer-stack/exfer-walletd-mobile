@@ -194,7 +194,7 @@ export function Governance({ onBack }: { onBack?: () => void }) {
           </div>
           <div className="step">
             <span className="ic">
-              <Icon name="clock" size={21} />
+              <Icon name="shield" size={21} />
             </span>
             <span className="tx">{t("gov.primer3")}</span>
           </div>
@@ -782,12 +782,6 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
               <Icon name="alert" size={15} />
               <span>{t("gov.holdWarn")}</span>
             </div>
-            <div
-              className="faint"
-              style={{ fontSize: 12, textAlign: "center", margin: "0 0 14px", lineHeight: 1.5 }}
-            >
-              {t("gov.noSpend")}
-            </div>
             <button
               className="btn btn-block"
               disabled={!selectedOpt || voting}
@@ -809,37 +803,18 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </>
         )}
 
-        {/* ── voted: valid pill + change-vote (while open) ────────────── */}
-        {hasVoted && !changing && (
-          <>
-            {eligible && (
-              <div style={{ margin: "16px 0 14px" }}>
-                <span className="valid-pill">
-                  <Icon name="check" size={14} stroke={3} />
-                  {t("gov.validHold")}
-                </span>
-              </div>
-            )}
-            {isOpen && eligible && (
-              <>
-                <button
-                  className="btn btn-secondary btn-block"
-                  onClick={() => {
-                    setChanging(true);
-                    setSelectedOpt(myVote);
-                  }}
-                >
-                  {t("gov.changeVote")}
-                </button>
-                <div
-                  className="faint"
-                  style={{ fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.6 }}
-                >
-                  {t("gov.changeHint")}
-                </div>
-              </>
-            )}
-          </>
+        {/* ── voted: change-vote (while open) ─────────────────────────── */}
+        {hasVoted && !changing && isOpen && eligible && (
+          <button
+            className="btn btn-secondary btn-block"
+            style={{ marginTop: 16 }}
+            onClick={() => {
+              setChanging(true);
+              setSelectedOpt(myVote);
+            }}
+          >
+            {t("gov.changeVote")}
+          </button>
         )}
       </Sheet>
 

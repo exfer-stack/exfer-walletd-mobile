@@ -804,7 +804,7 @@ const EN = {
   // first-run 3-step primer
   "gov.primer1": "Vote from one address",
   "gov.primer2": "That address needs ≥ 10,000 EXFER",
-  "gov.primer3": "Keep holding to keep your power",
+  "gov.primer3": "Voting spends no EXFER",
   // sections
   "gov.secOpen": "Open",
   "gov.secUpcoming": "Upcoming",
@@ -844,7 +844,6 @@ const EN = {
   "gov.minAgo": "{m}m ago",
   // hold warning + vote
   "gov.holdWarn": "Keep holding your EXFER after voting — random spot-checks set your final power from your lowest balance, so selling reduces it.",
-  "gov.noSpend": "Voting spends no EXFER — it only signs with your wallet.",
   "gov.authVote": "Confirm your vote",
   "gov.voteWith": "Vote “{opt}” with this address",
   "gov.selectOption": "Select an option to vote",
@@ -856,9 +855,7 @@ const EN = {
   "gov.voted": "Voted · {opt}",
   "gov.votedMeta": "{label} · {n} EXFER · signed",
   "gov.yourVote": "Your vote",
-  "gov.validHold": "Voted · share set after close",
   "gov.changeVote": "Change my vote",
-  "gov.changeHint": "You can change it anytime before voting closes — the last one counts.",
   // ineligible
   "gov.useEligible": "Vote with “{label}” ({n} EXFER ✓)",
   "gov.belowTitle": "This address is under {n} EXFER",
@@ -1642,7 +1639,7 @@ const ZH: Record<MsgKey, string> = {
   "gov.tagline": "持币就能投票,决定 EXFER 的未来",
   "gov.primer1": "选择地址进行投票",
   "gov.primer2": "该地址需 ≥ 10,000 EXFER",
-  "gov.primer3": "持续持有 EXFER,票权才有效",
+  "gov.primer3": "投票不花你的 EXFER",
   "gov.secOpen": "进行中",
   "gov.secUpcoming": "即将开始",
   "gov.secEnded": "已结束",
@@ -1677,7 +1674,6 @@ const ZH: Record<MsgKey, string> = {
   "gov.secAgo": "{s} 秒前更新",
   "gov.minAgo": "{m} 分前更新",
   "gov.holdWarn": "投票后请持续持有 EXFER:结束后会随机抽查,按最低余额计最终票权,卖出会减少票权。",
-  "gov.noSpend": "投票不消耗你的 EXFER,只用钱包签名。",
   "gov.authVote": "验证指纹以确认投票",
   "gov.voteWith": "用此地址投「{opt}」",
   "gov.selectOption": "请选择一个选项",
@@ -1688,9 +1684,7 @@ const ZH: Record<MsgKey, string> = {
   "gov.voted": "已投票 · {opt}",
   "gov.votedMeta": "{label} · {n} EXFER · 已签名",
   "gov.yourVote": "你的票",
-  "gov.validHold": "已投票 · 票权结束后确定",
   "gov.changeVote": "改投其它选项",
-  "gov.changeHint": "投票截止前可随时更改 · 以最后一次为准",
   "gov.useEligible": "用「{label}」投票({n} EXFER ✓)",
   "gov.belowTitle": "当前地址不足 {n} EXFER",
   "gov.belowBody": "「{label}」余额不足 {n} EXFER。",

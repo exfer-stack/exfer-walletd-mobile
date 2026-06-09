@@ -1011,14 +1011,3 @@ html.scanning #root { visibility: hidden !important; }
   border-color: color-mix(in srgb, #ef4444 30%, transparent);
 }
 .prevote-warn.warn-danger svg { color: #ef4444; margin-top: 1px; }
-
-/* post-vote validity pill */
-.valid-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 13px; font-weight: 600;
-  color: #6ee7b7;
-  background: color-mix(in srgb, #34d399 11%, transparent);
-  border: 1px solid color-mix(in srgb, #34d399 26%, transparent);
-  border-radius: 999px; padding: 8px 14px;
-}
-.valid-pill svg { flex: 0 0 auto; color: #34d399; }
