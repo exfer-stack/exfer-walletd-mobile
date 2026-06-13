@@ -142,7 +142,8 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "bsc_create_address" ||
     method === "bsc_import_mnemonic" ||
     method === "bsc_import_key" ||
-    method === "abandon_transfer"
+    method === "abandon_transfer" ||
+    method === "htlc_forget"
   )
     return "manage";
   return "read";

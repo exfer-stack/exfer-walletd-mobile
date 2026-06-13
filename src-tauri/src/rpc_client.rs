@@ -142,7 +142,10 @@ fn scope_for_method(method: &str) -> Scope {
         // — Manage (matches walletd auth.rs). Previously missing → fell through
         // to Read → "Authentication required" on "Generate BNB wallet".
         | "bsc_create_address" | "bsc_import_mnemonic" | "bsc_import_key"
-        | "abandon_transfer" => Scope::Manage,
+        // htlc_forget prunes a settled HTLC record (metadata, not a fund move)
+        // — Manage, matching walletd auth.rs and the desktop app. Was missing
+        // here → fell through to Read → walletd would reject with -32001.
+        | "abandon_transfer" | "htlc_forget" => Scope::Manage,
         _ => Scope::Read,
     }
 }
