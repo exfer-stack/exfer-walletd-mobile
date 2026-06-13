@@ -352,32 +352,10 @@ async fn import_wallet_key(
     }
     let buf = hex::decode(&file_hex).map_err(|_| "wallet.key not valid hex".to_string())?;
 
-    // Accept three shapes:
-    //  - EXFK (our / exfer.dev encrypted wallet.key) → decrypt with the password
-    //  - a raw 32-byte ed25519 secret (unencrypted key file)
-    //  - a text file holding the 64-hex secret (with optional whitespace)
-    // so an UNENCRYPTED key still imports (the password field is optional).
-    let mut secret: [u8; 32] = if buf.len() >= 4 && &buf[0..4] == b"EXFK" {
-        export_key::parse_exfk(&buf, file_password.as_bytes())?
-    } else if buf.len() == 32 {
-        let mut s = [0u8; 32];
-        s.copy_from_slice(&buf);
-        s
-    } else {
-        let txt = String::from_utf8_lossy(&buf);
-        let h = txt.trim();
-        if h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()) {
-            let mut s = [0u8; 32];
-            hex::decode_to_slice(h, &mut s).map_err(|_| "key file not valid hex".to_string())?;
-            s
-        } else {
-            return Err(
-                "unrecognized key file — expected an encrypted wallet.key (EXFK) or a raw \
-                 32-byte / 64-hex private key"
-                    .into(),
-            );
-        }
-    };
+    // Accept an encrypted EXFK file, a raw 32-byte secret, or a 64-hex
+    // dump (password optional — only the EXFK shape uses it). Shared with
+    // the desktop import command so the same file imports on both.
+    let mut secret = export_key::parse_key_file(&buf, file_password.as_bytes())?;
 
     let (client, conn) = {
         let inner = ctx.inner.lock().await;

@@ -101,6 +101,40 @@ pub fn parse_exfk(buf: &[u8], passphrase: &[u8]) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
+/// Parse a user-supplied key file into a raw 32-byte ed25519 secret,
+/// accepting the three shapes a `wallet.key` shows up as in the wild:
+///   - an encrypted EXFK file (this app / exfer.dev / the CLI export),
+///     decrypted with `passphrase`;
+///   - a raw 32-byte ed25519 secret (an unencrypted key dump);
+///   - a text file holding the 64-char hex secret (surrounding
+///     whitespace trimmed).
+/// `passphrase` is only consulted for the EXFK shape, so a raw / hex key
+/// imports with the password left blank. This is the single
+/// format-detection point shared by the mobile and desktop import
+/// commands — keep it identical across both repos.
+pub fn parse_key_file(buf: &[u8], passphrase: &[u8]) -> Result<[u8; 32], String> {
+    if buf.len() >= 4 && &buf[0..4] == MAGIC {
+        return parse_exfk(buf, passphrase);
+    }
+    if buf.len() == 32 {
+        let mut out = [0u8; 32];
+        out.copy_from_slice(buf);
+        return Ok(out);
+    }
+    let text = String::from_utf8_lossy(buf);
+    let hexed = text.trim();
+    if hexed.len() == 64 && hexed.bytes().all(|b| b.is_ascii_hexdigit()) {
+        let mut out = [0u8; 32];
+        hex::decode_to_slice(hexed, &mut out).map_err(|_| "key file not valid hex".to_string())?;
+        return Ok(out);
+    }
+    Err(
+        "unrecognized key file — expected an encrypted wallet.key (EXFK) or a raw \
+         32-byte / 64-hex private key"
+            .into(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +168,32 @@ mod tests {
         let blob = build_exfk(&[0u8; 32], b"pw").unwrap();
         let err = parse_exfk(&blob[..blob.len() - 1], b"pw").unwrap_err();
         assert!(err.contains("wrong length"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_key_file_accepts_encrypted_exfk() {
+        let blob = build_exfk(&[9u8; 32], b"pw").unwrap();
+        assert_eq!(parse_key_file(&blob, b"pw").unwrap(), [9u8; 32]);
+    }
+
+    #[test]
+    fn parse_key_file_accepts_raw_32_bytes() {
+        // An unencrypted 32-byte key dump imports with no password.
+        let raw = [3u8; 32];
+        assert_eq!(parse_key_file(&raw, b"").unwrap(), raw);
+    }
+
+    #[test]
+    fn parse_key_file_accepts_64_hex_text() {
+        let raw = [0xABu8; 32];
+        // Surrounding whitespace (e.g. a trailing newline) is tolerated.
+        let file = format!("  {}\n", hex::encode(raw));
+        assert_eq!(parse_key_file(file.as_bytes(), b"").unwrap(), raw);
+    }
+
+    #[test]
+    fn parse_key_file_rejects_garbage() {
+        let err = parse_key_file(b"not a key", b"").unwrap_err();
+        assert!(err.contains("unrecognized"), "got: {err}");
     }
 }
