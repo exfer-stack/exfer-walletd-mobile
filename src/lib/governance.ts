@@ -336,7 +336,7 @@ function nextNonce(): number {
 
 // ── stale-while-revalidate cache ─────────────────────────────────────────────
 //
-// The governance screens hit a remote (Seoul) vote server on every entry, with
+// The governance screens hit a remote vote server on every entry, with
 // no cache — so re-opening the tab or a proposal blanks to a skeleton and waits
 // on a round-trip every time. These module-level caches let the UI paint the
 // last-known data INSTANTLY (synchronous read) while the live fetch refreshes in

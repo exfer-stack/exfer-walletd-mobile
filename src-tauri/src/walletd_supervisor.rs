@@ -34,8 +34,8 @@ pub const KEYRING_SERVICE: &str = "com.exfer.wallet";
 // (get_address_mempool, get_balances, get_address_utxos_batch,
 // get_output_spent_by) AND Tier-2 SSE push at GET /sse, so the
 // wallet observes incoming pending balance within ~RTT instead of
-// the 2 s poll interval. Seoul (icn) region — better mainland-China
-// reachability; gossips with the Tokyo node over the shared network.
+// the 2 s poll interval. Region chosen for better mainland-China
+// reachability; gossips with the other seed node over the shared network.
 pub const DEFAULT_NODE_RPC: &str = "http://64.176.231.198:9334";
 
 /// The swap pool's self-signed TLS certificate (PEM), PINNED by walletd's pool

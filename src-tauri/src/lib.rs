@@ -638,7 +638,7 @@ async fn check_latest_release() -> Result<String, String> {
 const VOTE_BASE: Option<&str> = Some("https://64.176.231.198:8443");
 const VOTE_CA_PEM: Option<&str> = Some(SEOUL_VOTE_CA_PEM);
 
-/// The exfer-vote (Seoul) server's self-signed TLS certificate (PEM), PINNED by
+/// The exfer-vote server's self-signed TLS certificate (PEM), PINNED by
 /// `vote_client()` (it trusts ONLY this cert for the governance connection).
 /// The SAN includes the IP 64.176.231.198 so hostname verification passes
 /// against the bare-IP base URL. Rotating the vote cert means shipping a new
