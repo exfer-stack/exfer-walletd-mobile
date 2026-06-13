@@ -108,6 +108,7 @@ pub fn parse_exfk(buf: &[u8], passphrase: &[u8]) -> Result<[u8; 32], String> {
 ///   - a raw 32-byte ed25519 secret (an unencrypted key dump);
 ///   - a text file holding the 64-char hex secret (surrounding
 ///     whitespace trimmed).
+///
 /// `passphrase` is only consulted for the EXFK shape, so a raw / hex key
 /// imports with the password left blank. This is the single
 /// format-detection point shared by the mobile and desktop import
