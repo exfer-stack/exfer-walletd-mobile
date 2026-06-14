@@ -240,6 +240,15 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
             .clone()
             .unwrap_or_else(|| "https://bsc-rpc.publicnode.com".to_string()),
         bsc_chain_id: desktop_cfg.bsc_chain_id.unwrap_or(56),
+        // New Config fields in walletd v1.14/v1.15 (pulled in with the bech32m
+        // keystone bump from v1.13.3). Behavior-preserving defaults matching
+        // walletd's own Config::default: no genesis pin and no spend-allowance
+        // caps, exactly as v1.13.3 ran. (expect_genesis is a future hardening
+        // knob — pin the node's genesis to bind the signature domain.)
+        expect_genesis: None,
+        spend_cap_per_tx: None,
+        spend_cap_per_period: None,
+        spend_cap_period_secs: 86_400,
     }
 }
 

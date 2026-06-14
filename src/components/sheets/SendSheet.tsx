@@ -18,6 +18,7 @@ import { useT } from "../../lib/i18n";
 import { isHidden } from "../../lib/hidden";
 import { addrName } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
+import { isValidAddress, addressKey } from "../../lib/address";
 import { appendHistory, listRecentRecipients, rememberRecipient } from "../../lib/history";
 import { Sheet, CopyButton, AddrAvatar, RvRow, Spinner } from "../ui";
 import { useCountUp } from "../../lib/anim";
@@ -25,7 +26,6 @@ import { scanSupported } from "../../lib/scan";
 import { ScannerOverlay } from "../ScannerOverlay";
 import { biometricStatus, biometricUnlock } from "../../lib/biometric";
 
-const HEX64 = /^[0-9a-fA-F]{64}$/;
 const FEE_RATE = 1;
 
 interface OutputDraft {
@@ -106,12 +106,14 @@ export function SendSheet({
   // Own addresses + addresses we've sent to before — used to flag a brand-new
   // recipient (the classic "one wrong character, funds gone" footgun) and to
   // note when a recipient is actually one of the user's own addresses.
+  // Keyed by the byte-canonical form so a recipient typed in bech32m still
+  // matches an own/recent address remembered in hex (and vice versa).
   const ownSet = useMemo(
-    () => new Set(entries.map((a) => a.address.toLowerCase())),
+    () => new Set(entries.map((a) => addressKey(a.address))),
     [entries],
   );
   const recentSet = useMemo(
-    () => new Set(listRecentRecipients().map((a) => a.toLowerCase())),
+    () => new Set(listRecentRecipients().map((a) => addressKey(a))),
     [],
   );
   const total = useMemo(
@@ -137,7 +139,7 @@ export function SendSheet({
     if (step !== 1) return;
     const parsed: { to: string; amount: number }[] = [];
     for (const o of outputs) {
-      if (!HEX64.test(o.to.trim())) {
+      if (!isValidAddress(o.to)) {
         setSimFee(null);
         return;
       }
@@ -229,7 +231,7 @@ export function SendSheet({
   function validate(): string | null {
     for (let i = 0; i < outputs.length; i++) {
       const o = outputs[i];
-      if (!HEX64.test(o.to.trim()))
+      if (!isValidAddress(o.to))
         return t("snd.errAddr", { n: i + 1 });
       try {
         if (parseExferAmount(o.amount) <= 0) return t("snd.errAmt", { n: i + 1 });
@@ -249,7 +251,7 @@ export function SendSheet({
   const formValid =
     sendable.length > 0 &&
     outputs.every((o) => {
-      if (!HEX64.test(o.to.trim())) return false;
+      if (!isValidAddress(o.to)) return false;
       try {
         return parseExferAmount(o.amount) > 0;
       } catch {
@@ -455,10 +457,10 @@ export function SendSheet({
         </div>
         <div className="card" style={{ overflow: "hidden", marginBottom: 18 }}>
           {outputs.map((o, i) => {
-            const lower = o.to.trim().toLowerCase();
-            const tag: { kind: NoteKind; text: string } = ownSet.has(lower)
+            const key = addressKey(o.to);
+            const tag: { kind: NoteKind; text: string } = ownSet.has(key)
               ? { kind: "info", text: t("snd.tagYour") }
-              : recentSet.has(lower)
+              : recentSet.has(key)
                 ? { kind: "ok", text: t("snd.tagSentBefore") }
                 : { kind: "warn", text: t("snd.tagNew") };
             return (
@@ -472,7 +474,7 @@ export function SendSheet({
                 gap: 10,
               }}
             >
-              <AddrAvatar address={lower} size={34} />
+              <AddrAvatar address={o.to.trim()} size={34} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Full address, wrapped, so the user can verify every
                     character before broadcasting — short forms hide typos. */}
@@ -654,13 +656,13 @@ export function SendSheet({
               // Per-row, live validation + safety hints (#4 / #7). Nothing
               // shows until the field is non-empty, so we don't nag mid-typing.
               const to = o.to.trim();
-              const addrValid = HEX64.test(to);
-              const lower = to.toLowerCase();
-              const isOwn = addrValid && ownSet.has(lower);
-              const isKnown = addrValid && recentSet.has(lower);
+              const addrValid = isValidAddress(o.to);
+              const key = addressKey(o.to);
+              const isOwn = addrValid && ownSet.has(key);
+              const isKnown = addrValid && recentSet.has(key);
               const addrNote: { kind: NoteKind; text: string } | null =
                 to.length > 0 && !addrValid
-                  ? { kind: "err", text: t("snd.noteHex", { len: to.length }) }
+                  ? { kind: "err", text: t("snd.noteHex") }
                   : isOwn
                     ? { kind: "info", text: t("snd.noteOwn") }
                     : addrValid && !isKnown

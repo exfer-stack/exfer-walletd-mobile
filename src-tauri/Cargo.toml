@@ -42,9 +42,11 @@ rand               = "0.8"
 tokio              = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-util         = { version = "0.7", features = ["rt"] }
 
-# The embedded walletd. Pinned to the swap-engine commit on main (ahead of the
-# last release tag); cut a v1.13.0 tag and switch back to `tag = ...` for prod.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "3737579b663a0c66b89160e9fce136482f3dd0e0" }
+# The embedded walletd. Pinned to 38846e1 (v1.15.0 + the bech32m accept-both
+# keystone): walletd now accepts both 64-hex and bech32m at every address RPC
+# edge and normalizes to hex downstream. Bumped from v1.13.3 (3737579); cut a
+# tag and switch back to `tag = ...` for prod. Keep desktop on the SAME rev.
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "38846e10d35ad1504e390ca71ed073b598795265" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables

@@ -6,12 +6,14 @@ export function Qr({ value, size = 222 }: { value: string; size?: number }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    // A 64-hex address encodes far more compactly in QR alphanumeric mode
-    // (uppercase A–F) than byte mode (lowercase) — ~31% fewer bits, so a
-    // lower version with bigger, easier-to-scan modules. Addresses are
+    // Both 64-hex and bech32m addresses encode far more compactly in QR
+    // alphanumeric mode (uppercase) than byte mode — ~31% fewer bits, so a
+    // lower version with bigger, easier-to-scan modules. Both forms are
     // case-insensitive and the scanner lowercases on the way back in
     // (parseScannedAddress), so this is display-neutral.
-    const encoded = /^[0-9a-fA-F]{64}$/.test(value) ? value.toUpperCase() : value;
+    const isHex64 = /^[0-9a-fA-F]{64}$/.test(value);
+    const isBech32m = /^(xf|xft|xfd)1[ac-hj-np-z02-9]+$/i.test(value);
+    const encoded = isHex64 || isBech32m ? value.toUpperCase() : value;
     QRCode.toDataURL(encoded, {
       // A small quiet zone so scanners can still locate the finder patterns
       // (margin:0 left none, which is why it wouldn't scan), but kept tight

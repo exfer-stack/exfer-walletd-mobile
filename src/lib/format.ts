@@ -2,6 +2,7 @@
 
 import type { WalletEntry } from "./types";
 import { getLabel } from "./labels";
+import { addressKey } from "./address";
 
 export const EXFER_UNIT = 100_000_000;
 export const EXPLORER = "https://explorer.exfer.dev";
@@ -89,7 +90,9 @@ function brandHue(r: () => number): number {
  *  glyph on a dark tile, mirrored across the vertical axis so it reads as a
  *  unique mark. Same address → same art. */
 export function avatarData(address: string): AvatarData {
-  const r = seededRng(address);
+  // Seed on the byte-canonical key, not the raw string, so the SAME address
+  // keeps the SAME identicon whether shown as 64-hex or bech32m.
+  const r = seededRng(addressKey(address));
   const hue = brandHue(r);
   const bgHue = (hue + 20) % 360;
   const cells: AvatarCell[] = [];
