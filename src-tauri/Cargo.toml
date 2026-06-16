@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.15"
+version     = "1.0.16"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -42,13 +42,12 @@ rand               = "0.8"
 tokio              = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-util         = { version = "0.7", features = ["rt"] }
 
-# The embedded walletd. Pinned to 38846e1 (v1.15.0 + the bech32m accept-both
-# keystone): walletd now accepts both 64-hex and bech32m at every address RPC
-# edge and normalizes to hex downstream. Bumped to 3229f1c: chain-driven
-# recovery of stranded HTLC locks (journal-independent swap reclaim), incl. the
-# locked_expired fix proven on mainnet. Cut a tag and switch back to `tag = ...`
-# for prod. Keep desktop on the SAME rev.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "3229f1c1d0da0d0efd484a12286e8239b1f6ca3d" }
+# The embedded walletd. Bumped 3229f1c → 5ad5ca7: journal-independent recovery
+# of stranded BNB locks (buy direction) via the indexed Locked event — the BSC
+# twin of the EXFER stranded-lock sweep, mainnet-proven (lock → expire → refund
+# with no local record). Carries the prior chain-driven EXFER reclaim + the
+# locked_expired fix. Keep desktop on the SAME rev.
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "5ad5ca7b51d423d637c7482ecd50df16dd2c7de1" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables

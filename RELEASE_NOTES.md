@@ -6,8 +6,12 @@
 
 ## What's new
 
-- Automatic recovery for interrupted swaps. If a swap was cut off at the final
-  step (network drop, app closed) and your EXFER was left locked, the wallet now
-  finds and returns it to you automatically when you open the app — even after a
-  reinstall or on a new phone, as long as you have your wallet. No action needed.
+- Automatic recovery for interrupted swaps — now both directions. If a swap is
+  cut off at the final step (network drop, app closed, reinstall, new phone), the
+  wallet finds your stranded funds and returns them automatically when you reopen
+  it: your EXFER on a sell, and now your BNB on a buy. As long as you have your
+  wallet, no action is needed.
+- Clearer guidance while a swap is in progress. The app now reminds you to keep
+  it open and online until the swap finishes, and to reopen it to continue if you
+  closed it — so a swap is far less likely to be left waiting.
 - Stability improvements.
