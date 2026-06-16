@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.14"
+version     = "1.0.15"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -44,9 +44,10 @@ tokio-util         = { version = "0.7", features = ["rt"] }
 
 # The embedded walletd. Pinned to 38846e1 (v1.15.0 + the bech32m accept-both
 # keystone): walletd now accepts both 64-hex and bech32m at every address RPC
-# edge and normalizes to hex downstream. Bumped from v1.13.3 (3737579); cut a
+# edge and normalizes to hex downstream. Bumped to b58ba94 for chain-driven
+# recovery of stranded HTLC locks (journal-independent swap reclaim); cut a
 # tag and switch back to `tag = ...` for prod. Keep desktop on the SAME rev.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "38846e10d35ad1504e390ca71ed073b598795265" }
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "b58ba94e7979198aa8238058abd24e121e8ae045" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables

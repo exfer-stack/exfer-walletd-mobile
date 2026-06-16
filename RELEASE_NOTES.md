@@ -6,4 +6,8 @@
 
 ## What's new
 
-- Various bug fixes and stability improvements.
+- Automatic recovery for interrupted swaps. If a swap was cut off at the final
+  step (network drop, app closed) and your EXFER was left locked, the wallet now
+  finds and returns it to you automatically when you open the app — even after a
+  reinstall or on a new phone, as long as you have your wallet. No action needed.
+- Stability improvements.
