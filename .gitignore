@@ -36,5 +36,7 @@ src-tauri/icons/ios/
 .env.local
 dist/
 *.png
+*.jpg
+*.jpeg
 test-results/
 .design-audit/
