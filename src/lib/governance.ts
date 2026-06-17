@@ -96,8 +96,8 @@ export interface Proposal {
   options: Option[];
   window: VotingWindow;
   status: ProposalStatus;
-  /** Eligibility threshold in exfers (1 EXFER = 1e8 exfers). Default 50,000
-   *  EXFER = 5_000_000_000_000 exfers; per-proposal overridable. */
+  /** Eligibility threshold in exfers (1 EXFER = 1e8 exfers). Default 100,000
+   *  EXFER = 10_000_000_000_000 exfers; per-proposal overridable. */
   min_power: number;
   /** Days after `close_time` during which random spot-checks may run. */
   spot_check_window_days: number;
