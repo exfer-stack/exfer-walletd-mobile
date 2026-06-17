@@ -803,7 +803,7 @@ const EN = {
   "gov.tagline": "Hold to vote — shape EXFER's future",
   // first-run 3-step primer
   "gov.primer1": "Vote from one address",
-  "gov.primer2": "That address needs ≥ 10,000 EXFER",
+  "gov.primer2": "That address needs ≥ 100,000 EXFER",
   "gov.primer3": "Voting spends no EXFER",
   // sections
   "gov.secOpen": "Open",
@@ -1638,7 +1638,7 @@ const ZH: Record<MsgKey, string> = {
   "gov.title": "投票",
   "gov.tagline": "持币就能投票,决定 EXFER 的未来",
   "gov.primer1": "选择地址进行投票",
-  "gov.primer2": "该地址需 ≥ 10,000 EXFER",
+  "gov.primer2": "该地址需 ≥ 100,000 EXFER",
   "gov.primer3": "投票不花你的 EXFER",
   "gov.secOpen": "进行中",
   "gov.secUpcoming": "即将开始",

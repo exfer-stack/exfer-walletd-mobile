@@ -6,7 +6,5 @@
 
 ## What's new
 
-- Fixed the update prompt that kept showing even after you had installed the
-  latest version. The app now reports its own version correctly, so once you are
-  up to date the prompt goes away.
-- Stability improvements.
+- Updated the voting tip to show the correct holding requirement: an address
+  now needs ≥ 100,000 EXFER to vote.
