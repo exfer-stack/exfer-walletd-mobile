@@ -25,7 +25,7 @@ import {
 import { Qr } from "../Qr";
 import { LabelModal } from "../modals/LabelModal";
 import { useAddressDisplay } from "../../lib/addressDisplay";
-import { FormToggle } from "../AddressForm";
+import { FormToggle, FormInfo } from "../AddressForm";
 
 export function AddressSheet({
   address,
@@ -138,6 +138,7 @@ export function AddressSheet({
           {disp}
         </code>
         <FormToggle address={address} />
+        <FormInfo />
         <CopyButton text={disp} label={t("sheet.addrCopied")} />
       </div>
 

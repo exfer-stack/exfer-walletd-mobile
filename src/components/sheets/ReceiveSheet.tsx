@@ -13,7 +13,7 @@ import type { WalletEntry } from "../../lib/types";
 import { Sheet, CopyButton } from "../ui";
 import { Qr } from "../Qr";
 import { useAddressDisplay } from "../../lib/addressDisplay";
-import { FormToggle } from "../AddressForm";
+import { FormToggle, FormInfo } from "../AddressForm";
 
 /** Row/title name: a local label if set, else the short address in whichever
  *  form (hex / bech32m) the user toggled this address to (#36). Mirrors the
@@ -134,14 +134,8 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               {disp}
             </code>
             <FormToggle address={selected} />
+            <FormInfo />
             <CopyButton text={disp} label={t("sheet.addrCopied")} />
-          </div>
-
-          <div
-            className="dim"
-            style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 14 }}
-          >
-            {t("rcv.formNote")}
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
