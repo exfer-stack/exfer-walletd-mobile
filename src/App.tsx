@@ -21,6 +21,9 @@ import { checkForUpdate, dismissedVersion, type LatestRelease } from "./lib/upda
 import { UpdateSheet } from "./components/sheets/UpdateSheet";
 import { WalletProvider } from "./lib/wallet";
 import { BalanceProvider } from "./lib/balance";
+import { migrateLabels } from "./lib/labels";
+import { migrateHidden } from "./lib/hidden";
+import { resolveNetwork } from "./lib/addressDisplay";
 import { I18nProvider, useT, readLang, persistLang, type Lang, type MsgKey } from "./lib/i18n";
 import {
   ACCENTS,
@@ -201,6 +204,20 @@ function Shell() {
         /* plugin unavailable (e.g. browser dev) — ignore */
       }
     })();
+  }, [walletReady]);
+
+  // One-time, idempotent re-key of client-side address metadata to the
+  // canonical key, so labels/hidden survive the bech32m display rollout (#36).
+  useEffect(() => {
+    migrateLabels();
+    migrateHidden();
+  }, []);
+
+  // Once walletd is up, learn the connected node's network so the bech32m
+  // display form uses the right HRP (xf / xft / xfd). Best-effort; the mainnet
+  // default stands if the node is old or unreachable.
+  useEffect(() => {
+    if (walletReady) void resolveNetwork();
   }, [walletReady]);
 
   // Auto-check for a newer release once the wallet is ready. A new version the

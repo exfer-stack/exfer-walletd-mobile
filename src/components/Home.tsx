@@ -15,6 +15,7 @@ import {
 import { usePrice, usdValue, useBnbUsd } from "../lib/market";
 import { useT } from "../lib/i18n";
 import { shortAddress } from "../lib/labels";
+import { useAddressDisplay } from "../lib/addressDisplay";
 import { isHidden } from "../lib/hidden";
 import { addrName } from "../lib/format";
 import type { WalletEntry } from "../lib/types";
@@ -28,6 +29,13 @@ import { useBscWallet, revealBscMnemonic } from "../lib/bscWallet";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { humanizeError } from "../lib/errors";
 import { getProposals, cachedProposals, type Proposal } from "../lib/governance";
+
+/** A row's short address that follows the per-address hex/bech32m toggle (#36).
+ *  Its own component so each row subscribes to just its own display pref. */
+function RowAddr({ address }: { address: string }) {
+  const { display } = useAddressDisplay(address);
+  return <>{shortAddress(display, 6, 6)}</>;
+}
 
 /** 24h change pill — green ▲ for up, red ▼ for down, muted for flat. */
 function ChangePill({ pct }: { pct: number }) {
@@ -871,7 +879,7 @@ export function Home({
                     className="mono faint"
                     style={{ fontSize: 12, display: "block", marginTop: 2 }}
                   >
-                    {shortAddress(a.address, 6, 6)}
+                    <RowAddr address={a.address} />
                   </span>
                 </span>
                 <span

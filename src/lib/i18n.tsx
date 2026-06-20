@@ -217,6 +217,7 @@ const EN = {
   "rcv.shareTitle": "My exfer address",
   "rcv.shareToast": "Address copied — share it anywhere.",
   "rcv.share": "Share",
+  "rcv.formNote": "Same address, two spellings: legacy hex or the newer checksummed xf… form. The XF / HEX button switches how this one is shown, copied, shared and encoded in the QR — funds and recipient are identical either way.",
 
   // send
   "snd.title": "Send",
@@ -286,6 +287,12 @@ const EN = {
   "adr.menuHide": "Hide from list",
   "adr.menuUnhide": "Unhide address",
   "adr.menuDelete": "Delete address…",
+  // Address display-form toggle (#36). Labels are short (a tiny pill); the
+  // tooltip carries the full meaning.
+  "addr.bech32mLabel": "xf",
+  "addr.hexLabel": "hex",
+  "addr.toBech32mTitle": "Show this address in the checksummed xf… form",
+  "addr.toHexTitle": "Show this address in legacy hex",
   "adr.shown": "Address shown",
   "adr.hidden": "Address hidden",
   "adr.rpEnterPw": "Enter your wallet password",
@@ -1069,6 +1076,7 @@ const ZH: Record<MsgKey, string> = {
   "rcv.shareTitle": "我的 exfer 地址",
   "rcv.shareToast": "地址已复制，可分享到任意地方。",
   "rcv.share": "分享",
+  "rcv.formNote": "同一个地址，两种写法：旧的十六进制，或更新的带校验的 xf… 形式。XF / HEX 按钮只切换这个地址的显示、复制、分享和二维码内容——无论哪种，资金和收款方完全一致。",
 
   "snd.title": "发送",
   "snd.from": "付款地址",
@@ -1136,6 +1144,10 @@ const ZH: Record<MsgKey, string> = {
   "adr.menuHide": "从列表隐藏",
   "adr.menuUnhide": "取消隐藏",
   "adr.menuDelete": "删除地址…",
+  "addr.bech32mLabel": "xf",
+  "addr.hexLabel": "hex",
+  "addr.toBech32mTitle": "以带校验的 xf… 形式显示这个地址",
+  "addr.toHexTitle": "以旧的十六进制形式显示这个地址",
   "adr.shown": "地址已显示",
   "adr.hidden": "地址已隐藏",
   "adr.rpEnterPw": "请输入钱包密码",

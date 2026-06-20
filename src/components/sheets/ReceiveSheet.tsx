@@ -7,10 +7,22 @@ import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { formatBalanceCompact } from "../../lib/rpc";
 import { isHidden } from "../../lib/hidden";
-import { addrName } from "../../lib/format";
+import { getLabel, shortAddress } from "../../lib/labels";
 import { useT } from "../../lib/i18n";
+import type { WalletEntry } from "../../lib/types";
 import { Sheet, CopyButton } from "../ui";
 import { Qr } from "../Qr";
+import { useAddressDisplay } from "../../lib/addressDisplay";
+import { FormToggle } from "../AddressForm";
+
+/** Row/title name: a local label if set, else the short address in whichever
+ *  form (hex / bech32m) the user toggled this address to (#36). Mirrors the
+ *  desktop decision to drop the misleading "Imported"/"Address N" generic. */
+function RcvName({ entry }: { entry: WalletEntry }) {
+  const { display } = useAddressDisplay(entry.address);
+  const label = entry.label ?? getLabel(entry.address);
+  return <>{label ?? shortAddress(display, 6, 6)}</>;
+}
 
 export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const { balance } = useWallet();
@@ -23,16 +35,20 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState<string | null>(null);
   const selected = sel ?? entries[0]?.address ?? null;
   const entry = (balance?.entries ?? []).find((a) => a.address === selected);
+  // Display form (hex / bech32m) for the selected address. QR, the address
+  // line, copy and share all use `disp` so what's shown, scanned, copied and
+  // shared are the same spelling. Hook is unconditional; "" when no selection.
+  const { display: disp } = useAddressDisplay(selected ?? "");
 
   function share() {
-    if (!selected) return;
+    if (!selected || !disp) return;
     const nav = navigator as Navigator & {
       share?: (data: { title?: string; text?: string }) => Promise<void>;
     };
     if (nav.share) {
-      nav.share({ title: t("rcv.shareTitle"), text: selected }).catch(() => {});
+      nav.share({ title: t("rcv.shareTitle"), text: disp }).catch(() => {});
     } else {
-      copyText(selected);
+      copyText(disp);
       toast.success(t("sheet.copied"), t("rcv.shareToast"));
     }
   }
@@ -66,7 +82,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               whiteSpace: "nowrap",
             }}
           >
-            {addrName(a)}
+            <RcvName entry={a} />
           </button>
         ))}
       </div>
@@ -82,12 +98,14 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
                 boxShadow: "var(--shadow)",
               }}
             >
-              <Qr value={selected} size={222} />
+              <Qr value={disp} size={222} />
             </div>
           </div>
 
           <div style={{ textAlign: "center", marginBottom: 16 }}>
-            <div style={{ fontWeight: 600, fontSize: 16 }}>{addrName(entry)}</div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>
+              <RcvName entry={entry} />
+            </div>
             <div className="mono dim" style={{ fontSize: 14, marginTop: 3 }}>
               {formatBalanceCompact(entry.balance)}
             </div>
@@ -113,9 +131,17 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
                 color: "var(--text-dim)",
               }}
             >
-              {selected}
+              {disp}
             </code>
-            <CopyButton text={selected} label={t("sheet.addrCopied")} />
+            <FormToggle address={selected} />
+            <CopyButton text={disp} label={t("sheet.addrCopied")} />
+          </div>
+
+          <div
+            className="dim"
+            style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 14 }}
+          >
+            {t("rcv.formNote")}
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
@@ -123,7 +149,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               <Icon name="share" size={19} /> {t("rcv.share")}
             </button>
             <CopyButton
-              text={selected}
+              text={disp}
               className="btn btn-block"
               label={t("sheet.addrCopied")}
               size={19}

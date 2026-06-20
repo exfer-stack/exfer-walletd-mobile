@@ -2,6 +2,7 @@
 // per-wallet tx history, so we keep one client-side.
 
 import type { TransferReceipt } from "./types";
+import { addressKey } from "./address";
 
 const HISTORY_KEY = "exfer-walletd-desktop-history-v1";
 const RECENT_RECIPS_KEY = "exfer-walletd-desktop-recents-v1";
@@ -163,7 +164,10 @@ export function listRecentRecipients(): string[] {
 }
 
 export function rememberRecipient(address: string) {
-  let v = loadRecents().filter((a) => a !== address);
+  // Dedup by canonical key so the same recipient entered once as hex and once
+  // as bech32m doesn't appear twice; keep the most recent spelling for display.
+  const key = addressKey(address);
+  let v = loadRecents().filter((a) => addressKey(a) !== key);
   v.unshift(address);
   if (v.length > MAX_RECENT) v = v.slice(0, MAX_RECENT);
   localStorage.setItem(RECENT_RECIPS_KEY, JSON.stringify(v));

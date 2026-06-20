@@ -24,6 +24,8 @@ import {
 } from "../ui";
 import { Qr } from "../Qr";
 import { LabelModal } from "../modals/LabelModal";
+import { useAddressDisplay } from "../../lib/addressDisplay";
+import { FormToggle } from "../AddressForm";
 
 export function AddressSheet({
   address,
@@ -38,6 +40,9 @@ export function AddressSheet({
   const { balance, refresh, utxos, refreshUtxos } = useWallet();
   const toast = useToast();
   const { t } = useT();
+  // Display form (hex / bech32m) for this address; subtitle, QR and copy all
+  // follow it. Hook must run before the early return below.
+  const { display: disp } = useAddressDisplay(address);
   const entry = (balance?.entries ?? []).find((a) => a.address === address);
   // Force re-render after label/hidden mutations (both live in localStorage).
   const [, setTick] = useState(0);
@@ -74,7 +79,7 @@ export function AddressSheet({
   return (
     <Sheet
       title={addrName(entry)}
-      subtitle={shortAddress(address, 8, 8)}
+      subtitle={shortAddress(disp, 8, 8)}
       onClose={onClose}
       right={
         <button className="icon-btn" onClick={() => setMenu(true)} aria-label="Actions">
@@ -106,7 +111,7 @@ export function AddressSheet({
 
       <div style={{ display: "flex", justifyContent: "center", margin: "0 0 18px" }}>
         <div style={{ background: "#fff", padding: 16, borderRadius: 20 }}>
-          <Qr value={address} size={190} />
+          <Qr value={disp} size={190} />
         </div>
       </div>
 
@@ -130,9 +135,10 @@ export function AddressSheet({
             color: "var(--text-dim)",
           }}
         >
-          {address}
+          {disp}
         </code>
-        <CopyButton text={address} label="Address copied" />
+        <FormToggle address={address} />
+        <CopyButton text={disp} label={t("sheet.addrCopied")} />
       </div>
 
       <button
@@ -187,7 +193,7 @@ export function AddressSheet({
               icon: "copy",
               label: t("adr.menuCopy"),
               onClick: () => {
-                copyText(address);
+                copyText(disp);
                 toast.success(t("sheet.copied"));
                 setMenu(false);
               },
