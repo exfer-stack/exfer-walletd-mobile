@@ -2,10 +2,10 @@
 // between legacy hex and the checksummed bech32m "xf1…" form. Default is hex;
 // display-only — same bytes, same funds (see lib/addressDisplay.ts).
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import { useAddressDisplay } from "../lib/addressDisplay";
 import { useT } from "../lib/i18n";
+import { Modal } from "./ui";
 
 /** Small pill that flips one address between hex and the bech32m "xf" form.
  *  Label shows the form you'd switch TO, so the action reads clearly. */
@@ -48,106 +48,57 @@ export function FormToggle({ address }: { address: string }) {
   );
 }
 
-/** A round "?" next to the toggle. Tapping it opens a small centered card
- *  explaining the two address forms, what the toggle does, and why one address
- *  has two spellings. Rendered via a portal to <body> so the sheet's
- *  overflow:hidden can't clip it. Backdrop-tap, the OK button, or Escape close. */
-export function FormInfo() {
+/** A small "?" next to the toggle, matching MnemonicHelp / SwapTimingHelp.
+ *  Tapping it opens the shared Modal explaining the two address forms, what the
+ *  toggle does, and why one address has two spellings. */
+export function FormInfo({ size = 18 }: { size?: number }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  // Portal into the themed `.phone` root (NOT document.body): the surface CSS
-  // variables (--elevated, --border, --shadow) are scoped under the data-theme
-  // element, so a body-level portal would render with a transparent card.
-  const portalTarget =
-    (typeof document !== "undefined" &&
-      document.querySelector<HTMLElement>(".phone")) ||
-    (typeof document !== "undefined" ? document.body : null);
-
   return (
     <>
       <button
-        className="tap"
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
-        aria-label={t("addr.formInfoAria")}
+        aria-label={t("addr.formInfoTitle")}
         style={{
-          flex: "0 0 auto",
-          width: 36,
-          height: 36,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: 999,
+          width: size,
+          height: size,
+          borderRadius: "50%",
           border: "1px solid var(--border)",
           background: "var(--surface-2)",
           color: "var(--text-dim)",
-          fontSize: 13,
+          fontSize: size * 0.62,
           fontWeight: 700,
+          lineHeight: 1,
           cursor: "pointer",
+          display: "inline-grid",
+          placeItems: "center",
+          flex: "0 0 auto",
         }}
       >
         ?
       </button>
-      {open &&
-        portalTarget &&
-        createPortal(
+      {open && (
+        <Modal
+          title={t("addr.formInfoTitle")}
+          onClose={() => setOpen(false)}
+          footer={
+            <button className="btn btn-block" onClick={() => setOpen(false)}>
+              {t("sheet.done")}
+            </button>
+          }
+        >
           <div
-            role="dialog"
-            onClick={() => setOpen(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 100,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 24,
-              background: "rgba(0,0,0,0.5)",
-            }}
+            className="dim"
+            style={{ fontSize: 13.5, lineHeight: 1.65, textAlign: "left" }}
           >
-            <div
-              className="card fade-up"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "100%",
-                maxWidth: 320,
-                textAlign: "left",
-                background: "var(--elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 16,
-                padding: "18px 18px 14px",
-                boxShadow: "var(--shadow)",
-              }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>
-                {t("addr.formInfoTitle")}
-              </div>
-              <div className="dim" style={{ fontSize: 13, lineHeight: 1.55 }}>
-                {t("addr.formInfoBody")}
-              </div>
-              <button
-                className="btn btn-block"
-                onClick={() => setOpen(false)}
-                style={{ marginTop: 14 }}
-              >
-                {t("sheet.done")}
-              </button>
-            </div>
-          </div>,
-          portalTarget,
-        )}
+            {t("addr.formInfoBody")}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
