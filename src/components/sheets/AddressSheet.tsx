@@ -24,8 +24,7 @@ import {
 } from "../ui";
 import { Qr } from "../Qr";
 import { LabelModal } from "../modals/LabelModal";
-import { useAddressDisplay } from "../../lib/addressDisplay";
-import { FormToggle, FormInfo } from "../AddressForm";
+import { AddressFormatsModal } from "../AddressForm";
 
 export function AddressSheet({
   address,
@@ -40,9 +39,6 @@ export function AddressSheet({
   const { balance, refresh, utxos, refreshUtxos } = useWallet();
   const toast = useToast();
   const { t } = useT();
-  // Display form (hex / bech32m) for this address; subtitle, QR and copy all
-  // follow it. Hook must run before the early return below.
-  const { display: disp } = useAddressDisplay(address);
   const entry = (balance?.entries ?? []).find((a) => a.address === address);
   // Force re-render after label/hidden mutations (both live in localStorage).
   const [, setTick] = useState(0);
@@ -53,6 +49,7 @@ export function AddressSheet({
   const [exportOpen, setExportOpen] = useState(false);
   const [phraseOpen, setPhraseOpen] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
+  const [formatsOpen, setFormatsOpen] = useState(false);
 
   useEffect(() => {
     void refreshUtxos();
@@ -79,7 +76,7 @@ export function AddressSheet({
   return (
     <Sheet
       title={addrName(entry)}
-      subtitle={shortAddress(disp, 8, 8)}
+      subtitle={shortAddress(address, 8, 8)}
       onClose={onClose}
       right={
         <button className="icon-btn" onClick={() => setMenu(true)} aria-label="Actions">
@@ -111,10 +108,11 @@ export function AddressSheet({
 
       <div style={{ display: "flex", justifyContent: "center", margin: "0 0 18px" }}>
         <div style={{ background: "#fff", padding: 16, borderRadius: 20 }}>
-          <Qr value={disp} size={190} />
+          <Qr value={address} size={190} />
         </div>
       </div>
 
+      {/* Tappable address — opens the hex / xf format sheet. */}
       <div
         className="card card-2"
         style={{
@@ -125,21 +123,41 @@ export function AddressSheet({
           marginBottom: 14,
         }}
       >
-        <code
-          className="mono"
+        <button
+          className="tap"
+          onClick={() => setFormatsOpen(true)}
+          aria-label={t("addr.formInfoTitle")}
           style={{
             flex: 1,
-            fontSize: 12.5,
-            wordBreak: "break-all",
-            lineHeight: 1.5,
-            color: "var(--text-dim)",
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            textAlign: "left",
           }}
         >
-          {disp}
-        </code>
-        <FormToggle address={address} />
-        <FormInfo />
-        <CopyButton text={disp} label={t("sheet.addrCopied")} />
+          <code
+            className="mono"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 12.5,
+              wordBreak: "break-all",
+              lineHeight: 1.5,
+              color: "var(--text-dim)",
+            }}
+          >
+            {address}
+          </code>
+          <span className="faint" style={{ flex: "0 0 auto", display: "inline-flex" }}>
+            <Icon name="chevron" size={16} />
+          </span>
+        </button>
+        <CopyButton text={address} label={t("sheet.addrCopied")} />
       </div>
 
       <button
@@ -194,7 +212,7 @@ export function AddressSheet({
               icon: "copy",
               label: t("adr.menuCopy"),
               onClick: () => {
-                copyText(disp);
+                copyText(address);
                 toast.success(t("sheet.copied"));
                 setMenu(false);
               },
@@ -215,6 +233,9 @@ export function AddressSheet({
             },
           ]}
         />
+      )}
+      {formatsOpen && (
+        <AddressFormatsModal address={address} onClose={() => setFormatsOpen(false)} />
       )}
       {labelOpen && (
         <LabelModal address={address} onClose={() => setLabelOpen(false)} onSaved={bump} />

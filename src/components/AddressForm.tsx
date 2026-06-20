@@ -1,104 +1,81 @@
-// Per-address display-form toggle (#36): a small pill that flips ONE address
-// between legacy hex and the checksummed bech32m "xf1…" form. Default is hex;
-// display-only — same bytes, same funds (see lib/addressDisplay.ts).
+// Address-format sheet (#36): the same account has two textual spellings —
+// legacy hex and the checksummed bech32m "xf…". Rather than cramming a toggle
+// into the address row, tapping the address opens this sheet, which lists both
+// forms with a copy on each and a one-line explainer. Display-only: same bytes,
+// same funds, walletd accepts either (see lib/addressDisplay.ts). Reuses the
+// app's shared Modal — no bespoke popover.
 
-import { useState } from "react";
-import { useAddressDisplay } from "../lib/addressDisplay";
+import { addressKey } from "../lib/address";
+import { encodeBech32mAddr } from "../lib/addressDisplay";
 import { useT } from "../lib/i18n";
-import { Modal } from "./ui";
+import { Modal, CopyButton } from "./ui";
 
-/** Small pill that flips one address between hex and the bech32m "xf" form.
- *  Label shows the form you'd switch TO, so the action reads clearly. */
-export function FormToggle({ address }: { address: string }) {
-  const { isBech32m, toggle } = useAddressDisplay(address);
+function FormatRow({ label, value }: { label: string; value: string }) {
   const { t } = useT();
-  const title = isBech32m ? t("addr.toHexTitle") : t("addr.toBech32mTitle");
   return (
-    <button
-      className="tap"
-      onClick={(e) => {
-        e.stopPropagation();
-        toggle();
-      }}
-      title={title}
-      aria-label={title}
-      style={{
-        flex: "0 0 auto",
-        // Match the 36px icon-btn it sits beside (copy button) so the row reads
-        // level, and clear a comfortable touch target.
-        minHeight: 36,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0 12px",
-        borderRadius: 999,
-        border: "1px solid var(--border)",
-        background: "var(--surface-2)",
-        color: "var(--text-dim)",
-        fontSize: 11,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: ".06em",
-        cursor: "pointer",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {isBech32m ? t("addr.hexLabel") : t("addr.bech32mLabel")}
-    </button>
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 6, letterSpacing: ".1em" }}>
+        {label}
+      </div>
+      <div
+        className="card card-2"
+        style={{
+          padding: "11px 12px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <code
+          className="mono"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 12,
+            wordBreak: "break-all",
+            lineHeight: 1.5,
+            color: "var(--text-dim)",
+          }}
+        >
+          {value}
+        </code>
+        <CopyButton text={value} label={t("sheet.addrCopied")} />
+      </div>
+    </div>
   );
 }
 
-/** A small "?" next to the toggle, matching MnemonicHelp / SwapTimingHelp.
- *  Tapping it opens the shared Modal explaining the two address forms, what the
- *  toggle does, and why one address has two spellings. */
-export function FormInfo({ size = 18 }: { size?: number }) {
+/** The "two ways to write the same address" sheet for one address. */
+export function AddressFormatsModal({
+  address,
+  onClose,
+}: {
+  address: string;
+  onClose: () => void;
+}) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
+  const hex = addressKey(address);
+  const bech = encodeBech32mAddr(address) ?? hex;
   return (
-    <>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-        aria-label={t("addr.formInfoTitle")}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: "50%",
-          border: "1px solid var(--border)",
-          background: "var(--surface-2)",
-          color: "var(--text-dim)",
-          fontSize: size * 0.62,
-          fontWeight: 700,
-          lineHeight: 1,
-          cursor: "pointer",
-          display: "inline-grid",
-          placeItems: "center",
-          flex: "0 0 auto",
-        }}
+    <Modal
+      title={t("addr.formInfoTitle")}
+      onClose={onClose}
+      footer={
+        <button className="btn btn-block" onClick={onClose}>
+          {t("sheet.done")}
+        </button>
+      }
+    >
+      <div
+        className="dim"
+        style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 16, textAlign: "left" }}
       >
-        ?
-      </button>
-      {open && (
-        <Modal
-          title={t("addr.formInfoTitle")}
-          onClose={() => setOpen(false)}
-          footer={
-            <button className="btn btn-block" onClick={() => setOpen(false)}>
-              {t("sheet.done")}
-            </button>
-          }
-        >
-          <div
-            className="dim"
-            style={{ fontSize: 13.5, lineHeight: 1.65, textAlign: "left" }}
-          >
-            {t("addr.formInfoBody")}
-          </div>
-        </Modal>
-      )}
-    </>
+        {t("addr.formInfoBody")}
+      </div>
+      <div style={{ display: "grid", gap: 14 }}>
+        <FormatRow label={t("addr.formatHex")} value={hex} />
+        <FormatRow label={t("addr.formatBech32m")} value={bech} />
+      </div>
+    </Modal>
   );
 }

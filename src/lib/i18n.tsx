@@ -288,13 +288,11 @@ const EN = {
   "adr.menuDelete": "Delete address…",
   // Address display-form toggle (#36). Labels are short (a tiny pill); the
   // tooltip carries the full meaning.
-  "addr.bech32mLabel": "xf",
-  "addr.hexLabel": "hex",
-  "addr.toBech32mTitle": "Show this address in the checksummed xf… form",
-  "addr.toHexTitle": "Show this address in legacy hex",
   "addr.formInfoTitle": "Two ways to write the same address",
   "addr.formInfoBody":
-    "Every EXFER address has two spellings of the exact same account: the original hex, and a newer checksummed form starting with xf… that catches typos. Use the XF / HEX button to switch how this address is shown, copied, shared and put in its QR. It's the same address and the same funds either way, and both are accepted when someone pays you.",
+    "The same account has two spellings: the original hex, and a newer checksummed form starting with xf… that catches typos. Copy whichever you like — it's the same address and the same funds either way, and both are accepted when someone pays you.",
+  "addr.formatHex": "Hex (original)",
+  "addr.formatBech32m": "Checksummed · xf",
   "adr.shown": "Address shown",
   "adr.hidden": "Address hidden",
   "adr.rpEnterPw": "Enter your wallet password",
@@ -1145,13 +1143,11 @@ const ZH: Record<MsgKey, string> = {
   "adr.menuHide": "从列表隐藏",
   "adr.menuUnhide": "取消隐藏",
   "adr.menuDelete": "删除地址…",
-  "addr.bech32mLabel": "xf",
-  "addr.hexLabel": "hex",
-  "addr.toBech32mTitle": "以带校验的 xf… 形式显示这个地址",
-  "addr.toHexTitle": "以旧的十六进制形式显示这个地址",
   "addr.formInfoTitle": "同一个地址的两种写法",
   "addr.formInfoBody":
-    "每个 EXFER 地址都是同一个账户的两种写法：原来的十六进制，和更新的、以 xf… 开头、带防错校验的形式。用 XF / HEX 按钮切换这个地址的显示、复制、分享和二维码内容。无论哪种，都是同一个地址、同一笔资金，别人付款时两种都收。",
+    "同一个账户有两种写法：原来的十六进制，和更新的、以 xf… 开头、带防错校验的形式。想复制哪种都行——无论哪种，都是同一个地址、同一笔资金，别人付款时两种都收。",
+  "addr.formatHex": "十六进制（原始）",
+  "addr.formatBech32m": "带校验 · xf",
   "adr.shown": "地址已显示",
   "adr.hidden": "地址已隐藏",
   "adr.rpEnterPw": "请输入钱包密码",

@@ -1,4 +1,5 @@
-// Receive — pick an address, show QR + full address, copy/share.
+// Receive — pick an address, show QR + full address, copy/share. Tapping the
+// address opens the format sheet (hex / checksummed xf), #36.
 
 import { useState } from "react";
 import { copyText } from "../../lib/clipboard";
@@ -12,16 +13,13 @@ import { useT } from "../../lib/i18n";
 import type { WalletEntry } from "../../lib/types";
 import { Sheet, CopyButton } from "../ui";
 import { Qr } from "../Qr";
-import { useAddressDisplay } from "../../lib/addressDisplay";
-import { FormToggle, FormInfo } from "../AddressForm";
+import { AddressFormatsModal } from "../AddressForm";
 
-/** Row/title name: a local label if set, else the short address in whichever
- *  form (hex / bech32m) the user toggled this address to (#36). Mirrors the
- *  desktop decision to drop the misleading "Imported"/"Address N" generic. */
+/** Row/title name: a local label if set, else the short address. Drops the
+ *  misleading "Imported"/"Address N" generic (matches desktop). */
 function RcvName({ entry }: { entry: WalletEntry }) {
-  const { display } = useAddressDisplay(entry.address);
   const label = entry.label ?? getLabel(entry.address);
-  return <>{label ?? shortAddress(display, 6, 6)}</>;
+  return <>{label ?? shortAddress(entry.address, 6, 6)}</>;
 }
 
 export function ReceiveSheet({ onClose }: { onClose: () => void }) {
@@ -35,20 +33,17 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState<string | null>(null);
   const selected = sel ?? entries[0]?.address ?? null;
   const entry = (balance?.entries ?? []).find((a) => a.address === selected);
-  // Display form (hex / bech32m) for the selected address. QR, the address
-  // line, copy and share all use `disp` so what's shown, scanned, copied and
-  // shared are the same spelling. Hook is unconditional; "" when no selection.
-  const { display: disp } = useAddressDisplay(selected ?? "");
+  const [formatsOpen, setFormatsOpen] = useState(false);
 
   function share() {
-    if (!selected || !disp) return;
+    if (!selected) return;
     const nav = navigator as Navigator & {
       share?: (data: { title?: string; text?: string }) => Promise<void>;
     };
     if (nav.share) {
-      nav.share({ title: t("rcv.shareTitle"), text: disp }).catch(() => {});
+      nav.share({ title: t("rcv.shareTitle"), text: selected }).catch(() => {});
     } else {
-      copyText(disp);
+      copyText(selected);
       toast.success(t("sheet.copied"), t("rcv.shareToast"));
     }
   }
@@ -98,7 +93,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
                 boxShadow: "var(--shadow)",
               }}
             >
-              <Qr value={disp} size={222} />
+              <Qr value={selected} size={222} />
             </div>
           </div>
 
@@ -111,6 +106,7 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {/* The address line is tappable — opens the hex / xf format sheet. */}
           <div
             className="card card-2"
             style={{
@@ -121,21 +117,41 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               marginBottom: 14,
             }}
           >
-            <code
-              className="mono"
+            <button
+              className="tap"
+              onClick={() => setFormatsOpen(true)}
+              aria-label={t("addr.formInfoTitle")}
               style={{
                 flex: 1,
-                fontSize: 12.5,
-                wordBreak: "break-all",
-                lineHeight: 1.5,
-                color: "var(--text-dim)",
+                minWidth: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
               }}
             >
-              {disp}
-            </code>
-            <FormToggle address={selected} />
-            <FormInfo />
-            <CopyButton text={disp} label={t("sheet.addrCopied")} />
+              <code
+                className="mono"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 12.5,
+                  wordBreak: "break-all",
+                  lineHeight: 1.5,
+                  color: "var(--text-dim)",
+                }}
+              >
+                {selected}
+              </code>
+              <span className="faint" style={{ flex: "0 0 auto", display: "inline-flex" }}>
+                <Icon name="chevron" size={16} />
+              </span>
+            </button>
+            <CopyButton text={selected} label={t("sheet.addrCopied")} />
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
@@ -143,13 +159,17 @@ export function ReceiveSheet({ onClose }: { onClose: () => void }) {
               <Icon name="share" size={19} /> {t("rcv.share")}
             </button>
             <CopyButton
-              text={disp}
+              text={selected}
               className="btn btn-block"
               label={t("sheet.addrCopied")}
               size={19}
             />
           </div>
         </div>
+      )}
+
+      {formatsOpen && selected && (
+        <AddressFormatsModal address={selected} onClose={() => setFormatsOpen(false)} />
       )}
     </Sheet>
   );
