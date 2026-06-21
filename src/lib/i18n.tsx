@@ -288,11 +288,11 @@ const EN = {
   "adr.menuDelete": "Delete address…",
   // Address display-form toggle (#36). Labels are short (a tiny pill); the
   // tooltip carries the full meaning.
-  "addr.formInfoTitle": "Two ways to write the same address",
+  "addr.formInfoTitle": "It's one address, shown two ways",
   "addr.formInfoBody":
-    "The same account has two spellings: the original hex, and a newer checksummed form starting with xf… that catches typos. Copy whichever you like — it's the same address and the same funds either way, and both are accepted when someone pays you.",
-  "addr.formatHex": "Hex (original)",
-  "addr.formatBech32m": "Checksummed · xf",
+    "Don't worry — these aren't two different addresses. It's the same address with the same balance, just written two ways. The xf… version is the newer style: it has a built-in safety check, so if someone mistypes or mis-pastes it, the error gets caught instead of sending your money to the wrong place. Use whichever you like — give a sender either one and the payment arrives the same.",
+  "addr.formatHex": "Original",
+  "addr.formatBech32m": "Newer · xf",
   "adr.shown": "Address shown",
   "adr.hidden": "Address hidden",
   "adr.rpEnterPw": "Enter your wallet password",
@@ -1143,11 +1143,11 @@ const ZH: Record<MsgKey, string> = {
   "adr.menuHide": "从列表隐藏",
   "adr.menuUnhide": "取消隐藏",
   "adr.menuDelete": "删除地址…",
-  "addr.formInfoTitle": "同一个地址的两种写法",
+  "addr.formInfoTitle": "这是同一个地址，两种写法",
   "addr.formInfoBody":
-    "同一个账户有两种写法：原来的十六进制，和更新的、以 xf… 开头、带防错校验的形式。想复制哪种都行——无论哪种，都是同一个地址、同一笔资金，别人付款时两种都收。",
-  "addr.formatHex": "十六进制（原始）",
-  "addr.formatBech32m": "带校验 · xf",
+    "别担心，这不是两个地址，而是同一个地址、同一笔余额，只是写法不同。以 xf… 开头的是新写法，自带一道防错校验：别人抄错或粘错时会被自动发现，不会把钱转到错的地方。你给对方哪个都行，收款都一样能到。",
+  "addr.formatHex": "原始写法",
+  "addr.formatBech32m": "新写法 · xf",
   "adr.shown": "地址已显示",
   "adr.hidden": "地址已隐藏",
   "adr.rpEnterPw": "请输入钱包密码",
