@@ -681,9 +681,15 @@ export function SwapSheet({
     setErr(null);
     try {
       const r = await rpc<SwapRec>("swap_execute", { swap_id: quote.swap_id });
-      // Snapshot the effective (pool-driven) EXFER/USD now, so the record can
-      // later show what this swap was worth at execution time.
-      if (exferUsd != null) recordSwapUsd(quote.swap_id, exferUsd);
+      // Snapshot the REALIZED EXFER/USD for THIS swap (amount_out/amount_in ×
+      // BNB/USD), not the pool mid — so the history detail reconciles with the
+      // on-chain BNB actually received. Sell: BNB out per EXFER in; buy: BNB in
+      // per EXFER out. Falls back to the mid only if the quote rate is unusable.
+      const exIn = Number(quote.amount_in);
+      const exOut = Number(quote.amount_out);
+      const rRate = exIn > 0 && exOut > 0 ? (sell ? exOut / exIn : exIn / exOut) : null;
+      const realizedUsd = rRate != null && bnbUsd != null ? rRate * bnbUsd : exferUsd;
+      if (realizedUsd != null) recordSwapUsd(quote.swap_id, realizedUsd);
       // Tell the Swap tab to refresh its in-progress list immediately so the
       // card is there the instant the user closes this sheet (not 8s later).
       notifySwapChanged();
@@ -1266,6 +1272,25 @@ export function SwapSheet({
     // pays BNB out per EXFER in (qRate); buy spends BNB in per EXFER out (1/qRate).
     const qBnbPerExfer = qRate == null ? null : sell ? qRate : 1 / qRate;
     const qExferUsd = qBnbPerExfer != null && bnbUsd != null ? qBnbPerExfer * bnbUsd : effUsd;
+    // Realized price impact = how far the FIRM amount_out sits below what the pool
+    // mid implies for this amount_in (mid × in for a sell, in / mid for a buy).
+    // This is what the user actually pays, vs the reserve-fraction `priceImpact`
+    // (raw mid) which can read far lower than reality when the firm quote is
+    // depressed (e.g. by another swap's reservation). Clamp at 0 — a quote better
+    // than mid isn't a cost.
+    const midOut = poolInfo && poolInfo.mid > 0 ? (sell ? qIn * poolInfo.mid : qIn / poolInfo.mid) : null;
+    const realizedImpact = midOut != null && midOut > 0 && qOut > 0 ? Math.max(0, 1 - qOut / midOut) : null;
+    // Prefer the realized impact on Review; fall back to the reserve-fraction one.
+    const reviewImpact = realizedImpact ?? priceImpact;
+    // Estimate-vs-firm divergence guard. estOutNet is the step-1 mid-based net
+    // estimate the user was shown BEFORE quoting; qOut is the firm quote. When the
+    // firm quote lands materially below the estimate, the user is about to receive
+    // noticeably less than promised — make it impossible to miss and require an
+    // explicit ack (like a high-impact trade), rather than a silently smaller
+    // number under a biometric prompt that only names the SEND amount.
+    const estForQuote = estOutNet;
+    const quoteShortfall = estForQuote != null && estForQuote > 0 && qOut > 0 ? Math.max(0, 1 - qOut / estForQuote) : 0;
+    const quoteDiverged = quoteShortfall >= 0.03; // firm quote >3% below the estimate
     // USD totals — value each leg at its MARKET price (EXFER at the market mid,
     // BNB at spot), NOT the post-fee effective rate. The gap between the two is
     // the fees (shown below). Using the effective rate made "You send 145 EXFER"
@@ -1294,7 +1319,7 @@ export function SwapSheet({
         onClose={onClose}
         onBack={() => setStep(1)}
         footer={
-          <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || expired} onClick={() => void doExecute()}>
+          <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || (quoteDiverged && !impactAck) || expired} onClick={() => void doExecute()}>
             {busy || requoting ? <Spinner /> : t("swap.confirm")}
           </button>
         }
@@ -1303,12 +1328,22 @@ export function SwapSheet({
           <Row label={t("swap.youSend")} value={`${fmtAmt(quote.amount_in)} ${sendUnit}${sendUsdStr ? ` ($${sendUsdStr})` : ""}`} />
           <Row label={t("swap.youReceive")} value={`${fmtAmt(quote.amount_out)} ${recvUnit}${recvUsdStr ? ` ($${recvUsdStr})` : ""}`} strong />
 
-          {/* One market Price line (USD per EXFER). The firm-HTLC guarantee that
-              "you receive == what arrives, or it's refunded" is stated once in
-              the note below — no separate Minimum-received box repeating the same
-              number, and no redundant BNB Rate line. */}
-          {exferUsd != null && (
-            <Row label={t("swap.priceLabel")} value={`1 EXFER ≈ $${sigFmt(exferUsd, 4)}`} />
+          {/* Price line = the EFFECTIVE per-EXFER price THIS quote settles at
+              (qExferUsd, derived from amount_out/amount_in), NOT the pool mid. The
+              mid was internally inconsistent with the firm receive amount — price ×
+              amount_in must reconcile with amount_out. The market mid is shown
+              alongside as a reference so the user sees how far execution is from
+              spot. The firm-HTLC "you receive == what arrives, or it's refunded"
+              guarantee is stated once in the note below. */}
+          {qExferUsd != null && (
+            <Row
+              label={t("swap.priceLabel")}
+              value={
+                exferUsd != null && exferUsd > 0
+                  ? t("swap.priceEffVsMid", { eff: sigFmt(qExferUsd, 4), mid: sigFmt(exferUsd, 4) })
+                  : `1 EXFER ≈ $${sigFmt(qExferUsd, 4)}`
+              }
+            />
           )}
 
           {/* Price impact — always in the breakdown once it's computable
@@ -1316,8 +1351,8 @@ export function SwapSheet({
               with the same "?" affordance as step-1. */}
           {poolInfo != null && (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: priceImpact >= 0.03 || highImpact ? impactColor(priceImpact, highImpact) : "var(--text-faint)" }}>
-                <span>{t("swap.priceImpactLine", { pct: `${(priceImpact * 100).toFixed(2)}%` })}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: reviewImpact >= 0.03 || highImpact ? impactColor(reviewImpact, highImpact) : "var(--text-faint)" }}>
+                <span>{t("swap.priceImpactLine", { pct: `${(reviewImpact * 100).toFixed(2)}%` })}</span>
                 <HelpDot open={impactHelpOpen} onClick={() => setImpactHelpOpen((o) => !o)} />
               </div>
               {impactHelpOpen && (
@@ -1368,6 +1403,29 @@ export function SwapSheet({
               {requoting && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-faint)" }}><Spinner size={12} /> {t("swap.requoting")}</span>}
             </div>
           ))}
+
+          {/* Firm quote landed materially below the step-1 estimate — the user is
+              about to receive less than they were shown (e.g. the rate moved or
+              another swap's reservation depressed the pool while they were
+              quoting). Hard-to-miss, and requires an explicit ack before Confirm
+              (reuses impactAck). Suppressed when highImpact already shows its own
+              ack block below — both bind the same impactAck so arming stays
+              consistent and the user never faces two competing checkboxes. */}
+          {quoteDiverged && !highImpact && (
+            <div className="banner banner-warn" style={{ marginTop: 2, fontSize: 12.5, lineHeight: 1.55, display: "flex", flexDirection: "column", gap: 8 }}>
+              <span>
+                {t("swap.quoteDiverged", {
+                  pct: String(Math.round(quoteShortfall * 100)),
+                  got: `${fmtAmt(quote.amount_out)} ${recvUnit}`,
+                  est: `${sigFmt(estForQuote ?? 0, 6)} ${recvUnit}`,
+                })}
+              </span>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontWeight: 600 }}>
+                <input type="checkbox" checked={impactAck} onChange={(e) => setImpactAck(e.target.checked)} style={{ marginTop: 2 }} />
+                <span>{t("swap.quoteDivergedAck")}</span>
+              </label>
+            </div>
+          )}
 
           {/* High-impact inline acknowledgement (item [17]) — arms Confirm. A
               single confirmation, then biometric. Leads with the money. */}
