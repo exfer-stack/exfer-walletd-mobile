@@ -576,19 +576,17 @@ export function SwapSheet({
   const minUnit = sendUnit;
 
   // ── Consolidated fees (item [4]) ──
-  // Network fee in USD, and the all-in fee total (liquidity fee + price impact +
-  // network fee), in USD — the single figure shown on the "Fees ≈ $X" chip.
+  // The "Fees ≈ $X" chip = ONLY the money that actually leaves the user: the
+  // liquidity fee (to the pool) + the on-chain network fee. Price impact is NOT a
+  // fee — no one collects it; it's slippage baked into the rate by the pool's
+  // depth — so it's shown on its own line and never summed in here.
   const netFeeUsd = bnbUsd != null && netFeeBnb > 0 ? netFeeBnb * bnbUsd : null;
   const liqFeeUsd = (() => {
     if (!poolInfo || sendUsd == null) return null;
     return sendUsd * (poolInfo.feeBps / 10_000);
   })();
-  const impactUsd = (() => {
-    if (sendUsd == null || priceImpact <= 0) return null;
-    return sendUsd * priceImpact;
-  })();
   const feesTotalUsd = (() => {
-    const parts = [liqFeeUsd, impactUsd, netFeeUsd].filter((x): x is number => x != null);
+    const parts = [liqFeeUsd, netFeeUsd].filter((x): x is number => x != null);
     if (parts.length === 0) return null;
     return parts.reduce((s, x) => s + x, 0);
   })();
@@ -1183,8 +1181,6 @@ export function SwapSheet({
             onToggle={() => setFeeOpen((o) => !o)}
             totalUsd={feesTotalUsd}
             feePct={sigFmt(poolInfo.feeBps / 100, 2)}
-            impactPct={priceImpact > 0 ? (priceImpact * 100).toFixed(2) : null}
-            impactColorVal={priceImpact > 0 ? impactColor(priceImpact, highImpact) : undefined}
             netFeeBnb={netFeeBnb > 0 ? sigFmt(netFeeBnb, 4) : null}
             netFeeUsd={netFeeUsd != null ? usdStr(netFeeUsd) : null}
           />
@@ -1278,9 +1274,8 @@ export function SwapSheet({
     const recvUsdR = sell ? (bnbUsd != null ? qOut * bnbUsd : null) : (exferUsd != null ? qOut * exferUsd : null);
     // Fees total in USD, mirroring step-1 (item [4]).
     const liqFeeUsdR = sendUsdR != null && typeof quote.fee_bps === "number" ? sendUsdR * (quote.fee_bps / 10_000) : (sendUsdR != null && poolInfo ? sendUsdR * (poolInfo.feeBps / 10_000) : null);
-    const impactUsdR = sendUsdR != null && priceImpact > 0 ? sendUsdR * priceImpact : null;
     const feesTotalUsdR = (() => {
-      const parts = [liqFeeUsdR, impactUsdR, netFeeUsd].filter((x): x is number => x != null);
+      const parts = [liqFeeUsdR, netFeeUsd].filter((x): x is number => x != null);
       return parts.length ? parts.reduce((s, x) => s + x, 0) : null;
     })();
     const feePctR = sigFmt(((typeof quote.fee_bps === "number" ? quote.fee_bps : poolInfo?.feeBps ?? 0) / 100), 2);
@@ -1338,8 +1333,6 @@ export function SwapSheet({
             onToggle={() => setFeeOpen((o) => !o)}
             totalUsd={feesTotalUsdR}
             feePct={feePctR}
-            impactPct={priceImpact > 0 ? (priceImpact * 100).toFixed(2) : null}
-            impactColorVal={priceImpact > 0 ? impactColor(priceImpact, highImpact) : undefined}
             netFeeBnb={netFeeBnb > 0 ? sigFmt(netFeeBnb, 4) : null}
             netFeeUsd={netFeeUsd != null ? usdStr(netFeeUsd) : null}
           />
@@ -1940,18 +1933,17 @@ function impactColor(impact: number, high: boolean): string {
 }
 
 /** The ONE consolidated cost disclosure — identical on step-1 and review.
- *  Collapsed: "Fees ≈ $X ▾". Expanded: liquidity fee %, price impact %, network
- *  fee BNB (≈$). All three live here so cost reads the same in both places. */
+ *  Collapsed: "Fees ≈ $X ▾". Expanded: liquidity fee %, network fee BNB (≈$).
+ *  Price impact is NOT here — it's not a fee; it has its own dedicated line
+ *  above this disclosure on both step-1 and review. */
 function FeesDisclosure({
-  t, open, onToggle, totalUsd, feePct, impactPct, impactColorVal, netFeeBnb, netFeeUsd,
+  t, open, onToggle, totalUsd, feePct, netFeeBnb, netFeeUsd,
 }: {
   t: (k: import("../../lib/i18n").MsgKey, p?: Record<string, string | number>) => string;
   open: boolean;
   onToggle: () => void;
   totalUsd: number | null;
   feePct: string;
-  impactPct: string | null;
-  impactColorVal?: string;
   netFeeBnb: string | null;
   netFeeUsd: string | null;
 }) {
@@ -1978,12 +1970,6 @@ function FeesDisclosure({
             <span style={{ color: "var(--text-faint)" }}>{t("swap.liquidityFee")}</span>
             <span>{feePct}%</span>
           </div>
-          {impactPct != null && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-              <span style={{ color: "var(--text-faint)" }}>{t("swap.priceImpact")}</span>
-              <span style={{ color: impactColorVal }}>{impactPct}%</span>
-            </div>
-          )}
           {netFeeBnb != null && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
               <span style={{ color: "var(--text-faint)" }}>{t("swap.networkFee")}</span>
