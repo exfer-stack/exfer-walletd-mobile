@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentSession, type AgentEvent, type ConsentCard, type ConsentField } from "exfer-agent";
 import { useT, type Lang, type MsgKey } from "../lib/i18n";
 import { hostDeps } from "../lib/agentHost";
 import { loadConfig, toProviderConfig } from "../lib/agentConfig";
 import { formatExfer } from "../lib/rpc";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
+import { Sheet } from "./ui";
 
 // In-wallet AI agent chat (mobile). Same headless core as desktop; mobile look
 // (phone shell + a consent sheet gated by Face/Touch ID). The chat reducer is
@@ -180,8 +181,8 @@ export function AgentTab({ lang }: { lang: Lang }) {
   const examples = [t("agent.empty.ex1"), t("agent.empty.ex2"), t("agent.empty.ex3")];
 
   return (
-    <div className="agent-tab" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
+    <div className="agent-tab" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px" }}>
         {turns.length === 0 && (
           <div style={{ textAlign: "center", paddingTop: "20%" }}>
             <h2 className="eyebrow" style={{ fontSize: "1.4rem" }}>{t("agent.empty.title")}</h2>
@@ -217,11 +218,13 @@ export function AgentTab({ lang }: { lang: Lang }) {
                 ) : (
                   <div key={j} className="card card-2" style={{ padding: "8px", margin: "4px 0" }} data-testid="tool-card">
                     <div className="h-row" style={{ gap: "6px", alignItems: "center" }}>
-                      <span className={b.card.status === "ok" ? "success-check" : b.card.status === "error" ? "banner-danger" : "dim"}>
+                      <span className={b.card.status === "running" ? "dim" : undefined} style={{ color: b.card.status === "ok" ? "#34d399" : b.card.status === "error" ? "#f87171" : undefined }}>
                         {b.card.status === "running" ? "…" : b.card.status === "ok" ? "✓" : "✕"}
                       </span>
                       <span className="mono">{b.card.name}</span>
-                      {b.card.gated && <span className="banner banner-warn" style={{ padding: "0 6px", fontSize: "0.7rem" }}>{t("agent.tool.gated")}</span>}
+                      {b.card.gated && b.card.status === "running" && (
+                        <span className="banner banner-warn" style={{ padding: "0 6px", fontSize: "0.7rem" }}>{t("agent.tool.gated")}</span>
+                      )}
                     </div>
                     {b.card.summary && (b.card.summary === "declined" ? (
                       <div className="dim" style={{ marginTop: "4px" }}>{t("agent.consent.declined")}</div>
@@ -243,7 +246,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "8px", padding: "12px" }}>
+      <div style={{ display: "flex", gap: "8px", padding: "12px 12px calc(12px + env(safe-area-inset-bottom))" }}>
         <input
           className="field"
           style={{ flex: 1 }}
@@ -276,19 +279,15 @@ export function AgentTab({ lang }: { lang: Lang }) {
 }
 
 function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: ReturnType<typeof useT>["t"]; onResolve: (ok: boolean) => void }) {
-  const titleId = useId();
   const [verifying, setVerifying] = useState(false);
-  const [bioAvail, setBioAvail] = useState(false);
 
-  useEffect(() => {
-    biometricStatus().then((s) => setBioAvail(s.available)).catch(() => setBioAvail(false));
-  }, []);
-
+  // Read biometric status AT ACTION TIME (not a pre-paint default) so an early
+  // tap can never approve a fund move without Face/Touch ID on a capable device.
   const approve = async () => {
+    if (verifying) return;
     setVerifying(true);
-    // On a real device, gate behind Face/Touch ID; in the browser web layer
-    // (no biometric) approve directly so the flow is testable.
-    const ok = bioAvail ? await biometricUnlock(t("agent.consent.reason")).catch(() => false) : true;
+    const s = await biometricStatus().catch(() => ({ available: false, type: 0 }));
+    const ok = s.available ? await biometricUnlock(t("agent.consent.reason")).catch(() => false) : true;
     setVerifying(false);
     if (ok) onResolve(true);
   };
@@ -299,31 +298,47 @@ function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: Retur
   const renderValue = (f: ConsentField) => {
     if (f.kind === "amount") {
       const n = Number(f.value);
-      return <span className="mono" style={{ fontSize: "1.2rem" }}>{f.value === "" || Number.isNaN(n) ? t("agent.consent.feeEstimated") : formatExfer(n)}</span>;
+      if (f.value === "" || Number.isNaN(n)) return <span className="mono" style={{ fontSize: "1.2rem" }}>{t("agent.consent.feeEstimated")}</span>;
+      // Guard against precision loss above MAX_SAFE_INTEGER — show the raw base
+      // amount rather than a silently-wrong formatted number.
+      const text = Number.isSafeInteger(n) ? formatExfer(n) : `${f.value} exfers`;
+      return <span className="mono" style={{ fontSize: "1.2rem" }}>{text}</span>;
     }
     return <span className="mono" style={{ wordBreak: "break-all" }}>{f.value || "—"}</span>;
   };
 
+  const footer = (
+    <div className="h-row" style={{ gap: "10px" }}>
+      <button type="button" className="btn btn-secondary btn-block" onClick={() => onResolve(false)} data-testid="consent-decline">
+        {t("agent.consent.decline")}
+      </button>
+      <button type="button" className="btn btn-block" disabled={verifying} onClick={approve} data-testid="consent-approve">
+        {t("agent.consent.approve")}
+      </button>
+    </div>
+  );
+
+  // Render through the app's Sheet primitive: inherits the contained scrim,
+  // slide-up animation, grip, scroll cap, safe-area-padded footer, scrim-tap +
+  // hardware-back dismissal, and the correct radius — none of which the previous
+  // hand-rolled position:fixed overlay had.
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end" }} data-testid="consent-card">
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="card" style={{ width: "100%", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "16px" }}>
-        <h2 id={titleId} className="eyebrow" style={{ fontSize: "1.1rem", marginBottom: "12px" }}>{titleText}</h2>
+    <Sheet title={titleText} onClose={() => onResolve(false)} footer={footer}>
+      <div data-testid="consent-card">
         <dl style={{ margin: 0 }}>
           {card.fields.map((f) => (
-            <div key={f.label} className="h-row" style={{ justifyContent: "space-between", gap: "12px", margin: "6px 0" }}>
+            <div key={f.label} className="h-row" style={{ justifyContent: "space-between", gap: "12px", margin: "8px 0" }}>
               <dt className="dim">{(f.labelKey && t(`agent.consent.field.${f.labelKey}` as MsgKey)) || f.label}</dt>
               <dd style={{ margin: 0, textAlign: "right" }}>{renderValue(f)}</dd>
             </div>
           ))}
         </dl>
-        {risky && <p className="banner banner-warn" role="alert" style={{ marginTop: "10px" }}>{t("agent.consent.risk")}</p>}
-        <div className="h-row" style={{ gap: "10px", marginTop: "14px" }}>
-          <button type="button" className="btn btn-secondary btn-block" onClick={() => onResolve(false)} data-testid="consent-decline">{t("agent.consent.decline")}</button>
-          <button type="button" className="btn btn-block" disabled={verifying} onClick={approve} data-testid="consent-approve">
-            {bioAvail ? t("agent.consent.approveBio") : t("agent.consent.approve")}
-          </button>
-        </div>
+        {risky && (
+          <p className="banner banner-warn" role="alert" style={{ marginTop: "10px" }}>
+            {t("agent.consent.risk")}
+          </p>
+        )}
       </div>
-    </div>
+    </Sheet>
   );
 }
