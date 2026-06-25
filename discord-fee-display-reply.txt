@@ -1,0 +1,17 @@
+English:
+
+thanks for flagging this — it's a UI display issue on our side, not an actual fee. the app was bundling "price impact" (the slippage on a trade) together with the fee, so the number looked way higher than what you really pay.
+
+the real fee is small: a 0.3% liquidity fee plus a fixed 0.0002 BNB network fee (about $0.12). everything above that was price impact, which isn't paid to anyone — it's just the slippage from a trade being large relative to the pool.
+
+we'll fix the display so "fees" shows only the real fee, with price impact on its own separate line instead of mixed in. an update will go out shortly and it'll read correctly.
+
+---
+
+中文：
+
+感谢反馈 —— 这是我们这边一个 UI 显示的问题，并不是真的收了这么多手续费。app 之前把「价格冲击（滑点）」和手续费混在一起显示了，所以那个数字看起来比你实际付的高很多。
+
+真实手续费很低：0.3% 流动性费 + 固定 0.0002 BNB 网络费（约 $0.12）。超出这部分的都是价格冲击，它不付给任何人，只是交易相对池子较大时产生的滑点。
+
+我们会修复这个显示：让「费用」只显示真实手续费，价格冲击单独一行，不再混在一起。很快会推送更新，更新后就正常了。

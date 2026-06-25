@@ -1,0 +1,7 @@
+hey — checked it on-chain: this swap already completed, you've received your EXFER. the "进行中 / in progress" you see is just a display glitch — it doesn't refresh after the swap finishes.
+
+your 9,999.9995 EXFER landed in your wallet here:
+https://blockexplorer.dev/exfer/tx/7f966c65eedb7cee05124cf75f6df183a00a307b666c58490ffd9c1b0d525914
+(confirmed at block 801189)
+
+just update to the latest app version and the stuck "in progress" will clear on its own.

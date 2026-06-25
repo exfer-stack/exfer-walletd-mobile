@@ -1,0 +1,13 @@
+中文：
+
+嗨 — 说明一下，这个钱包不是我们做的，我们也不知道是哪位社区成员做的，所以这个我们没法帮忙、也没法提供支持。
+
+我们自己也是社区的贡献者，如果你需要钱包，可以用我们在维护的这个：https://exfer-stack.github.io/get/
+
+---
+
+English:
+
+hey — just so it's clear, this isn't a wallet we made, and we don't know which community member built it, so it's not something we can help with or support.
+
+we're community contributors ourselves — if you need a wallet, you can use the one we maintain here: https://exfer-stack.github.io/get/

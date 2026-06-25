@@ -1,0 +1,3 @@
+hey — checked it on-chain, your funds are safe and nothing was lost. this is a known issue we've already fixed: the network dropped at the claim step so the swap didn't finish, the pool refunded its BNB, and your 20,000 EXFER is still locked in your own output where only you can pull it back. no rush — it's already past the timeout, so it just sits there safely until you reclaim it.
+
+to recover: back up your vault file first, then go to Settings → update to the latest version and open the wallet — it'll auto-return the 20,000 EXFER to your address. please update over your current install, don't reinstall.

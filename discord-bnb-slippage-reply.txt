@@ -1,0 +1,21 @@
+English:
+
+the "BNB losing money" you're describing is mostly two things, and neither is a swap bug:
+
+1) price impact (slippage): this isn't a fee and isn't a bug — it's how the pool works. it's an automated market maker, so a trade that's large relative to the pool moves the price against you, and on a thin pool even a small trade can show a high %. no one collects it. smaller trades price much better, and we're working on deepening liquidity to lower slippage for everyone.
+
+2) display: the app was lumping that price impact into "fees", which made the fee look far bigger than it is. we'll fix the display so "fees" shows only the real cost (0.3% liquidity fee + a fixed ~0.0002 BNB network fee, about $0.12) and price impact sits on its own line. an update is rolling out shortly.
+
+(a separate one-off swap did hit a genuine pricing bug earlier — we already fixed and refunded that one directly. it's not the same as the slippage above.)
+
+---
+
+中文：
+
+你说的「BNB 亏钱」主要是两件事，都不是兑换的 bug：
+
+1）价格冲击（滑点）：这不是手续费，也不是 bug —— 是池子的运作特性。它是自动做市（AMM），交易相对池子越大，价格被推得越多；池子浅时连小单都可能显示很高的百分比。它不付给任何人。小额交易划算很多，我们也在加深池子流动性来给所有人降低滑点。
+
+2）显示：app 之前把价格冲击混进了「费用」，让手续费看起来比实际大很多。我们会修复，让「费用」只显示真实成本（0.3% 流动性费 + 固定约 0.0002 BNB 网络费，约 $0.12），价格冲击单独一行。很快会推送更新。
+
+（另外之前有一笔确实是真的报价 bug，我们已经单独修复并退款了，跟上面的滑点不是一回事。）

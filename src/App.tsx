@@ -46,8 +46,9 @@ import { SwapTab } from "./components/SwapTab";
 import { AddressSheet } from "./components/sheets/AddressSheet";
 import { SwapWatcher } from "./components/SwapWatcher";
 import { Governance } from "./components/Governance";
+import { AgentTab } from "./components/AgentTab";
 
-type Tab = "wallet" | "swap" | "activity" | "governance" | "settings";
+type Tab = "wallet" | "agent" | "swap" | "activity" | "governance" | "settings";
 
 type Overlay =
   | { type: "receive" }
@@ -290,6 +291,7 @@ function Shell() {
               />
             )}
             {tab === "activity" && <Activity />}
+            {tab === "agent" && <AgentTab lang={lang} />}
             {tab === "governance" && <Governance onBack={() => setTab(prevTab)} />}
             {tab === "settings" && (
               <Settings
@@ -314,6 +316,7 @@ function Shell() {
             {tab !== "governance" && (
               <nav className="tabbar">
                 <TabButton id="wallet" icon="wallet" labelKey="nav.wallet" active={tab} onClick={setTab} />
+                <TabButton id="agent" icon="globe" labelKey="nav.agent" active={tab} onClick={setTab} />
                 <TabButton id="swap" icon="refresh" labelKey="nav.swap" active={tab} onClick={setTab} />
                 <TabButton id="activity" icon="activity" labelKey="nav.activity" active={tab} onClick={setTab} />
                 <TabButton id="settings" icon="settings" labelKey="nav.settings" active={tab} onClick={setTab} />
