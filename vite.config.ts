@@ -2,6 +2,30 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { readFileSync } from "node:fs";
 
+// Read the LLM API key for the browser-real verification path WITHOUT ever
+// shipping it to the browser. The /llm proxy injects it as an Authorization
+// header server-side (in the vite dev process), so the webview only ever sees a
+// same-origin /llm URL with a placeholder key. The key comes from the env that
+// launches vite: DEEPSEEK_API_KEY directly, or a dotenv-style file pointed at by
+// LLM_KEY_FILE. No path is hardcoded — the key never lands in import.meta.env.
+function readDeepseekKey(): string {
+  const fromEnv = process.env.DEEPSEEK_API_KEY;
+  if (fromEnv) return fromEnv;
+  const keyFile = process.env.LLM_KEY_FILE;
+  if (keyFile) {
+    try {
+      const raw = readFileSync(keyFile, "utf8");
+      for (const line of raw.split(/\r?\n/)) {
+        const m = line.match(/^\s*(?:export\s+)?DEEPSEEK_API_KEY\s*=\s*(.*)\s*$/);
+        if (m) return m[1].replace(/^["']|["']$/g, "").trim();
+      }
+    } catch {
+      /* key file absent — browser-real LLM path just won't authenticate */
+    }
+  }
+  return "";
+}
+
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
@@ -24,6 +48,14 @@ export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = env.VITE_WALLETD_PROXY_TARGET;
   const voteProxyTarget = env.VITE_VOTE_PROXY_TARGET;
+
+  // Browser-real verification path (VITE_USE_REAL_AGENT=true, no Tauri):
+  //   /mcp → the Node http-bridge running REAL exfer-mcp + walletd (port 7399).
+  //   /llm → the LLM provider base URL; the proxy injects the API key as an
+  //          Authorization header server-side so the key never reaches the
+  //          browser and the call is same-origin (CORS-free).
+  const llmTarget = env.LLM_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
+  const deepseekKey = readDeepseekKey();
 
   return {
     plugins: [react()],
@@ -86,6 +118,26 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           secure: true,
           rewrite: (p: string) => p.replace(/^\/__bnbusd/, ""),
+        },
+        // Browser-real agent backend (no rewrite — the bridge serves
+        // /mcp/list_tools and /mcp/call_tool verbatim).
+        "/mcp": {
+          target: "http://127.0.0.1:7399",
+          changeOrigin: true,
+          secure: false,
+        },
+        // Browser-real LLM. The key is injected here, server-side, so the
+        // browser only sees a same-origin /llm path with a placeholder key.
+        "/llm": {
+          target: llmTarget,
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p: string) => p.replace(/^\/llm/, ""),
+          configure: (proxy: { on: (ev: string, cb: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void }) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              if (deepseekKey) proxyReq.setHeader("Authorization", `Bearer ${deepseekKey}`);
+            });
+          },
         },
         ...(proxyTarget
           ? {

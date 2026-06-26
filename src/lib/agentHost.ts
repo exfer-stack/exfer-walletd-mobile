@@ -8,10 +8,14 @@
 
 import {
   createProvider,
+  mergePolicies,
+  EXFER_POLICY,
+  type ConsentClass,
   type LLMProvider,
   type ProviderConfig,
   type StreamEvent,
   type ToolDef,
+  type ToolPolicy,
   type AgentToolResult,
 } from "exfer-agent";
 
@@ -22,6 +26,12 @@ export function inTauri(): boolean {
 export interface ToolSource {
   listTools(): Promise<ToolDef[]>;
   executeTool(name: string, args: Record<string, unknown>): Promise<AgentToolResult>;
+  /** Merged consent policy across all mounted tool sources. Optional so older
+   *  callers keep working; the host passes this into the AgentSession so unknown
+   *  tools fail closed to the strictest source default. On mobile only the
+   *  built-in exfer-mcp runs on-device (no native multi-MCP host yet), so this
+   *  is the exfer policy — same shape it will keep once mobile Rust lands. */
+  getPolicy?(): Promise<ToolPolicy>;
 }
 
 // ── real Tauri wiring (used when running inside the app) ───────────────────────
@@ -77,6 +87,87 @@ export const realTools: ToolSource = {
       content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
       isError: r.isError === true,
     })),
+  // Only the built-in exfer-mcp runs on-device today, so the merged policy is
+  // just the exfer policy. When mobile gains a native multi-MCP host this will
+  // merge per-server defaultConsent like desktop does.
+  getPolicy: async () => EXFER_POLICY,
+};
+
+// ── browser-REAL path (web + walletd + CORS) ──────────────────────────────────
+//
+// When VITE_USE_REAL_AGENT="true" and we're NOT in Tauri, the mobile WEB build
+// hits the SAME real backend a phone would — just over dev proxies instead of
+// Rust commands. The /llm proxy injects the API key server-side (the browser
+// never sees it); /mcp proxies to the Node http-bridge running REAL exfer-mcp +
+// a REAL funded walletd. Nothing here is mocked. confirmConsent stays
+// passthrough in the browser (biometric is the only allowed mock).
+
+export function useRealBrowserAgent(): boolean {
+  return import.meta.env.VITE_USE_REAL_AGENT === "true" && !inTauri();
+}
+
+/** LLM provider for the browser-real path: talks to the same-origin /llm proxy,
+ *  which injects the real key. The config key is a placeholder. The base URL
+ *  must be ABSOLUTE — the AI SDK does `new URL(baseUrl)` which throws on a bare
+ *  "/llm" path, so we anchor it to the page origin (still same-origin → the vite
+ *  /llm proxy → real LLM with the key injected server-side). */
+export function browserRealProvider(cfg: ProviderConfig): LLMProvider {
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:1430";
+  return createProvider(
+    { id: cfg.id, label: cfg.label, kind: "openai", baseUrl: `${origin}/llm`, apiKey: "proxy-managed", model: cfg.model },
+    fetch,
+  );
+}
+
+interface BridgeListToolsResult {
+  tools: { name: string; description?: string; inputSchema?: unknown; server?: string }[];
+  servers?: { id: string; defaultConsent: ConsentClass }[];
+}
+
+/** Real ToolSource over the /mcp bridge (POST /mcp/list_tools, /mcp/call_tool).
+ *  Mirrors realTools/desktop but with global fetch through the vite proxy. */
+export const browserRealTools: ToolSource = {
+  listTools: async () => {
+    const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const r = (await res.json()) as BridgeListToolsResult;
+    return r.tools.map((t) => ({
+      name: t.name,
+      description: t.description ?? "",
+      parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
+    }));
+  },
+  executeTool: async (name, args) => {
+    const res = await fetch("/mcp/call_tool", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, args }),
+    });
+    const r = (await res.json()) as { content: { type: string; text?: string }[]; isError?: boolean };
+    return {
+      content: (r.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
+      isError: r.isError === true,
+    };
+  },
+  // Build the merged policy from the bridge's server list, same as desktop:
+  // the built-in "exfer" server uses EXFER_POLICY's per-tool classes; any other
+  // server's tools take its defaultConsent. mergePolicies keeps the strictest
+  // default so unknown tools stay fail-closed.
+  getPolicy: async () => {
+    const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const r = (await res.json()) as BridgeListToolsResult;
+    const servers = r.servers ?? [{ id: "exfer", defaultConsent: "auto" as ConsentClass }];
+    const consentOf = new Map(servers.map((s) => [s.id, s.defaultConsent]));
+    const policies: ToolPolicy[] = [EXFER_POLICY];
+    for (const s of servers) {
+      if (s.id === "exfer") continue;
+      const classes: Record<string, ConsentClass> = {};
+      for (const t of r.tools) {
+        if (t.server === s.id) classes[t.name] = consentOf.get(s.id) ?? "gated";
+      }
+      policies.push({ classes, default: s.defaultConsent });
+    }
+    return mergePolicies(...policies);
+  },
 };
 
 // ── browser-dev mock (scripted LLM + canned tools) ─────────────────────────────
@@ -91,6 +182,11 @@ const MOCK_TOOLS: ToolDef[] = [
   { name: "exfer_swap_execute", description: "Execute a swap. Moves funds.", parameters: { type: "object", properties: { swap_id: { type: "string" } } } },
 ];
 
+// DEV-ONLY scripted strings. The mock provider is selected only in browser-dev
+// (not in Tauri, and not on the browser-real path) — see hostDeps below — so a
+// shipped, funded app never streams these. They intentionally stay un-i18n'd to
+// avoid threading the active language through the provider factory (which the
+// real Tauri/browser-real paths share). Do not surface in production.
 async function* say(text: string): AsyncIterable<StreamEvent> {
   for (const chunk of text.match(/.{1,8}/g) ?? []) {
     yield { type: "text_delta", text: chunk };
@@ -193,10 +289,14 @@ export const mockTools: ToolSource = {
         return { content: "{}" };
     }
   },
+  getPolicy: async () => EXFER_POLICY,
 };
 
 /** Pick provider + tools for the current environment. */
 export function hostDeps(cfg?: ProviderConfig): { provider: LLMProvider; tools: ToolSource } {
   if (inTauri() && cfg?.apiKey) return { provider: realProvider(cfg), tools: realTools };
+  // Browser-real: same real LLM + real exfer-mcp/walletd as a phone, via dev
+  // proxies. The key is proxy-managed, so we don't require cfg.apiKey here.
+  if (useRealBrowserAgent() && cfg) return { provider: browserRealProvider(cfg), tools: browserRealTools };
   return { provider: mockProvider, tools: mockTools };
 }

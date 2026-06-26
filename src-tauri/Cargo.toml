@@ -55,6 +55,11 @@ exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev
 # the TLS handshake can take. Works unchanged on iOS + Android.
 reqwest            = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }
 rustls             = "0.23"
+# Multi-server MCP supervisor: the built-in `exfer` server runs the exfer-mcp
+# sidecar EXTERNAL against the embedded walletd, plus user-registered stdio/http
+# MCP servers. Same features as desktop so the in-wallet agent has the SAME real
+# path on mobile (real LLM + real exfer-mcp tools on the real embedded walletd).
+rmcp               = { version = "0.15", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 # Standard CA roots for the one outbound call to a *public* host (the EXFER
 # OTC price API). The walletd client stays pinned/manual-roots; this is a
 # separate webpki-roots store used only by get_market_price.

@@ -157,3 +157,31 @@ export function humanizeError(e: unknown): string {
   }
   return tStatic("err.generic");
 }
+
+// Agent-chat error shapes the LLM/tool layer surfaces that humanizeError's
+// wallet-centric patterns don't cover — schema validation from the tool bridge
+// and a missing provider key. Checked FIRST so a raw "Input validation error:
+// 'from' is a required property" never reaches the chat bubble verbatim. These
+// resolve to plain-language localized lines; the raw text stays in a collapsed
+// Details (the caller keeps it separately).
+const AGENT_PATTERNS: { test: RegExp; key: MsgKey }[] = [
+  { test: /input validation|required property|is not of type|schema|invalid params|-32602/i, key: "err.agentValidation" },
+  { test: /api key|apikey|unauthor|401|invalid_api_key|no api key|missing.*key|set.*key in settings/i, key: "err.agentNoKey" },
+  { test: /rate.?limit|429|too many requests/i, key: "err.busy" },
+];
+
+/**
+ * Friendly, localized message for an error raised during an agent turn. Tries
+ * agent-specific shapes first (validation / missing key), then falls back to the
+ * shared wallet humanizeError (network / insufficient / etc.). Never returns the
+ * raw backend string — callers keep that for a collapsed Details disclosure.
+ */
+export function agentError(e: unknown): string {
+  const raw = rawText(e).trim();
+  if (raw) console.warn("[agent-error]", raw);
+  if (!raw) return tStatic("err.generic");
+  for (const { test, key } of AGENT_PATTERNS) {
+    if (test.test(raw)) return tStatic(key);
+  }
+  return humanizeError(e);
+}

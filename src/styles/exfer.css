@@ -397,6 +397,120 @@ body {
    poorly on dark. */
 .banner-info   { background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--text-dim); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
+/* ── agent markdown (rendered LLM output) ───────────────────────── */
+/* One type scale + rhythm for assistant prose. Body 15/1.6 — CJK reads a touch
+   larger; vertical gaps via the lobotomized-owl selector so blocks breathe
+   without per-element margins. */
+.md { font-size: 15px; line-height: 1.6; color: var(--text); }
+.md > * { margin: 0; }
+.md > * + * { margin-top: 8px; }
+.md h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.md h4 { font-size: 15px; font-weight: 600; }
+.md h5 { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.md strong { font-weight: 600; color: var(--text); }
+.md em { font-style: italic; }
+.md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md ul, .md ol { padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md li::marker { color: var(--text-faint); }
+.md code {
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: .86em;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 1px 5px;
+  color: var(--accent);
+}
+.md pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 13px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.md pre code { background: none; border: 0; padding: 0; color: var(--text); font-size: inherit; }
+/* A real card, not a bare HTML ledger: rounded bordered container, tinted header,
+   hairline row rules, tabular numbers. Thin overflow scrollbar (the app hides the
+   chunky OS one everywhere else). */
+.md-table-wrap { overflow-x: auto; border: 1px solid var(--border-soft); border-radius: 12px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.md thead { background: var(--surface-2); }
+.md th, .md td { padding: 7px 11px; border-bottom: 1px solid var(--border-soft); text-align: left; }
+.md tbody tr:last-child td { border-bottom: 0; }
+.md th { color: var(--text-dim); font-weight: 600; }
+.md td { color: var(--text); font-variant-numeric: tabular-nums; }
+.md-table-wrap, .md pre { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.md-table-wrap::-webkit-scrollbar, .md pre::-webkit-scrollbar { height: 5px; }
+.md-table-wrap::-webkit-scrollbar-thumb, .md pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+.md-table-wrap::-webkit-scrollbar-track, .md pre::-webkit-scrollbar-track { background: transparent; }
+/* Inline copyable address/hash chip: head6…tail6 + a copy glyph, tappable. */
+.md-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  margin: 0 1px;
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.md-chip:active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.md-chip-copy { opacity: 0.6; font-size: 0.9em; }
+
+/* The amount being authorized on a consent sheet — the one number that should
+   dominate the screen. Tabular so digits align with the fee row. */
+.agent-amount { font-size: 21px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+
+/* ── agent chat blocks ──────────────────────────────────────────────
+   A dedicated card token for chat blocks (tool cards, thinking, sub-agent).
+   The shared `.card card-2` reads as a flat grey slab on near-black; this uses
+   the lighter --surface + a real --border so each block reads as its own card. */
+.agent-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+/* Tool-card header line: the action reads in full --text weight (not dim). */
+.agent-tool-title { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+/* Result subline: legible --text, not dim. dim is reserved for declined/meta. */
+.agent-tool-sub { margin-top: 5px; font-size: 13px; line-height: 1.45; color: var(--text); word-break: break-word; overflow-wrap: anywhere; }
+/* A details/summary header that matches the sub-agent header: spark + non-dim
+   600 label + status pushed right. Hides the native disclosure marker. */
+.agent-disc > summary { list-style: none; cursor: pointer; }
+.agent-disc > summary::-webkit-details-marker { display: none; }
+.agent-disc-label { font-weight: 600; color: var(--text); }
+.agent-disc-status { margin-left: auto; font-size: 0.72rem; color: var(--text-dim); }
+/* Sub-agent card: a left accent rail to read as a nested, delegated thread. */
+.agent-subagent { border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border)); padding-left: 12px; }
+/* A balance/quote table dropped into chat reads as a sibling card, not a hairline. */
+.agent-card .md-table-wrap { background: var(--surface); border-color: var(--border); }
+/* Composer row: a quiet top divider + the page bg so it floats above the scroll. */
+.agent-composer { border-top: 1px solid var(--border-soft); background: var(--bg); }
+/* Suggestion chips: pressable cards, not full-width stadium pills. */
+.agent-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 13px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.agent-chip:active { background: var(--surface-2); transform: scale(.98); }
+
+/* The chat scroll area: hide the OS scrollbar (the rest of the app does too) and
+   never allow a horizontal scrollbar — long tool output / addresses must wrap. */
+.agent-scroll { scrollbar-width: none; overflow-x: hidden; }
+.agent-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
 /* ── toasts ─────────────────────────────────────────────────────── */
 .toast-host {
   position: absolute;

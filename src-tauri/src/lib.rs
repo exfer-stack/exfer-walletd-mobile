@@ -6,6 +6,8 @@
 
 mod error;
 mod export_key;
+mod mcp_registry;
+mod mcp_supervisor;
 mod mnemonic;
 mod rpc_client;
 mod secrets;
@@ -13,6 +15,10 @@ mod walletd_supervisor;
 
 use serde_json::Value;
 use tauri::{Manager, State};
+
+use mcp_supervisor::{
+    mcp_call_tool, mcp_list_tools, mcp_start, McpCtx,
+};
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
@@ -774,6 +780,173 @@ async fn vote_media_get(path: String) -> Result<Value, String> {
     }))
 }
 
+// ── in-wallet agent: LLM fetch (key injected host-side) + consent ─────────────
+//
+// Ported from the desktop backend so the mobile native app has the SAME real
+// path: a real LLM call (key injected from the secure store, never in the
+// webview) and the constant-time consent back-stop. The PRIMARY money-gate on
+// mobile is biometric in the AgentConsentSheet UI; `agent_confirm_consent` here
+// mirrors desktop's passphrase re-check so the `confirmConsent()` invoke has a
+// backend and never fails.
+//
+// Mobile's `secrets` API takes a `data_dir` (the Android fallback path), unlike
+// desktop's key-only signature, so these commands are async and pull the
+// datadir from the managed `AppCtx`.
+
+/// Per-provider secure-store service for the user's LLM API key. Distinct from
+/// the walletd keystore passphrase service so the two never collide.
+fn llm_key_service(provider: &str) -> String {
+    format!("{KEYRING_SERVICE}-llm:{provider}")
+}
+
+#[derive(serde::Deserialize)]
+struct LlmRequest {
+    url: String,
+    #[serde(default = "default_post")]
+    method: String,
+    #[serde(default)]
+    headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    body: Option<String>,
+}
+fn default_post() -> String {
+    "POST".into()
+}
+
+#[derive(serde::Serialize)]
+struct LlmResponse {
+    status: u16,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+}
+
+/// A webpki-rooted client with a long timeout for (buffered) LLM responses.
+fn llm_https_client() -> Result<reqwest::Client, String> {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    reqwest::ClientBuilder::new()
+        .use_preconfigured_tls(tls)
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("building llm http client: {e}"))
+}
+
+/// Forward an LLM request, injecting the user's API key from the secure store so
+/// the plaintext key never lives in the webview. `provider` selects the key;
+/// `kind` ("openai" | "anthropic") selects the auth header. Buffered for now —
+/// the whole response body is returned (streaming variant is a follow-up).
+#[tauri::command]
+async fn llm_fetch(
+    ctx: State<'_, AppCtx>,
+    req: LlmRequest,
+    provider: String,
+    kind: String,
+) -> Result<LlmResponse, String> {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    let key = secrets::get_passphrase(&llm_key_service(&provider), &datadir)
+        .map_err(|e| format!("reading llm key: {e}"))?
+        .ok_or_else(|| format!("no API key set for provider {provider}"))?;
+
+    let mut headers = HeaderMap::new();
+    for (k, v) in &req.headers {
+        if let (Ok(name), Ok(val)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
+            headers.insert(name, val);
+        }
+    }
+    // Inject the real key host-side (override any placeholder the webview sent).
+    if kind == "anthropic" {
+        headers.remove(AUTHORIZATION);
+        headers.insert(
+            "x-api-key",
+            HeaderValue::from_str(&key).map_err(|e| e.to_string())?,
+        );
+        if !headers.contains_key("anthropic-version") {
+            headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        }
+    } else {
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {key}")).map_err(|e| e.to_string())?,
+        );
+    }
+    if !headers.contains_key(CONTENT_TYPE) {
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    }
+
+    let method =
+        reqwest::Method::from_bytes(req.method.as_bytes()).unwrap_or(reqwest::Method::POST);
+    let mut builder = llm_https_client()?
+        .request(method, &req.url)
+        .headers(headers);
+    if let Some(b) = req.body {
+        builder = builder.body(b);
+    }
+    let resp = builder
+        .send()
+        .await
+        .map_err(|e| format!("llm request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let mut out_headers = std::collections::HashMap::new();
+    for (k, v) in resp.headers().iter() {
+        if let Ok(s) = v.to_str() {
+            out_headers.insert(k.as_str().to_string(), s.to_string());
+        }
+    }
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("reading llm body: {e}"))?;
+    Ok(LlmResponse {
+        status,
+        headers: out_headers,
+        body,
+    })
+}
+
+#[tauri::command]
+async fn set_llm_api_key(
+    ctx: State<'_, AppCtx>,
+    provider: String,
+    key: String,
+) -> Result<(), String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    secrets::set_passphrase(&llm_key_service(&provider), &datadir, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn has_llm_api_key(ctx: State<'_, AppCtx>, provider: String) -> Result<bool, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    Ok(secrets::get_passphrase(&llm_key_service(&provider), &datadir)
+        .map_err(|e| e.to_string())?
+        .is_some())
+}
+
+/// Confirm a money-moving agent action by re-checking the wallet passphrase
+/// against the one in the secure store (constant-time). On mobile the PRIMARY
+/// gate is the biometric prompt in the AgentConsentSheet; this is the parity
+/// back-stop so the `confirmConsent()` invoke always has a backend.
+#[tauri::command]
+async fn agent_confirm_consent(
+    ctx: State<'_, AppCtx>,
+    passphrase: String,
+) -> Result<bool, String> {
+    let datadir = ctx.inner.lock().await.datadir.clone();
+    let stored = secrets::get_passphrase(KEYRING_SERVICE, &datadir)
+        .map_err(|e| e.to_string())?
+        .ok_or("wallet is locked")?;
+    let (a, b) = (passphrase.as_bytes(), stored.as_bytes());
+    let eq = a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0;
+    Ok(eq)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -811,6 +984,7 @@ pub fn run() {
             std::fs::create_dir_all(&datadir).expect("creating app_data_dir");
             let ctx = AppCtx::new(datadir.clone());
             app.manage(ctx.clone());
+            app.manage(McpCtx::new());
 
             // Try silent passphrase recovery from the OS keychain. If
             // it's there, kick off walletd immediately; otherwise the
@@ -870,6 +1044,17 @@ pub fn run() {
             vote_api_get,
             vote_api_post,
             vote_media_get,
+            llm_fetch,
+            set_llm_api_key,
+            has_llm_api_key,
+            agent_confirm_consent,
+            mcp_start,
+            mcp_list_tools,
+            mcp_call_tool,
+            mcp_registry::mcp_list_servers,
+            mcp_registry::mcp_add_server,
+            mcp_registry::mcp_remove_server,
+            mcp_registry::mcp_set_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

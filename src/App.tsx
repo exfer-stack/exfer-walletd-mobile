@@ -291,7 +291,12 @@ function Shell() {
               />
             )}
             {tab === "activity" && <Activity />}
-            {tab === "agent" && <AgentTab lang={lang} />}
+            {/* Keep the agent MOUNTED across tab switches (hidden when inactive)
+                so the conversation + LLM session survive leaving and coming back
+                — unmounting it on every tab change wiped the chat. */}
+            <div style={{ display: tab === "agent" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+              <AgentTab lang={lang} />
+            </div>
             {tab === "governance" && <Governance onBack={() => setTab(prevTab)} />}
             {tab === "settings" && (
               <Settings
