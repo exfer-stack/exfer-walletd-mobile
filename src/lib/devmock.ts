@@ -121,6 +121,7 @@ function scopeFor(method: string): "read" | "manage" | "spend" {
     method === "swap_get_quote" ||
     method === "swap_execute" ||
     method === "swap_refund" ||
+    method === "swap_refresh" ||
     method === "bsc_send_bnb" ||
     // BNB-wallet key material: reveal exposes the mnemonic, delete destroys it.
     method === "bsc_reveal_mnemonic" ||
