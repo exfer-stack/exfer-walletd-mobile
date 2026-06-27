@@ -125,6 +125,8 @@ fn scope_for_method(method: &str) -> Scope {
         // Cross-chain swap: quoting reserves a preimage, execute/refund move
         // funds across both legs; bsc_send_bnb withdraws BNB — all Spend.
         | "swap_get_quote" | "swap_execute" | "swap_refund"
+        // swap_refresh force-advances a swap (may broadcast a claim) — Spend.
+        | "swap_refresh"
         | "bsc_send_bnb"
         // BNB-wallet key material: reveal exposes the mnemonic, delete destroys
         // the key — Spend (matches walletd auth.rs). Previously missing → fell

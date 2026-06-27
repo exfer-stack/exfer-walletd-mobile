@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.22"
+version     = "1.0.23"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -42,12 +42,15 @@ rand               = "0.8"
 tokio              = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-util         = { version = "0.7", features = ["rt"] }
 
-# The embedded walletd. Bumped 3229f1c → 5ad5ca7: journal-independent recovery
-# of stranded BNB locks (buy direction) via the indexed Locked event — the BSC
-# twin of the EXFER stranded-lock sweep, mainnet-proven (lock → expire → refund
-# with no local record). Carries the prior chain-driven EXFER reclaim + the
-# locked_expired fix. Keep desktop on the SAME rev.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "5ad5ca7b51d423d637c7482ecd50df16dd2c7de1" }
+# The embedded walletd. Bumped 5ad5ca7 → 8b4d396 (hotfix/swap-recover, based on
+# 5ad5ca7 so the ONLY change vs the prior release is the swap-recovery fix):
+# (1) settle-over-refund — a BUY whose claim already landed on-chain now COMPLETES
+# instead of being frozen at "Claiming" forever (the post-4h refund branch used to
+# revert and swallow the error); auto-recovers already-stuck swaps on next launch.
+# (2) new swap_refresh RPC — force-advances one swap so the UI resolves a stale
+# local status on demand (no more false "unmatched" on a matched swap). Keep
+# desktop on the SAME rev.
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "8b4d3966626c47d24a111234062158893f1d2d1c" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables
