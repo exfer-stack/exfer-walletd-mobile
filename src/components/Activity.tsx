@@ -337,16 +337,30 @@ export function Activity() {
     ]);
     const BLOCK_MS = 10_000; // ~target block time
     const nowMs = Date.now();
+    // Anchor the block-height → wall-clock conversion. Prefer the real chain
+    // tip; when it hasn't loaded yet — or the node is slow/unreachable, which is
+    // exactly when this bites — fall back to the HIGHEST block height we already
+    // hold: the most recent on-chain activity is ~now, older blocks spread back
+    // from it. Without this fallback every confirmed transfer defaulted to
+    // `now`, which floated the entire transfer history above any time-stamped
+    // swap and buried a just-made swap at the very BOTTOM of the feed (it read
+    // as "missing" / out of order). A local anchor keeps swaps interleaved by
+    // real time even when the tip can't be fetched.
+    const maxBlock = visibleItems.reduce(
+      (m, it) => (it.block_height != null && it.block_height > m ? it.block_height : m),
+      0,
+    );
+    const effTip = tipHeight ?? (maxBlock > 0 ? maxBlock : null);
     // Confirmed-only transfers carry just a block height (no wall-clock). Use
     // the local broadcast `ts` when we have it (our own sends do), else estimate
-    // from the block height vs the tip, else treat as recent until the tip loads.
+    // from the block height vs the (effective) tip.
     const transferTime = (it: ActivityItem): number => {
       if (it.ts) {
         const t = Date.parse(it.ts);
         if (!Number.isNaN(t)) return t;
       }
-      if (it.block_height != null && tipHeight != null) {
-        return nowMs - Math.max(0, tipHeight - it.block_height) * BLOCK_MS;
+      if (it.block_height != null && effTip != null) {
+        return nowMs - Math.max(0, effTip - it.block_height) * BLOCK_MS;
       }
       return nowMs;
     };
