@@ -42,6 +42,14 @@ rand               = "0.8"
 tokio              = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-util         = { version = "0.7", features = ["rt"] }
 
+# In-app CPU miner so the agent can self-fund by mining EXFER on-device (no
+# downloaded binary, no subprocess — iOS/Android sandboxes forbid both). Pure
+# Rust: exfer-pow is Argon2id only (cross-compiles to aarch64-android cleanly);
+# exfer-stratum is rustls+ring (the same TLS stack reqwest already pulls in).
+# GPU/CUDA is NOT enabled — the default build is CPU-only, "runs anywhere".
+exfer-pow          = { git = "https://github.com/exfer-stack/exfer-agent-miner", rev = "32db5e1" }
+exfer-stratum      = { git = "https://github.com/exfer-stack/exfer-agent-miner", rev = "32db5e1" }
+
 # The embedded walletd. Bumped 3229f1c → 5ad5ca7: journal-independent recovery
 # of stranded BNB locks (buy direction) via the indexed Locked event — the BSC
 # twin of the EXFER stranded-lock sweep, mainnet-proven (lock → expire → refund

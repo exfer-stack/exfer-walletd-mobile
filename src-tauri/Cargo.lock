@@ -2420,6 +2420,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "exfer-pow"
+version = "0.1.0"
+source = "git+https://github.com/exfer-stack/exfer-agent-miner?rev=32db5e1#32db5e1710709f7c0bd36e36b2465202458d027a"
+dependencies = [
+ "argon2",
+ "sha2",
+]
+
+[[package]]
+name = "exfer-stratum"
+version = "0.1.0"
+source = "git+https://github.com/exfer-stack/exfer-agent-miner?rev=32db5e1#32db5e1710709f7c0bd36e36b2465202458d027a"
+dependencies = [
+ "anyhow",
+ "exfer-pow",
+ "hex",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+]
+
+[[package]]
 name = "exfer-walletd"
 version = "1.15.0"
 source = "git+https://github.com/exfer-stack/exfer-walletd?rev=5ad5ca7b51d423d637c7482ecd50df16dd2c7de1#5ad5ca7b51d423d637c7482ecd50df16dd2c7de1"
@@ -2469,6 +2496,8 @@ dependencies = [
  "anyhow",
  "argon2",
  "bip39",
+ "exfer-pow",
+ "exfer-stratum",
  "exfer-walletd",
  "hex",
  "keyring",

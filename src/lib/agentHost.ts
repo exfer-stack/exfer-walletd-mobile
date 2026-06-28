@@ -73,20 +73,67 @@ export async function confirmConsent(passphrase: string): Promise<boolean> {
   return tauriInvoke<boolean>("agent_confirm_consent", { passphrase });
 }
 
+// ── native in-app miner tools ────────────────────────────────────────────────
+//
+// The on-device CPU miner is a NATIVE Tauri command (mine_start/stop/status),
+// not an exfer-mcp tool — iOS/Android can't run the desktop downloaded-binary
+// path. We inject these three tool defs alongside the MCP tools so the agent can
+// drive mining, and route them to the native commands. mine_start is
+// consent-gated (policy "earn") → biometric on a real device.
+const MINING_TOOL_DEFS: ToolDef[] = [
+  {
+    name: "exfer_mine_start",
+    description:
+      "Start mining EXFER on this device's CPU, paying out to your address. Defaults to the SOLO pool (full block reward to you; no shared-pool payout threshold). Uses battery/CPU. Generate an address first with exfer_generate_address.",
+    parameters: {
+      type: "object",
+      properties: {
+        address: { type: "string", description: "Your 64-hex payout address." },
+        pool: { type: "string", description: "Optional stratum pool URL (ssl://host:port). Default: the solo pool." },
+        threads: { type: "number", description: "CPU threads (1-4). Default 1 — Argon2id is memory-hard." },
+      },
+      required: ["address"],
+    },
+  },
+  { name: "exfer_mine_stop", description: "Stop the in-app miner.", parameters: { type: "object", properties: {} } },
+  {
+    name: "exfer_mine_status",
+    description: "Current in-app miner status: running, hashrate, shares accepted/rejected, pool authorization, uptime.",
+    parameters: { type: "object", properties: {} },
+  },
+];
+
+const MINING_TOOL_NAMES = new Set(MINING_TOOL_DEFS.map((d) => d.name));
+
+/** Route a native miner tool call to its Tauri command, returning the same
+ *  {content,isError} shape executeTool yields for MCP tools. */
+async function execNativeMiner(name: string, args: Record<string, unknown>): Promise<AgentToolResult> {
+  const cmd = name === "exfer_mine_start" ? "mine_start" : name === "exfer_mine_stop" ? "mine_stop" : "mine_status";
+  try {
+    const status = await tauriInvoke<unknown>(cmd, args);
+    return { content: JSON.stringify(status), isError: false };
+  } catch (e) {
+    return { content: `Miner error: ${String(e)}`, isError: true };
+  }
+}
+
 export const realTools: ToolSource = {
   listTools: () =>
-    tauriInvoke<{ tools: { name: string; description?: string; inputSchema?: unknown }[] }>("mcp_list_tools").then((r) =>
-      r.tools.map((t) => ({
+    tauriInvoke<{ tools: { name: string; description?: string; inputSchema?: unknown }[] }>("mcp_list_tools").then((r) => [
+      ...r.tools.map((t) => ({
         name: t.name,
         description: t.description ?? "",
         parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
       })),
-    ),
+      ...MINING_TOOL_DEFS,
+    ]),
   executeTool: (name, args) =>
-    tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("mcp_call_tool", { name, args }).then((r) => ({
-      content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
-      isError: r.isError === true,
-    })),
+    MINING_TOOL_NAMES.has(name)
+      ? execNativeMiner(name, args)
+      : tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("mcp_call_tool", { name, args }).then((r) => ({
+          content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
+          isError: r.isError === true,
+        })),
   // Only the built-in exfer-mcp runs on-device today, so the merged policy is
   // just the exfer policy. When mobile gains a native multi-MCP host this will
   // merge per-server defaultConsent like desktop does.
@@ -130,13 +177,29 @@ export const browserRealTools: ToolSource = {
   listTools: async () => {
     const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const r = (await res.json()) as BridgeListToolsResult;
-    return r.tools.map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
-    }));
+    return [
+      ...r.tools.map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
+      })),
+      // The native miner only exists in the installed app; expose the defs here
+      // so the agent + consent gate + UI are exercisable in the browser preview.
+      ...MINING_TOOL_DEFS,
+    ];
   },
   executeTool: async (name, args) => {
+    // The miner is a native command (no Tauri in the browser). Be honest rather
+    // than faking a run: report it's app-only. The consent gate still fires.
+    if (MINING_TOOL_NAMES.has(name)) {
+      return {
+        content: JSON.stringify({
+          running: false,
+          note: "The on-device miner runs in the installed Android/iOS app; it is not available in the browser dev preview.",
+        }),
+        isError: false,
+      };
+    }
     const res = await fetch("/mcp/call_tool", {
       method: "POST",
       headers: { "content-type": "application/json" },

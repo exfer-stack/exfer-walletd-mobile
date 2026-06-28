@@ -13,6 +13,43 @@ import { listServers, addServer, removeServer, setEnabled, type McpServerConfig 
 
 type T = ReturnType<typeof useT>["t"];
 
+// Curated one-tap catalog. A plain data array so adding more presets later
+// (other-chain data, price, etc.) is trivial. Each row maps to an
+// McpServerConfig the registry already understands; labelKey/subKey are i18n
+// keys so the catalog is localized. defaultConsent reflects each preset's
+// nature — these two are read-only, so "auto".
+interface CatalogEntry {
+  id: string;
+  labelKey: MsgKey;
+  subKey: MsgKey;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  defaultConsent: "auto" | "gated";
+}
+
+const RECOMMENDED_CATALOG: CatalogEntry[] = [
+  {
+    id: "websearch",
+    labelKey: "mcp.catalog.websearch.label",
+    subKey: "mcp.catalog.websearch.sub",
+    transport: "stdio",
+    command: "uvx",
+    args: ["duckduckgo-mcp-server"],
+    defaultConsent: "auto",
+  },
+  {
+    id: "time",
+    labelKey: "mcp.catalog.time.label",
+    subKey: "mcp.catalog.time.sub",
+    transport: "stdio",
+    command: "uvx",
+    args: ["mcp-server-time"],
+    defaultConsent: "auto",
+  },
+];
+
 export function McpManagerSheet({ onClose }: { onClose: () => void }) {
   const { t } = useT();
   // Local mirror of the registry; re-read after every mutation so the list and
@@ -21,6 +58,27 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
   const [adding, setAdding] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const refresh = () => setServers(listServers());
+
+  // Already-added ids, so a catalog row shows "Added" + hides its add button
+  // instead of letting the user stack a duplicate.
+  const addedIds = new Set(servers.map((s) => s.id));
+  // Catalog rows still available to add.
+  const catalog = RECOMMENDED_CATALOG.filter((c) => !addedIds.has(c.id));
+
+  // One-tap add: build an McpServerConfig from the catalog entry and persist it
+  // via the same registry path the manual add form uses.
+  const addFromCatalog = (c: CatalogEntry) => {
+    const cfg: McpServerConfig = {
+      id: c.id,
+      label: t(c.labelKey),
+      transport: c.transport,
+      enabled: true,
+      defaultConsent: c.defaultConsent,
+      ...(c.transport === "http" ? { url: c.url } : { command: c.command, args: c.args ?? [] }),
+    };
+    addServer(cfg);
+    refresh();
+  };
 
   if (adding) {
     return (
@@ -61,6 +119,43 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
             <span className="pill pill-success" style={{ fontSize: "0.72rem" }}>{t("mcp.builtin.badge")}</span>
           </div>
         </div>
+
+        {/* Recommended catalog: curated one-tap presets. Hidden rows are the
+            ones already added (so no duplicates). The whole section disappears
+            once everything is added. */}
+        {catalog.length > 0 && (
+          <div data-testid="mcp-recommended" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ marginTop: "2px" }}>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t("mcp.recommended")}</div>
+              <div className="faint" style={{ fontSize: 12.5, marginTop: 1 }}>{t("mcp.recommended.note")}</div>
+            </div>
+            {catalog.map((c) => (
+              <div key={c.id} className="card card-2" style={{ padding: "12px" }} data-testid="mcp-catalog-row">
+                <div className="h-row" style={{ gap: "10px", alignItems: "center" }}>
+                  <span style={{ display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 10, background: "var(--surface-2)", color: "var(--accent)", flex: "0 0 auto" }}>
+                    <Icon name="globe" size={18} />
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t(c.labelKey)}</div>
+                    <div className="faint" style={{ fontSize: 12.5 }}>{t(c.subKey)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ flex: "0 0 auto" }}
+                    onClick={() => addFromCatalog(c)}
+                    data-testid="mcp-catalog-add"
+                  >
+                    <span className="h-row" style={{ gap: "4px", alignItems: "center" }}>
+                      <Icon name="plus" size={14} />
+                      {t("mcp.recommended.add")}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Advanced disclosure: user-added servers (config-only until native host). */}
         <button

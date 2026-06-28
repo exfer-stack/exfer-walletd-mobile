@@ -77,9 +77,44 @@ function toolLabel(t: T, name: string): string {
   return label;
 }
 
+// Tools whose result is folded into a dedicated humanized one-liner. For these
+// the raw JSON adds nothing the user needs, so the Details disclosure is
+// suppressed on success; unknown tools (and errors) still expose it.
+const SUMMARIZED_TOOLS = new Set([
+  "exfer_get_balance",
+  "exfer_list_addresses",
+  "exfer_generate_address",
+  "exfer_simulate_transfer",
+  "exfer_transfer",
+  "exfer_swap_get_quote",
+  "exfer_swap_execute",
+  "exfer_network_status",
+  "exfer_network_hashrate",
+  "exfer_get_block",
+  "exfer_get_transaction",
+  "exfer_earn_pool_stats",
+  "exfer_mine_start",
+  "exfer_mine_stop",
+  "exfer_mine_status",
+]);
+
 // A short copyable id (full value lives in Details + is selectable).
 function shortHash(v: string): string {
   return v.length > 14 ? `${v.slice(0, 8)}…${v.slice(-6)}` : v;
+}
+
+// Human-readable hashrate (H/s → kH/s/MH/s/…). Estimate-grade; the card shows
+// the raw value under Details.
+function formatHashrate(hs: number): string {
+  if (!Number.isFinite(hs) || hs <= 0) return "0 H/s";
+  const units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
+  let v = hs;
+  let i = 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i += 1;
+  }
+  return `${v.toFixed(v < 10 && i > 0 ? 2 : 1)} ${units[i]}`;
 }
 
 // A localized one-line summary of a tool result. Falls back to a clipped raw
@@ -104,6 +139,49 @@ function humanizeTool(t: T, name: string, summary: string): string {
         return t("agent.tool.sub.quote", { in: String(r.amount_in), out: String(r.amount_out) });
       case "exfer_swap_execute":
         return t("agent.tool.sub.swapStarted", { id: shortHash(String(r.swap_id ?? "")) });
+      case "exfer_network_status":
+        return t("agent.tool.sub.networkStatus", {
+          height: String(r.tip_height ?? "—"),
+          peers: String(r.peer_count ?? 0),
+          mempool: String(r.mempool_size ?? 0),
+        });
+      case "exfer_network_hashrate":
+        return t("agent.tool.sub.hashrate", {
+          rate: r.est_hashrate_hs != null ? `${formatHashrate(Number(r.est_hashrate_hs))}` : "—",
+          diff: String(r.difficulty ?? "—"),
+        });
+      case "exfer_get_block": {
+        const txs = Array.isArray(r.transactions) ? r.transactions.length : (r.tx_count ?? r.num_transactions ?? "—");
+        return t("agent.tool.sub.block", { height: String(r.height ?? "—"), txs: String(txs) });
+      }
+      case "exfer_get_transaction": {
+        const inputs = Array.isArray(r.inputs) ? r.inputs.length : (r.input_count ?? "—");
+        const outputs = Array.isArray(r.outputs) ? r.outputs.length : (r.output_count ?? "—");
+        return t("agent.tool.sub.transaction", { tx: shortHash(String(r.tx_id ?? r.id ?? "")), inputs: String(inputs), outputs: String(outputs) });
+      }
+      case "exfer_earn_pool_stats": {
+        // The MCP tool returns a curated dict (EXFER units already), not the raw pool API.
+        return t("agent.tool.sub.poolStats", {
+          accrued: Number(r.accrued_exfer ?? 0).toFixed(4),
+          threshold: Number(r.payout_threshold_exfer ?? 0).toFixed(4),
+          remaining: Number(r.remaining_to_payout_exfer ?? 0).toFixed(4),
+          rate: formatHashrate(Number(r.hashrate_hs ?? 0)),
+          status: r.online === false ? t("agent.tool.sub.poolOffline") : t("agent.tool.sub.poolOnline"),
+        });
+      }
+      case "exfer_mine_start":
+        if (r.note) return t("agent.tool.sub.mineAppOnly");
+        return t("agent.tool.sub.mineStarted", { pool: String(r.pool ?? "solo"), threads: String(r.threads ?? 1) });
+      case "exfer_mine_status":
+        if (r.note) return t("agent.tool.sub.mineAppOnly");
+        if (!r.running) return t("agent.tool.sub.mineStopped");
+        return t("agent.tool.sub.mineRunning", {
+          rate: formatHashrate(Number(r.hashrate_hs ?? 0)),
+          accepted: String(r.accepted ?? 0),
+          status: r.authorized ? t("agent.tool.sub.poolOnline") : t("agent.tool.sub.poolOffline"),
+        });
+      case "exfer_mine_stop":
+        return t("agent.tool.sub.mineStopped");
       default:
         return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
     }
@@ -542,7 +620,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
                   // failed call.
                   const errored = b.card.status === "error" || (s !== "" && s !== "declined" && /(\berror\b|invalid params|\bfailed\b|code\s*-?\d|no [\w/]+ key|seedless)/i.test(s));
                   const declined = s === "declined";
-                  const showRaw = s !== "" && !declined;
+                  const showRaw = s !== "" && !declined && (errored || !SUMMARIZED_TOOLS.has(b.card.name));
                   return (
                     <div key={j} className="agent-card" style={{ padding: "9px 11px", margin: "5px 0", overflow: "hidden" }} data-testid="tool-card">
                       <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0 }}>

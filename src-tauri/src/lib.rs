@@ -8,6 +8,7 @@ mod error;
 mod export_key;
 mod mcp_registry;
 mod mcp_supervisor;
+mod miner;
 mod mnemonic;
 mod rpc_client;
 mod secrets;
@@ -985,6 +986,7 @@ pub fn run() {
             let ctx = AppCtx::new(datadir.clone());
             app.manage(ctx.clone());
             app.manage(McpCtx::new());
+            app.manage(miner::MinerCtx::new());
 
             // Try silent passphrase recovery from the OS keychain. If
             // it's there, kick off walletd immediately; otherwise the
@@ -1055,6 +1057,9 @@ pub fn run() {
             mcp_registry::mcp_add_server,
             mcp_registry::mcp_remove_server,
             mcp_registry::mcp_set_enabled,
+            miner::mine_start,
+            miner::mine_stop,
+            miner::mine_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

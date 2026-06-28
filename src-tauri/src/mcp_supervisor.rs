@@ -87,7 +87,7 @@ fn external_env(conn: &ConnectionInfo) -> HashMap<String, String> {
 /// Build the exfer-mcp child command (the same pinned package as before).
 fn exfer_command(env: HashMap<String, String>) -> tokio::process::Command {
     let bin = std::env::var("EXFER_MCP_CMD").unwrap_or_else(|_| "uvx".into());
-    let pin = std::env::var("EXFER_MCP_PIN").unwrap_or_else(|_| "exfer-mcp==0.6.0".into());
+    let pin = std::env::var("EXFER_MCP_PIN").unwrap_or_else(|_| "exfer-mcp==0.7.0".into());
     let mut cmd = tokio::process::Command::new(bin);
     cmd.arg(pin);
     for (k, v) in env {
