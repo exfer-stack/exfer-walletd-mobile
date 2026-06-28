@@ -613,6 +613,9 @@ export function SwapSheet({
         direction,
         amount_in: amount.trim(),
         from: fromAddr,
+        // v2 (reversed) flow: the pool locks first; the user locks once and can
+        // leave, and the pool settles both legs. Requires a v2-capable walletd.
+        flow: "v2",
       });
       setQuote(q);
       setImpactAck(false);
@@ -636,6 +639,7 @@ export function SwapSheet({
         direction,
         amount_in: amount.trim(),
         from: fromAddr,
+        flow: "v2",
       });
       setQuote(q);
     } catch (e) {
