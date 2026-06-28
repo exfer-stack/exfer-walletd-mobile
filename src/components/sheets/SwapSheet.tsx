@@ -139,6 +139,11 @@ type Direction = "exfer_to_bnb" | "bnb_to_exfer";
 interface SwapRec {
   swap_id: string;
   direction: Direction;
+  /** Swap protocol flow. v2 (reversed): the pool locks first, the user locks
+   *  once and can safely close the app — the pool settles both legs. ABSENT or
+   *  undefined ⇒ v1 (legacy: user locks first and must stay online to claim).
+   *  Detection is STRICT (`flow === "v2"`); never inferred from the request. */
+  flow?: "v1" | "v2";
   status:
     | "quoted"
     | "user_locked"
@@ -699,7 +704,14 @@ export function SwapSheet({
       notifySwapChanged();
       setLive(r);
       setStep(3);
-      toast.success(t("swap.started"), t("swap.startedBody"));
+      // v2 (from the echoed execute record): "you're all set, your {out} is on
+      // the way". v1 keeps the "settling, ~a minute" body.
+      toast.success(
+        t("swap.started"),
+        r.flow === "v2"
+          ? t("swap.startedBodyV2", { in: sendUnit, out: recvUnit })
+          : t("swap.startedBody"),
+      );
     } catch (e) {
       // An expired quote is recoverable: re-quote IN PLACE on the review step
       // (don't bounce to step 1 and lose context). The countdown should normally
@@ -1265,6 +1277,9 @@ export function SwapSheet({
 
   // ---------- step 2: review ----------
   if (step === 2 && quote) {
+    // STRICT v2 detection — only the echoed quote record, never the request.
+    // Absent/undefined flow ⇒ v1 copy (safe default until the walletd pin bump).
+    const isV2 = quote.flow === "v2";
     // Derive the headline numbers from the ACTUAL quote (item [13]) so the
     // receive amount, the price, and the rate can never disagree (they used to
     // come from a different reserve snapshot than amount_out).
@@ -1323,9 +1338,30 @@ export function SwapSheet({
         onClose={onClose}
         onBack={() => setStep(1)}
         footer={
-          <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || (quoteDiverged && !impactAck) || expired} onClick={() => void doExecute()}>
-            {busy || requoting ? <Spinner /> : t("swap.confirm")}
-          </button>
+          // Execute busy state. v2 (both directions block on swap_execute, which
+          // can run a minute+) shows an explicit "Setting up your swap…" label
+          // plus a keep-the-app-open sub-note under the button — replacing the
+          // bare, unexplained spinner. v1 keeps the silent spinner.
+          <div style={{ width: "100%" }}>
+            <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || (quoteDiverged && !impactAck) || expired} onClick={() => void doExecute()}>
+              {busy || requoting ? (
+                isV2 && busy ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Spinner /> {t("swap.confirmingTitleV2")}
+                  </span>
+                ) : (
+                  <Spinner />
+                )
+              ) : (
+                t("swap.confirm")
+              )}
+            </button>
+            {isV2 && busy && (
+              <div style={{ fontSize: 12, color: "var(--text-faint)", lineHeight: 1.5, textAlign: "center", marginTop: 8 }}>
+                {t("swap.confirmingKeepOpenV2")}
+              </div>
+            )}
+          </div>
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1390,7 +1426,7 @@ export function SwapSheet({
             <span style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.etaLabel")}</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 500 }}>
               {t("swap.etaValue")}
-              <SwapTimingHelp />
+              <SwapTimingHelp isV2={isV2} inUnit={sendUnit} outUnit={recvUnit} />
             </span>
           </div>
 
@@ -1455,9 +1491,11 @@ export function SwapSheet({
           <div className="banner banner-info" style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.55 }}>
             {t("swap.minReceivedNote")}
           </div>
-          {/* Honest "can't be cancelled / auto-refunds" line near Confirm (item [12]). */}
+          {/* Safety line near Confirm (item [12]). v1: honest "can't be
+              cancelled / auto-refunds after ~4h". v2: "lock once, then you can
+              close the app" — the pool settles both legs. */}
           <div style={{ fontSize: 12, color: "var(--text-faint)", lineHeight: 1.5, textAlign: "center" }}>
-            {t("swap.noCancelNote")}
+            {t(isV2 ? "swap.noCancelNoteV2" : "swap.noCancelNote", { in: sendUnit, out: recvUnit })}
           </div>
           {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
         </div>
@@ -1476,6 +1514,9 @@ export function SwapSheet({
   const s = live?.status ?? "";
   const inUnit = live?.direction === "exfer_to_bnb" ? "EXFER" : "BNB";
   const outUnit = live?.direction === "exfer_to_bnb" ? "BNB" : "EXFER";
+  // STRICT v2 detection on the LIVE record only (never while live is null/loading).
+  // Absent/undefined flow ⇒ v1 copy. Gates the "you can close the app" reassurance.
+  const liveIsV2 = live?.flow === "v2";
   const amounts = live ? `${fmtAmt(live.amount_in)} ${inUnit} → ${fmtAmt(live.amount_out)} ${outUnit}` : "";
   const terminal = ["completed", "refunded", "failed"].includes(s);
   const swapId = live?.swap_id ?? watchId ?? "";
@@ -1615,7 +1656,7 @@ export function SwapSheet({
             <div style={{ textAlign: "center", fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>
           )}
           <div style={{ color: "var(--text-dim)", fontSize: 13, lineHeight: 1.6, textAlign: "center" }}>
-            {t("swap.unmatchedBody", { eta })}
+            {t(liveIsV2 ? "swap.unmatchedBodyV2" : "swap.unmatchedBody", { eta, in: inUnit })}
           </div>
           {phase.kind === "unmatched" ? (
             // Live countdown to the automatic refund — this line is the
@@ -1641,8 +1682,17 @@ export function SwapSheet({
 
   // In-progress (matching / settling): a 3-step checklist so "in progress"
   // reads as measurable forward motion, not an endless spinner.
-  const doneCount = phase.kind === "settling" ? 2 : 1;
-  const stepLabels = [t("swap.stepLocked"), t("swap.stepMatched"), t("swap.stepSettling")];
+  // This in-progress render is only reached for the matching/settling phases —
+  // i.e. a post-lock status (user_locked within grace, or pool_locked/claiming).
+  // So `liveIsV2` here already implies a live, post-lock record (the gate the
+  // spec requires for the "you can close the app" reassurance).
+  const stepLabels = liveIsV2
+    // v2 is TWO nodes: the local status jumps user_locked → completed (the pool
+    // does both claims off-device), so a 3rd "matching/settling" node would be
+    // dead. node1 (locked) is done; node2 (delivering) stays active until done.
+    ? [t("swap.stepLockedV2", { in: inUnit }), t("swap.stepDeliverV2", { out: outUnit })]
+    : [t("swap.stepLocked"), t("swap.stepMatched"), t("swap.stepSettling")];
+  const doneCount = liveIsV2 ? 1 : phase.kind === "settling" ? 2 : 1;
   // Raised threshold (item [9]): a healthy swap is ~60s and can run to ~2 min on
   // a slow block. Don't cry "taking long" until ~165s so the happy path never
   // looks broken.
@@ -1667,7 +1717,9 @@ export function SwapSheet({
         <StagedStepper labels={stepLabels} doneCount={doneCount} />
 
         <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
-          {t("swap.safeToClose")}
+          {/* v2 (live, post-lock record only): "you're all set, you can close
+              the app". v1 keeps the "keep the app open" reassurance. */}
+          {t(liveIsV2 ? "swap.safeToCloseV2" : "swap.safeToClose", { in: inUnit, out: outUnit })}
         </div>
 
         {/* Per-leg explorer links once they land (item [10]). */}
@@ -1675,7 +1727,7 @@ export function SwapSheet({
 
         {stuck && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-            <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t("swap.takingLong")}</div>
+            <div style={{ color: "#fbbf24", fontSize: 12, textAlign: "center" }}>{t(liveIsV2 ? "swap.takingLongV2" : "swap.takingLong", { in: inUnit, out: outUnit })}</div>
             {/* No refund button here: before the HTLC timeout a refund is
                 protocol-impossible (it only toasted a failure). The unmatched
                 panel above takes over once the quote expires unmatched, and the

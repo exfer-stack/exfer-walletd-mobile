@@ -7,10 +7,27 @@ import { useState } from "react";
 import { Modal } from "./ui";
 import { useT } from "../lib/i18n";
 
-export function SwapTimingHelp({ size = 16 }: { size?: number }) {
+export function SwapTimingHelp({
+  size = 16,
+  isV2 = false,
+  inUnit,
+  outUnit,
+}: {
+  size?: number;
+  /** v2 (reversed) flow: lock once and leave — the explanation changes. */
+  isV2?: boolean;
+  /** Asset unit labels for the {in}/{out} slots in the v2 copy. */
+  inUnit?: string;
+  outUnit?: string;
+}) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-  const points = [t("swap.why1"), t("swap.why2"), t("swap.why3")];
+  const units = { in: inUnit ?? "", out: outUnit ?? "" };
+  const points = [
+    t("swap.why1"),
+    isV2 ? t("swap.why2V2", units) : t("swap.why2"),
+    isV2 ? t("swap.why3V2", units) : t("swap.why3"),
+  ];
   return (
     <>
       <button
