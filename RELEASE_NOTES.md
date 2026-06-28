@@ -6,16 +6,12 @@
 
 ## What's new
 
-- Swaps now finish reliably. A BNB→EXFER swap could get stuck on "Sending your
-  funds" even after the EXFER had already arrived, or wrongly show "unmatched"
-  when the pool had in fact taken the other side. The wallet now re-checks the
-  pool and the chain directly while a swap is in progress, so it completes a
-  settled swap and picks up a matched one on its own — including swaps that were
-  already stuck (they recover the next time you open the app). Your funds were
-  always safe on-chain; this fixes the screen catching up to reality.
+- Activity no longer goes blank. A network hiccup while opening Activity — or
+  switching tabs — could wipe your transaction history until it reloaded. It now
+  keeps what it already has and fills in the rest. Your history was always safe
+  on-chain; this just stops the screen from losing it.
 
-- Honest in-progress wording. A swap that's still confirming no longer claims it
-  "didn't match" or tells you to close the app — closing during the confirmation
-  window is exactly what could strand it. It now says it's still confirming, asks
-  you to keep the app open, and explains your funds auto-return if it genuinely
-  doesn't match.
+- Activity is back in time order. Swaps and recent transactions could sink to the
+  bottom (or look missing) before the chain tip had loaded; they now interleave
+  by real time, newest first. A very active address's latest transactions are no
+  longer cut off either.
