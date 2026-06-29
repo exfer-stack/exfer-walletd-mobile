@@ -1338,10 +1338,12 @@ export function SwapSheet({
         onClose={onClose}
         onBack={() => setStep(1)}
         footer={
-          // Execute busy state. v2 (both directions block on swap_execute, which
-          // can run a minute+) shows an explicit "Setting up your swap…" label
-          // plus a keep-the-app-open sub-note under the button — replacing the
-          // bare, unexplained spinner. v1 keeps the silent spinner.
+          // Execute busy state. v2 shows an explicit "Setting up your swap…" label
+          // (replacing the bare spinner). The keep-the-app-open sub-note is SELL
+          // ONLY: a v2 SELL's `swap_execute` blocks (verify the pool's BNB lock +
+          // lock our EXFER), so the app must stay up; a v2 BUY now returns at once
+          // (`committing`) and the daemon finishes it, so no keep-open for buys.
+          // v1 keeps the silent spinner.
           <div style={{ width: "100%" }}>
             <button className="btn btn-block" disabled={busy || requoting || !confirmArmed || (quoteDiverged && !impactAck) || expired} onClick={() => void doExecute()}>
               {busy || requoting ? (
@@ -1356,7 +1358,7 @@ export function SwapSheet({
                 t("swap.confirm")
               )}
             </button>
-            {isV2 && busy && (
+            {isV2 && busy && sell && (
               <div style={{ fontSize: 12, color: "var(--text-faint)", lineHeight: 1.5, textAlign: "center", marginTop: 8 }}>
                 {t("swap.confirmingKeepOpenV2")}
               </div>
@@ -1529,6 +1531,33 @@ export function SwapSheet({
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "44px 0" }}>
           <Spinner size={22} />
           <div style={{ color: "var(--text-faint)", fontSize: 13 }}>{t("swap.loadingStatus")}</div>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // v2 BUY in `committing`: we committed and the pool is fronting its EXFER lock;
+  // the daemon locks our BNB on its own once that lock is verified. Nothing of
+  // ours is locked yet, so this is an honest PRE-lock state — "setting up", with
+  // NO "Locked your BNB" stepper node (that would lie) and the user already free
+  // to leave (the monitor finishes whether or not the app stays open).
+  if (phase.kind === "committing") {
+    return (
+      <Sheet
+        title={t("swap.submittedTitle")}
+        onClose={closeSettling}
+        footer={<button className="btn btn-block" onClick={closeSettling}>{t("swap.closeKeepSettling")}</button>}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "20px 0 8px" }}>
+          <Spinner size={22} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{t("swap.committingHeading")}</div>
+            {amounts && <div style={{ fontSize: 14, color: "var(--text-dim)", fontWeight: 600 }}>{amounts}</div>}
+          </div>
+          <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", lineHeight: 1.5 }}>
+            {t("swap.committingNote", { out: outUnit })}
+          </div>
+          {live?.error && <ErrorDetails error={live.error} t={t} />}
         </div>
       </Sheet>
     );

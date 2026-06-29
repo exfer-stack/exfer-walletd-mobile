@@ -30,6 +30,11 @@ export interface SwapPhaseRec {
 
 export type SwapPhase =
   | { kind: "loading" }
+  /** v2 BUY only: we committed and the pool is fronting its EXFER lock; the
+   *  daemon will lock our BNB on its own. Nothing of ours is locked yet, so this
+   *  is a distinct PRE-lock phase — it must NOT render the "Locked your BNB"
+   *  stepper node (that would lie). The user can already close the app. */
+  | { kind: "committing" }
   | { kind: "matching" }
   | { kind: "settling" }
   /** Quote expired unmatched; funds locked until the HTLC timeout. etaSec is
@@ -71,6 +76,9 @@ export function derivePhase(
 ): SwapPhase {
   if (rec == null) return { kind: "loading" };
   switch (rec.status) {
+    case "committing":
+      // v2 BUY: committed, pool fronting its lock, our BNB not locked yet.
+      return { kind: "committing" };
     case "completed":
       return { kind: "completed" };
     case "refunded":
