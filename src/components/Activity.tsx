@@ -125,6 +125,32 @@ function whenLabel(it: ActivityItem): string {
   return "";
 }
 
+/** Merge a fresh (possibly degraded / incomplete) feed over the last-good one,
+ *  keyed by tx_id, WITHOUT losing confirmed rows. Used only when the indexer
+ *  fetch failed for some/all addresses: keep everything we already had and add
+ *  or upgrade with whatever the degraded pass surfaced (e.g. a new pending
+ *  send), but never downgrade an already-confirmed row back to pending/missing.
+ *  A later COMPLETE refresh replaces the feed wholesale, so any stale row this
+ *  preserves is self-correcting. */
+function mergeFeeds(prev: ActivityItem[], fresh: ActivityItem[]): ActivityItem[] {
+  const byId = new Map<string, ActivityItem>();
+  for (const it of prev) byId.set(it.tx_id, it);
+  for (const it of fresh) {
+    const old = byId.get(it.tx_id);
+    if (old?.status === "confirmed" && it.status !== "confirmed") continue;
+    byId.set(it.tx_id, it);
+  }
+  // Mirror buildActivityFeed's ordering: pending above confirmed, then by block
+  // height when both have one, else by timestamp.
+  return [...byId.values()].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+    if (a.block_height != null && b.block_height != null) {
+      return b.block_height - a.block_height;
+    }
+    return (b.ts ?? "") < (a.ts ?? "") ? -1 : 1;
+  });
+}
+
 export function Activity() {
   const { balance } = useWallet();
   const { t } = useT();
@@ -216,16 +242,31 @@ export function Activity() {
   const load = useCallback(
     async (announce: boolean) => {
       if (!ownAddrs.length) {
-        setItems([]);
+        // Balance not loaded yet (cold start, walletd still warming up). Keep
+        // showing the cached feed instead of flashing it empty — the load
+        // re-fires automatically once the address set arrives.
         setLoading(false);
         return;
       }
       if (announce) setRefreshing(true);
       try {
         const { items, indexerOk } = await buildActivityFeed(ownAddrs);
-        setItems(items);
         setIndexerOk(indexerOk);
-        saveFeedCache(ownKey, items);
+        if (indexerOk) {
+          // Complete, authoritative snapshot — replace and persist.
+          setItems(items);
+          saveFeedCache(ownKey, items);
+        } else {
+          // Degraded fetch: the indexer/confirmed source failed for some or all
+          // addresses. Do NOT wipe the visible history or persist this partial
+          // result over the good cache — that's the "refresh made my history
+          // disappear / switching tabs loses it" bug. Merge the fresh rows OVER
+          // what we already have (so a just-broadcast pending/local tx still
+          // surfaces) while keeping every confirmed row, and leave the cache
+          // untouched so a later complete refresh — or the next remount — still
+          // has it.
+          setItems((prev) => mergeFeeds(prev, items));
+        }
       } finally {
         setLoading(false);
         if (announce) setRefreshing(false);
@@ -296,16 +337,30 @@ export function Activity() {
     ]);
     const BLOCK_MS = 10_000; // ~target block time
     const nowMs = Date.now();
+    // Anchor the block-height → wall-clock conversion. Prefer the real chain
+    // tip; when it hasn't loaded yet — or the node is slow/unreachable, which is
+    // exactly when this bites — fall back to the HIGHEST block height we already
+    // hold: the most recent on-chain activity is ~now, older blocks spread back
+    // from it. Without this fallback every confirmed transfer defaulted to
+    // `now`, which floated the entire transfer history above any time-stamped
+    // swap and buried a just-made swap at the very BOTTOM of the feed (it read
+    // as "missing" / out of order). A local anchor keeps swaps interleaved by
+    // real time even when the tip can't be fetched.
+    const maxBlock = visibleItems.reduce(
+      (m, it) => (it.block_height != null && it.block_height > m ? it.block_height : m),
+      0,
+    );
+    const effTip = tipHeight ?? (maxBlock > 0 ? maxBlock : null);
     // Confirmed-only transfers carry just a block height (no wall-clock). Use
     // the local broadcast `ts` when we have it (our own sends do), else estimate
-    // from the block height vs the tip, else treat as recent until the tip loads.
+    // from the block height vs the (effective) tip.
     const transferTime = (it: ActivityItem): number => {
       if (it.ts) {
         const t = Date.parse(it.ts);
         if (!Number.isNaN(t)) return t;
       }
-      if (it.block_height != null && tipHeight != null) {
-        return nowMs - Math.max(0, tipHeight - it.block_height) * BLOCK_MS;
+      if (it.block_height != null && effTip != null) {
+        return nowMs - Math.max(0, effTip - it.block_height) * BLOCK_MS;
       }
       return nowMs;
     };

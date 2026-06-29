@@ -6,8 +6,12 @@
 
 ## What's new
 
-- Clearer swap costs. The "Fees" total used to fold in price impact (the
-  slippage on a large trade), which made it look far higher than what you
-  actually pay. Now "Fees" shows only the real cost — the 0.3% liquidity fee
-  plus the small on-chain network fee — and price impact is shown on its own
-  separate line, so a thin-pool trade no longer reads as a giant fee.
+- Activity no longer goes blank. A network hiccup while opening Activity — or
+  switching tabs — could wipe your transaction history until it reloaded. It now
+  keeps what it already has and fills in the rest. Your history was always safe
+  on-chain; this just stops the screen from losing it.
+
+- Activity is back in time order. Swaps and recent transactions could sink to the
+  bottom (or look missing) before the chain tip had loaded; they now interleave
+  by real time, newest first. A very active address's latest transactions are no
+  longer cut off either.
