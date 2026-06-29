@@ -507,7 +507,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
 
   return (
     <div className="agent-tab" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ padding: "6px 14px 0" }}>
+      <div style={{ padding: "calc(6px + max(var(--safe-top), 28px)) 14px 0" }}>
         <AppBar
           title={t("nav.agent")}
           right={
@@ -540,13 +540,15 @@ export function AgentTab({ lang }: { lang: Lang }) {
                 <button type="button" className="btn btn-sm" style={{ flex: "0 0 auto" }} onClick={() => setShowSettings(true)}>{t("agent.nudge.connectCta")}</button>
               </div>
             )}
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px" }}>
-              {examples.map((ex) => (
-                <button key={ex} type="button" className="agent-chip" onClick={() => (needsKey ? setShowSettings(true) : setInput(ex))}>
-                  {ex}
-                </button>
-              ))}
-            </div>
+            {!needsKey && (
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px" }}>
+                {examples.map((ex) => (
+                  <button key={ex} type="button" className="agent-chip" onClick={() => setInput(ex)}>
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -681,47 +683,56 @@ export function AgentTab({ lang }: { lang: Lang }) {
       )}
 
       <div className="agent-composer" style={{ display: "flex", gap: "8px", alignItems: "flex-end", padding: "12px 12px calc(12px + env(safe-area-inset-bottom))" }}>
-        <textarea
-          ref={inputRef}
-          className="field"
-          style={{ flex: 1, resize: "none", lineHeight: 1.4 }}
-          rows={1}
-          placeholder={needsKey ? t("agent.nudge.connect") : t("agent.composer.placeholder")}
-          value={input}
-          disabled={needsKey}
-          // Editable while busy — only the Send button swaps to Stop, so the user
-          // can draft the next message during a reply.
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            // ArrowUp on an empty composer recalls the last user message (shell-
-            // style history), so a quick edit/retry doesn't need the banner.
-            if (e.key === "ArrowUp" && input === "" && lastUserText.current) {
-              e.preventDefault();
-              setInput(lastUserText.current);
-              return;
-            }
-            // Cmd/Ctrl+Enter is a send alias. Plain Enter sends; Shift+Enter is a
-            // newline. Guard isComposing so a Chinese IME confirm (which also fires
-            // Enter) never sends mid-input.
-            const sendChord = (e.metaKey || e.ctrlKey) && e.key === "Enter";
-            if ((sendChord || (e.key === "Enter" && !e.shiftKey)) && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send(input);
-            }
-          }}
-          data-testid="agent-input"
-        />
         {needsKey ? (
-          <button type="button" className="btn" onClick={() => setShowSettings(true)} data-testid="agent-send">{t("agent.nudge.connectCta")}</button>
-        ) : busy ? (
-          <button type="button" className="btn btn-secondary" onClick={() => abortRef.current?.abort()} data-testid="agent-stop">{t("agent.composer.stop")}</button>
-        ) : input.trim() ? (
-          <button type="button" className="btn" onClick={() => send(input)} data-testid="agent-send">{t("agent.composer.send")}</button>
-        ) : turns.length > 0 && lastUserText.current ? (
-          // Composer empty after a finished/stopped turn → offer a regenerate.
-          <button type="button" className="btn btn-secondary" onClick={regenerate} data-testid="agent-regenerate">{t("agent.composer.regenerate")}</button>
+          // No LLM key in the installed app: a clean prompt (message + CTA) that
+          // fills the row, instead of a dead disabled input + a cramped button with
+          // a truncated placeholder. Tapping opens LLM settings.
+          <div className="banner banner-info" style={{ flex: 1, margin: 0, display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+            <span style={{ fontSize: "13px", lineHeight: 1.4 }}>{t("agent.nudge.connect")}</span>
+            <button type="button" className="btn btn-sm" style={{ flex: "0 0 auto" }} onClick={() => setShowSettings(true)} data-testid="agent-send">{t("agent.nudge.connectCta")}</button>
+          </div>
         ) : (
-          <button type="button" className="btn" disabled data-testid="agent-send">{t("agent.composer.send")}</button>
+          <>
+            <textarea
+              ref={inputRef}
+              className="field"
+              style={{ flex: 1, resize: "none", lineHeight: 1.4 }}
+              rows={1}
+              placeholder={t("agent.composer.placeholder")}
+              value={input}
+              // Editable while busy — only the Send button swaps to Stop, so the user
+              // can draft the next message during a reply.
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // ArrowUp on an empty composer recalls the last user message (shell-
+                // style history), so a quick edit/retry doesn't need the banner.
+                if (e.key === "ArrowUp" && input === "" && lastUserText.current) {
+                  e.preventDefault();
+                  setInput(lastUserText.current);
+                  return;
+                }
+                // Cmd/Ctrl+Enter is a send alias. Plain Enter sends; Shift+Enter is a
+                // newline. Guard isComposing so a Chinese IME confirm (which also fires
+                // Enter) never sends mid-input.
+                const sendChord = (e.metaKey || e.ctrlKey) && e.key === "Enter";
+                if ((sendChord || (e.key === "Enter" && !e.shiftKey)) && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              data-testid="agent-input"
+            />
+            {busy ? (
+              <button type="button" className="btn btn-secondary" onClick={() => abortRef.current?.abort()} data-testid="agent-stop">{t("agent.composer.stop")}</button>
+            ) : input.trim() ? (
+              <button type="button" className="btn" onClick={() => send(input)} data-testid="agent-send">{t("agent.composer.send")}</button>
+            ) : turns.length > 0 && lastUserText.current ? (
+              // Composer empty after a finished/stopped turn → offer a regenerate.
+              <button type="button" className="btn btn-secondary" onClick={regenerate} data-testid="agent-regenerate">{t("agent.composer.regenerate")}</button>
+            ) : (
+              <button type="button" className="btn" disabled data-testid="agent-send">{t("agent.composer.send")}</button>
+            )}
+          </>
         )}
       </div>
 
