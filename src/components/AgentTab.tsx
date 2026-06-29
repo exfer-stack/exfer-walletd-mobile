@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentSession, type AgentEvent, type ChatMessage, type ConsentCard, type ConsentField, type ToolPolicy } from "exfer-agent";
 import { useT, type Lang, type MsgKey } from "../lib/i18n";
-import { hostDeps } from "../lib/agentHost";
+import { hostDeps, inTauri } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
 import { formatExfer } from "../lib/rpc";
 import { agentError } from "../lib/errors";
@@ -498,6 +498,11 @@ export function AgentTab({ lang }: { lang: Lang }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, send]);
 
+  // In the installed app a missing LLM key must NOT silently fall back to the
+  // scripted mock (it looked like a broken agent repeating one canned line).
+  // Gate the composer so the user configures a real provider key first; the mock
+  // stays reachable only in browser-dev (!inTauri) for headless QA.
+  const needsKey = inTauri() && !hasKey;
   const examples = [t("agent.empty.ex1"), t("agent.empty.ex2"), t("agent.empty.ex3")];
 
   return (
@@ -537,7 +542,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
             )}
             <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px" }}>
               {examples.map((ex) => (
-                <button key={ex} type="button" className="agent-chip" onClick={() => setInput(ex)}>
+                <button key={ex} type="button" className="agent-chip" onClick={() => (needsKey ? setShowSettings(true) : setInput(ex))}>
                   {ex}
                 </button>
               ))}
@@ -681,8 +686,9 @@ export function AgentTab({ lang }: { lang: Lang }) {
           className="field"
           style={{ flex: 1, resize: "none", lineHeight: 1.4 }}
           rows={1}
-          placeholder={t("agent.composer.placeholder")}
+          placeholder={needsKey ? t("agent.nudge.connect") : t("agent.composer.placeholder")}
           value={input}
+          disabled={needsKey}
           // Editable while busy — only the Send button swaps to Stop, so the user
           // can draft the next message during a reply.
           onChange={(e) => setInput(e.target.value)}
@@ -705,7 +711,9 @@ export function AgentTab({ lang }: { lang: Lang }) {
           }}
           data-testid="agent-input"
         />
-        {busy ? (
+        {needsKey ? (
+          <button type="button" className="btn" onClick={() => setShowSettings(true)} data-testid="agent-send">{t("agent.nudge.connectCta")}</button>
+        ) : busy ? (
           <button type="button" className="btn btn-secondary" onClick={() => abortRef.current?.abort()} data-testid="agent-stop">{t("agent.composer.stop")}</button>
         ) : input.trim() ? (
           <button type="button" className="btn" onClick={() => send(input)} data-testid="agent-send">{t("agent.composer.send")}</button>
