@@ -6,5 +6,5 @@
 
 ## What's new
 
-- The AI assistant now prompts you to add your AI provider key in Settings before it can chat — no more confusing placeholder replies when a key isn't set yet. Your balances, transfers, and swaps were always real; this only changes the assistant.
-- Fixed the bottom tab bar being partly covered by the phone's system navigation bar on some Android devices, so all five tabs are easy to tap.
+- The AI assistant now prompts you to add your AI provider key in Settings before it can chat — shown as a clean banner with an "Open settings" button, not a confusing placeholder. Your balances, transfers, and swaps were always real; this only changes the assistant.
+- Layout fixes: the assistant header no longer sits under the phone's status bar, and the bottom tab bar is no longer covered by the system navigation bar, so everything is easy to tap.
