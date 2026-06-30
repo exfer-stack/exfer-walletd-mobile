@@ -6,4 +6,4 @@
 
 ## What's new
 
-- Clearer guidance while a buy is being set up: the app now reminds you to keep it open until your payment is locked — closing or backgrounding it during that step could leave the swap waiting. The time estimate is also more realistic (1–3 minutes). Your funds are never at risk; a buy that hasn't locked simply can't complete.
+- Swaps and transfers now confirm much faster — your wallet now broadcasts each transaction to several network nodes at once, so it reaches a miner quickly instead of waiting on a single node. Buys, sells, and sends that used to take many minutes now usually finish in about a minute or two.
