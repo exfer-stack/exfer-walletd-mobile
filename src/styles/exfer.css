@@ -160,15 +160,14 @@ body {
   grid-auto-columns: 1fr;
   align-items: center;
   /* Bottom inset keeps the tappable icons ABOVE the Android system navigation
-     bar (gesture pill / 3-button bar); the bar's background fills the inset zone
-     so it extends behind the system bar with no gap. Requires viewport-fit=cover
-     in index.html. STOPGAP: Android 15+ forces edge-to-edge but Tauri v2 doesn't
-     reliably dispatch the bottom inset to the WebView, so env(safe-area-inset-bottom)
-     can read 0 and the bar overlaps the system nav. Floor the TOTAL bottom padding
-     at 46px so a zero/undersized inset still clears a typical gesture/3-button bar;
-     when env() reports a real (larger) inset we honour that instead. Proper fix is
-     native (forward WindowInsets to env()); this keeps it usable meanwhile. */
-  padding: 9px 14px max(calc(14px + env(safe-area-inset-bottom)), 46px);
+     bar (gesture pill / 3-button bar). The bar's background fills the inset zone
+     too, so it extends behind the system bar with no gap. max(…, 0px) guards
+     against a UA reporting a bogus/negative inset. Requires viewport-fit=cover
+     in index.html for env() to be non-zero. NOTE: the v1.0.26 "floor the bottom
+     padding at 46px" stopgap was REVERTED — it added an unconditional 46px even on
+     phones with NO system nav bar (gesture-only, env()=0), leaving a visible dead
+     gap below the bar. env()-based padding is the correct, standard behaviour. */
+  padding: 9px 14px calc(14px + max(env(safe-area-inset-bottom), 0px));
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   backdrop-filter: blur(18px);
   border-top: 1px solid var(--border-soft);
