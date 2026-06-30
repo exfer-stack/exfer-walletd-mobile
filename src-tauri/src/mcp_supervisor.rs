@@ -1,20 +1,20 @@
 //! Multi-server MCP supervisor.
 //!
-//! The built-in `exfer` server is the `exfer-mcp` sidecar, run in EXTERNAL mode
-//! pointed at THIS app's in-process embedded walletd (URL + scope tokens + TLS
-//! fingerprint from `ConnectionInfo`), so the agent's 35 tools operate on the
-//! user's real wallet — no second walletd, no second keystore. It is implicit,
-//! always enabled, and not user-removable.
+//! The built-in `exfer` server is implemented NATIVELY in Rust (see
+//! `native_tools`): each MCP tool-call is translated in-process into a walletd
+//! JSON-RPC call on THIS app's embedded walletd (URL + scope tokens + TLS
+//! fingerprint from `ConnectionInfo`), so the agent operates on the user's real
+//! wallet — no second walletd, no second keystore. It used to spawn the
+//! `uvx exfer-mcp` Python sidecar, but Android/iOS have no Python/uvx (the spawn
+//! failed with "No such file or directory"), so the tool layer is now native.
+//! The `exfer` server is implicit, always enabled, and not user-removable.
 //!
 //! On top of that, the user can register extra MCP servers (Claude-Code style):
 //! other stdio child processes or streamable-http endpoints (see
-//! `mcp_registry`). All connected servers are multiplexed into one
+//! `mcp_registry`). User servers are multiplexed into one
 //! `HashMap<serverId, RunningService>`; tool calls route to the owning server by
-//! tool name. On a name collision across servers the built-in `exfer` server
-//! wins and the duplicate is dropped (with a `tracing::warn`).
-//!
-//! The rmcp stdio-client pattern here is verified end-to-end against a real
-//! exfer-mcp + real chain (see the standalone rmcp probe).
+//! tool name. The built-in `exfer` tools are dispatched natively (not in that
+//! map); on a name collision a user server's duplicate is dropped (exfer wins).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,6 +28,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 
 use crate::mcp_registry::{load_registry, McpServerConfig};
+use crate::native_tools;
 use crate::rpc_client::ConnectionInfo;
 use crate::walletd_supervisor::AppCtx;
 
@@ -67,6 +68,11 @@ impl Default for McpCtx {
 }
 
 /// exfer-mcp EXTERNAL-mode env pointed at the embedded walletd.
+///
+/// Retained for reference / a possible dev escape hatch only — the built-in
+/// `exfer` server is now 100% native (`native_tools`) and never spawns
+/// `uvx exfer-mcp`. See [`ensure_exfer`].
+#[allow(dead_code)]
 fn external_env(conn: &ConnectionInfo) -> HashMap<String, String> {
     let mut e = HashMap::new();
     e.insert("WALLETD_URL".into(), conn.base_url.clone());
@@ -85,6 +91,9 @@ fn external_env(conn: &ConnectionInfo) -> HashMap<String, String> {
 }
 
 /// Build the exfer-mcp child command (the same pinned package as before).
+///
+/// Unused now that the built-in server is native; kept for reference.
+#[allow(dead_code)]
 fn exfer_command(env: HashMap<String, String>) -> tokio::process::Command {
     let bin = std::env::var("EXFER_MCP_CMD").unwrap_or_else(|_| "uvx".into());
     let pin = std::env::var("EXFER_MCP_PIN").unwrap_or_else(|_| "exfer-mcp==0.7.1".into());
@@ -116,6 +125,11 @@ async fn connect_http(url: &str) -> Result<RunningService<RoleClient, ()>, Strin
 
 /// Ensure the built-in exfer server is connected, returning early if it already
 /// is. Held separately from user servers because it needs live walletd conn.
+///
+/// No longer called: the built-in `exfer` server is native (`native_tools`) and
+/// never spawns the `uvx exfer-mcp` sidecar (which can't run on mobile). Kept
+/// for reference; remove once the native path has soaked.
+#[allow(dead_code)]
 async fn ensure_exfer(mcp: &McpCtx, env: HashMap<String, String>) -> Result<(), String> {
     {
         let guard = mcp.inner.lock().await;
@@ -188,12 +202,23 @@ async fn conn_of(app: &AppCtx) -> Result<Arc<ConnectionInfo>, String> {
         .ok_or_else(|| "walletd not ready".to_string())
 }
 
+/// Read the cached fingerprint-pinned reqwest client (loopback to walletd) from
+/// the app context. Pairs with [`conn_of`]; both must be present once walletd is
+/// ready (the supervisor sets them together).
+async fn client_of(app: &AppCtx) -> Result<reqwest::Client, String> {
+    let inner = app.inner.lock().await;
+    inner
+        .client
+        .clone()
+        .ok_or_else(|| "walletd not ready".to_string())
+}
+
 /// Kept for back-compat with the existing call site (the Agent page pre-warms
-/// the sidecar). Connects the built-in exfer server eagerly.
+/// the agent). The built-in `exfer` server is native and stateless, so there is
+/// nothing to spawn — this is now a no-op that just confirms the app is up.
 #[tauri::command]
-pub async fn mcp_start(app: State<'_, AppCtx>, mcp: State<'_, McpCtx>) -> Result<(), String> {
-    let conn = conn_of(&app).await?;
-    ensure_exfer(&mcp, external_env(&conn)).await
+pub async fn mcp_start(_app: State<'_, AppCtx>, _mcp: State<'_, McpCtx>) -> Result<(), String> {
+    Ok(())
 }
 
 /// One server's metadata in the `mcp_list_tools` response (id + the consent
@@ -216,18 +241,26 @@ pub async fn mcp_list_tools(
     app: State<'_, AppCtx>,
     mcp: State<'_, McpCtx>,
 ) -> Result<Value, String> {
-    let conn = conn_of(&app).await?;
-    ensure_exfer(&mcp, external_env(&conn)).await?;
+    // The built-in `exfer` server is native + static: list its tools in-process
+    // (no walletd readiness needed to enumerate; calls fail-late if not ready).
+    // exfer is added FIRST so it wins any tool-name collision with a user server.
+    let mut merged: Vec<Value> = native_tools::list();
+    let mut seen: std::collections::HashSet<String> = merged
+        .iter()
+        .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .collect();
+
+    let mut server_meta: Vec<ServerMeta> = vec![ServerMeta {
+        id: EXFER_SERVER_ID.to_string(),
+        default_consent: "auto".into(),
+    }];
 
     let datadir = app.inner.lock().await.datadir.clone();
     let registry = load_registry(&datadir);
 
     // Connect each enabled user server lazily; a failure is logged + skipped so
     // one broken server doesn't break the agent.
-    let mut server_meta: Vec<ServerMeta> = vec![ServerMeta {
-        id: EXFER_SERVER_ID.to_string(),
-        default_consent: "auto".into(),
-    }];
+    let mut user_order: Vec<String> = Vec::new();
     for cfg in registry.iter().filter(|c| c.enabled) {
         if let Err(e) = ensure_user_server(&mcp, cfg).await {
             tracing::warn!(server = %cfg.id, error = %e, "skipping MCP server that failed to connect");
@@ -237,18 +270,14 @@ pub async fn mcp_list_tools(
             id: cfg.id.clone(),
             default_consent: cfg.default_consent.clone(),
         });
+        user_order.push(cfg.id.clone());
     }
 
-    // Gather tools per connected+enabled server. Order matters for collisions:
-    // exfer first so it wins.
-    let mut order: Vec<String> = vec![EXFER_SERVER_ID.to_string()];
-    order.extend(server_meta.iter().map(|m| m.id.clone()).filter(|id| id != EXFER_SERVER_ID));
-
-    let mut merged: Vec<Value> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Gather tools from each connected user server, dropping any whose name
+    // collides with a native exfer tool (or an earlier user server).
     {
         let guard = mcp.inner.lock().await;
-        for server_id in &order {
+        for server_id in &user_order {
             let Some(client) = guard.get(server_id) else {
                 continue;
             };
@@ -311,10 +340,17 @@ pub async fn mcp_call_tool(
     name: String,
     args: Value,
 ) -> Result<Value, String> {
-    let conn = conn_of(&app).await?;
-    ensure_exfer(&mcp, external_env(&conn)).await?;
+    // Built-in exfer tools are native: dispatch in-process against the embedded
+    // walletd (no uvx). native_tools::call always returns the MCP envelope, so
+    // even a walletd-not-ready / RPC error surfaces as {isError:true} text.
+    if native_tools::is_native(&name) {
+        let conn = conn_of(&app).await?;
+        let client = client_of(&app).await?;
+        return Ok(native_tools::call(&name, args, &conn, &client).await);
+    }
 
-    // Make sure enabled user servers are connected so their tools are routable.
+    // Otherwise route to a user-registered MCP server (stdio / http). Make sure
+    // enabled user servers are connected so their tools are routable.
     let datadir = app.inner.lock().await.datadir.clone();
     for cfg in load_registry(&datadir).iter().filter(|c| c.enabled) {
         if let Err(e) = ensure_user_server(&mcp, cfg).await {

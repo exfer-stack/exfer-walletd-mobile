@@ -1,0 +1,969 @@
+[
+  {
+    "name": "exfer_generate_address",
+    "description": "Create a new managed wallet address on this walletd. Returns {address, pubkey, index} as JSON — use the pubkey (64 hex) as payee_pubkey for exfer_quote_issue. Call this when the agent needs an address to receive a payment to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_list_addresses",
+    "description": "List every address this walletd holds a key for, sorted ascending. Returns a JSON array of records, each {address, index, and one of label/imported}. There is no distinguished 'default' address — any of them can receive funds; to receive into one, pick any (e.g. the first, or one with a meaningful `label`), or call exfer_generate_address for a fresh one. Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_balance",
+    "description": "Look up the confirmed balance of a managed address, in exfers (1 EXFER = 100_000_000 exfers). Returns a single integer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "32-byte address as 64 lowercase hex characters.",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_block_height",
+    "description": "Get the current chain tip height. Returns JSON {height, block_id} (height is an integer; block_id is the tip block hash as 64 hex). Read-only — use this instead of guessing the current height for HTLC timeouts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_network_status",
+    "description": "Live status of the whole Exfer network as seen by the upstream node (NOT the wallet). Returns the node's get_node_info JSON: version, network, genesis_block_id, tip_height, tip_block_id, tip_age_seconds, peer_count, mempool_size, mempool_bytes, uptime_seconds, and metrics. Read-only. Use this for 'is the network healthy / what height is it'.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_network_hashrate",
+    "description": "Estimate the whole-network hashrate (Argon2id hashes/sec). This is a DERIVED ESTIMATE, not a reported counter: it sums each recent block's expected work (2^256 / difficulty_target) over a look-back window and divides by the window's actual wall-clock span. Returns {difficulty, est_hashrate_hs, work_per_block, target_block_seconds, window_blocks, window_seconds, tip_height, is_estimate}. The unit is memory-hard Argon2id H/s and is NOT comparable to a SHA-256 ASIC's hashrate. Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window_blocks": {
+          "type": "integer",
+          "description": "How many blocks back to average over (default 60). Larger = smoother but slower-reacting. Clamped to [2, 2016].",
+          "minimum": 2,
+          "maximum": 2016
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_block",
+    "description": "Explorer-grade block lookup from the node by height OR block hash (provide exactly one). Returns the block header JSON: {hash, height, timestamp, tx_count, transactions (tx_id list), prev_block_id, difficulty_target, nonce, state_root, tx_root}. Read-only — works for ANY block, not just the wallet's.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "integer",
+          "description": "Block height to fetch.",
+          "minimum": 0
+        },
+        "block_id": {
+          "type": "string",
+          "description": "Block hash as 64 lowercase hex characters.",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_transaction",
+    "description": "Explorer-grade transaction lookup from the node by tx_id. Searches the mempool first, then the confirmed chain. Returns {tx_id, tx_hex, in_mempool, and (if confirmed) block_hash + block_height}. Read-only — works for ANY transaction, not just the wallet's.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tx_id": {
+          "type": "string",
+          "description": "Transaction id as 64 lowercase hex characters.",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "tx_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_simulate_transfer",
+    "description": "Dry-run a payment. Returns the exact (size, fee, fee_rate, inputs, outputs, change, built_at_height) tuple that a real `exfer_transfer` call would produce, without broadcasting and without reserving any UTXOs. ALWAYS call this BEFORE `exfer_transfer` so the user knows the cost ceiling in advance.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from_address": {
+          "type": "string",
+          "description": "Sender — must be a managed address (a key walletd holds).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "to_address": {
+          "type": "string",
+          "description": "Recipient address.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "amount": {
+          "type": "integer",
+          "description": "Amount in exfers (1 EXFER = 100_000_000).",
+          "minimum": 1
+        },
+        "fee_rate": {
+          "type": "integer",
+          "description": "Optional fee rate in exfers/byte. Omit to use walletd's default. Mutually exclusive with `fee`.",
+          "minimum": 1
+        },
+        "fee": {
+          "type": "integer",
+          "description": "Optional absolute fee in exfers. Omit to let walletd compute one from fee_rate. Mutually exclusive with `fee_rate`.",
+          "minimum": 0
+        },
+        "datum": {
+          "type": "string",
+          "description": "Optional hex (<= 4096 bytes, even length): the same on-chain datum the real `exfer_transfer` would attach (e.g. a quote_id for an honor settlement). Pass it here so the dry-run counts the datum bytes toward size/fee and matches the real transfer exactly.",
+          "pattern": "^([0-9a-f]{2})*$"
+        }
+      },
+      "required": [
+        "from_address",
+        "to_address",
+        "amount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_transfer",
+    "description": "Build, sign, and broadcast a payment. This MOVES FUNDS — call `exfer_simulate_transfer` first to confirm the exact fee, and only call this when the user has explicitly authorised the spend. The returned `tx_id` can be passed to `exfer_wait_for_tx` to await confirmation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from_address": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "to_address": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fee": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "datum": {
+          "type": "string",
+          "description": "Optional hex (<= 4096 bytes): a generic, app-defined on-chain blob attached to the payment (e.g. a receipt or reference). Meaning is the application's; read it back via exfer_get_transaction (outputs[].datum).",
+          "pattern": "^([0-9a-f]{2})*$"
+        }
+      },
+      "required": [
+        "from_address",
+        "to_address",
+        "amount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_quote_issue",
+    "description": "Create a SIGNED price credential (an EXFER-QUOTE) using a managed address's key. This SIGNS WITH A WALLET KEY — it mints a binding credential another party can present, so treat it as a Spend-posture action and only call it when the user has authorised issuing the quote. Binds a `currency`/`amount_minor` price to a fixed `exfer_amount` payable to `payee_pubkey`, valid for `ttl_secs`. Returns the signed `quote` object plus a payee-side `htlc_preimage` (KEEP SECRET — anyone with it can claim the matching HTLC) and its `htlc_hash_lock`. Pass the returned `quote` to `exfer_quote_verify` to confirm it before relying on it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Issuer/signer — must be a managed address (a key walletd holds).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "payee_pubkey": {
+          "type": "string",
+          "description": "Public key (64 hex) of the party to be paid.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Pricing-unit code, 3-12 chars [A-Z0-9] (e.g. USD).",
+          "pattern": "^[A-Z0-9]{3,12}$"
+        },
+        "amount_minor": {
+          "type": "integer",
+          "description": "Price in the currency's minor units (e.g. cents).",
+          "minimum": 0
+        },
+        "rate_exfers_per_unit": {
+          "type": "integer",
+          "description": "Conversion rate: exfers per one minor unit of `currency`.",
+          "minimum": 0
+        },
+        "exfer_amount": {
+          "type": "integer",
+          "description": "The only binding amount: exfers payable (1 EXFER = 100_000_000).",
+          "minimum": 1
+        },
+        "ttl_secs": {
+          "type": "integer",
+          "description": "Lifetime in seconds (0 < ttl_secs <= 3600).",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "payer_pubkey": {
+          "type": "string",
+          "description": "Optional: bind the quote to a specific payer (64 hex), making it non-transferable. Omit for a bearer quote.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "memo": {
+          "type": "string",
+          "description": "Optional signed UTF-8 note (<= 256 bytes)."
+        },
+        "quote_id": {
+          "type": "string",
+          "description": "Optional: pin the quote id (32 hex / 16 bytes). Omit to let walletd generate random bytes.",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": [
+        "address",
+        "payee_pubkey",
+        "currency",
+        "amount_minor",
+        "rate_exfers_per_unit",
+        "exfer_amount",
+        "ttl_secs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_wait_for_tx",
+    "description": "Wait until `tx_id` is buried at least `min_confirmations` blocks deep, or `timeout_secs` elapses. Returns `{tx_id, block_id, block_height, confirmations}` on success. Timing out is NOT a terminal failure — the tx may still confirm later; the tool surfaces the timeout as an error message and the agent can retry with a longer `timeout_secs`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tx_id": {
+          "type": "string",
+          "description": "Transaction id (64 lowercase hex).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "min_confirmations": {
+          "type": "integer",
+          "description": "Default 1. Most agent payments are safe at 1.",
+          "minimum": 1,
+          "default": 1
+        },
+        "timeout_secs": {
+          "type": "integer",
+          "description": "Default 60 s, clamped server-side at 600 s.",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 60
+        }
+      },
+      "required": [
+        "tx_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_wait_for_payment",
+    "description": "Wait for an incoming payment to `address`. Detects a new credit of at least `min_amount`. Latency depends on how the credit is seen: when the node's SSE push is connected it can surface the mempool sighting at 0 confirmations (sub-second), but otherwise it returns at the first confirmation (`confirmations: 1`) once the crediting block lands. On success returns `{received: true, tx_id, amount, confirmations, tip_height}` — note `tx_id` may be null when the credit was detected via a confirmed-balance delta rather than a specific mempool tx; in that case, to get the tx id, read the address (e.g. exfer_get_address_history). This is a receipt/liveness signal, NOT settlement finality — for final settlement follow up with `exfer_wait_for_tx`. A quiet window is not an error: on timeout it returns `{received: false, timed_out: true}` and the agent can call again.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Receiving address to watch (64 lowercase hex).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "min_amount": {
+          "type": "integer",
+          "description": "Default 1. Only report a credit of at least this many exfers (1 EXFER = 100_000_000 exfers).",
+          "minimum": 1,
+          "default": 1
+        },
+        "timeout_secs": {
+          "type": "integer",
+          "description": "Default 60 s, clamped server-side at 600 s.",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 60
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_payment_uri_encode",
+    "description": "Build a BIP21-style `exfer:<address>?amount=...&memo=...` URI. Useful when the agent needs to share a payment request the counterparty can click or hand to their own wallet. Returns JSON `{\"uri\": \"exfer:...\"}` (the inverse of exfer_payment_uri_decode).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Recipient address.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "amount": {
+          "type": "integer",
+          "description": "Optional amount in exfers.",
+          "minimum": 1
+        },
+        "memo": {
+          "type": "string",
+          "description": "Optional human-readable note.",
+          "maxLength": 256
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional wallet-side label.",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_payment_uri_decode",
+    "description": "Parse a BIP21-style `exfer:` URI back into its component fields (address, amount, memo, label, …). Useful when the agent receives a payment request from a counterparty.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "description": "An `exfer:<address>[?...]` URI.",
+          "pattern": "^exfer:"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_quote_verify",
+    "description": "Verify a signed EXFER-QUOTE. This is a PURE READ check — no wallet key is used and NO STATE CHANGES. Reconstructs the signing image against the live node's genesis + clock and checks the signature, key validity, and TTL/skew/expiry windows. Returns `{valid, signer_address, payee_address, genesis_block_id}`; when `valid` is false a `reason` field explains why. Proves authorship, not authority — you still decide whether you trust the signer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "quote": {
+          "type": "object",
+          "description": "The signed quote object to verify — the `quote` field returned by `exfer_quote_issue`."
+        }
+      },
+      "required": [
+        "quote"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_sign_message",
+    "description": "Sign an arbitrary UTF-8 message with a managed address's key, proving control of that address WITHOUT any on-chain transaction. Returns `{signature, pubkey, address}`. Use for challenge-response identity proofs (sign a verifier's nonce). Domain-separated from transaction signatures, so it can never authorize a payment.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Managed address whose key signs (64 lowercase hex).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "message": {
+          "type": "string",
+          "description": "The message / nonce to sign."
+        }
+      },
+      "required": [
+        "address",
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_verify_message",
+    "description": "Verify an Ed25519 message signature (pure crypto, no wallet needed). Returns `{valid, address}` where address is what the pubkey hashes to. Pass the optional `address` to additionally require the key matches a claimed address — the full check for 'does this counterparty control address X'.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        },
+        "message": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string",
+          "description": "Optional: require the key to hash to this address.",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "pubkey",
+        "signature",
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_htlc_lock",
+    "description": "Lock funds in an HTLC: payable to `receiver`'s pubkey on revealing the preimage of `hash_lock` before `timeout` (a block height), else refundable to `from`. SPENDS FUNDS. Returns the lock tx id. The receiver shares hash_lock = sha256(secret) beforehand.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "receiver": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Receiver pubkey (64 hex)."
+        },
+        "hash_lock": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Timeout block height."
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fee": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fee_rate": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "from",
+        "receiver",
+        "hash_lock",
+        "timeout",
+        "amount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_htlc_claim",
+    "description": "Claim an HTLC by revealing the `preimage` (receiver action, before timeout). SPENDS the locked output to you and publishes the preimage on-chain. Returns the claim tx id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "lock_tx_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "preimage": {
+          "type": "string",
+          "description": "The secret (hex)."
+        },
+        "sender": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Original sender pubkey (64 hex)."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "fee": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "from",
+        "lock_tx_id",
+        "preimage",
+        "sender",
+        "timeout"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_htlc_reclaim",
+    "description": "Reclaim an HTLC refund (sender action, only valid after `timeout`). SPENDS the locked output back to you. Returns the reclaim tx id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "lock_tx_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "receiver": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Receiver pubkey (64 hex)."
+        },
+        "hash_lock": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "fee": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "from",
+        "lock_tx_id",
+        "receiver",
+        "hash_lock",
+        "timeout"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_htlc_status",
+    "description": "Look up one HTLC's lifecycle (locked / claimed / reclaimed) from the observability index by lock tx id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lock_tx_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "required": [
+        "lock_tx_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_htlc_list",
+    "description": "List tracked HTLCs, filterable by role (sender/receiver/observer), state (locked/locked_expired/claimed/reclaimed/unknown), height range and address. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "sender",
+            "receiver",
+            "both",
+            "observer"
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "since_height": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "address": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_address_history",
+    "description": "Activity timeline for any address — the inputs and outputs it appears in, with counterparties and amounts. Paginated. Each row's `direction` is UTXO-chain language relative to this address: `output` = funds RECEIVED (a credit to this address), `input` = funds SPENT (a debit). Raw on-chain history to inspect a counterparty before transacting (you interpret it; it is not a trust score). Requires an indexer-backed walletd.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "since_height": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_get_output_datum",
+    "description": "Read the datum a single transaction output carries — the honor VERIFY step. After settling a quote on-chain, read the settlement output back to confirm it carries your quote_id. Returns JSON {quote_id, unhonorable}: a non-null quote_id (32 hex) means a strict 16-byte inline datum was indexed and the settlement is honor-verifiable; unhonorable is true for a datum_hash-only output (bytes never published inline, so the quote_id can't be confirmed); an output with no datum returns {quote_id: null, unhonorable: false}. Requires an indexer-backed walletd.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tx_id": {
+          "type": "string",
+          "description": "Settlement transaction id, 64 lowercase hex.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_index": {
+          "type": "integer",
+          "description": "Index of the output within the transaction.",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tx_id",
+        "output_index"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_find_settlements_by_quote_id",
+    "description": "Reverse-lookup: given a quote_id, find the on-chain settlement outpoint(s) that paid it — the honor gate's FIRST step. Returns JSON {settlements: [{tx_id, output_index}, ...]}: an empty array when nothing on-chain references the quote yet, and possibly more than one entry when it was settled multiple times. Pair each outpoint with exfer_get_output_datum to verify the inline quote_id read-back. Requires an indexer-backed walletd.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "quote_id": {
+          "type": "string",
+          "description": "Quote id, 16 bytes as 32 lowercase hex.",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": [
+        "quote_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_earn_probe",
+    "description": "Test whether one or more pools actually accept YOUR shares before you commit to mining there — pools vary in protocol and some silently reject. Returns a JSON verdict per pool (reachable / authorized / share_accepted / hashrate) and a `recommended` pool (the accepting one with the best hashrate). Use this to choose a pool, then call exfer_earn with it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Your payout address (64 lowercase hex).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Pool URLs to probe. Default: [ssl://ninjaraider.com:44913]."
+        },
+        "gpu": {
+          "type": "string",
+          "description": "GPU indices, e.g. '0'. Speeds up probing."
+        },
+        "probe_secs": {
+          "type": "integer",
+          "description": "Per-pool timeout seconds (default 35).",
+          "minimum": 5
+        },
+        "miner_bin": {
+          "type": "string",
+          "description": "Path to exfer-agent-miner."
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_earn",
+    "description": "Start earning EXFER for your own address by mining with spare CPU. EXFER is CPU-mineable, so you can fund yourself from compute alone — no human, bank, KYC, or pre-funded account, which no card/stablecoin/x402 rail can offer. Runs a lean fee-free miner in the background against a public pool; the pool credits your address for the work. Pair with exfer_earn_status / exfer_earn_stop. Idempotent: a second call while already mining returns the current status.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Your payout address (64 lowercase hex). Generate one with exfer_generate_address.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pool": {
+          "type": "string",
+          "description": "Stratum pool URL (ssl://host:port). Default: ssl://ninjaraider.com:44913"
+        },
+        "threads": {
+          "type": "integer",
+          "description": "CPU threads (0 = auto = cores - 1, or 0 when gpu is set).",
+          "minimum": 0
+        },
+        "gpu": {
+          "type": "string",
+          "description": "NVIDIA GPU indices to mine on, e.g. '0' or '0,1'. Needs a CUDA-enabled miner build."
+        },
+        "miner_bin": {
+          "type": "string",
+          "description": "Path to exfer-agent-miner. Default: $EXFER_AGENT_MINER_BIN or PATH."
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_earn_status",
+    "description": "Report the background miner: running, hashrate (H/s), pool-authorized, jobs received, and shares submitted/accepted/rejected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_earn_stop",
+    "description": "Stop the background miner.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_earn_pool_stats",
+    "description": "Read YOUR mining pool's view of your account: pool-side ACCRUED (unpaid) balance in EXFER, the pool's PAYOUT THRESHOLD (how much before it pays out), how much is left to reach it, your pool hashrate, and your workers. This is the pool's pending balance, NOT your on-chain wallet balance (use exfer_get_balance for that). Works for both the shared PPLNS pool ('exfer-pplns') and the SOLO pool ('exfer-solo') — pass `pool` to pick. Read-only; queries the pool's stats API directly (not walletd).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Your payout / miner address (64 lowercase hex) — the one you mine to.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pool": {
+          "type": "string",
+          "description": "Pool id on the stats API. 'exfer-pplns' (shared) or 'exfer-solo' (solo). Default: exfer-pplns."
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_bsc_get_address",
+    "description": "Return this wallet's BSC/EVM address (EIP-55) to fund with USDT/BNB for on-ramping into EXFER, or `created:false` if no BSC key exists yet (an operator must create one — this tool never creates keys). Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_bsc_get_balance",
+    "description": "Native BNB balance of this wallet's BSC address, as decimal-string wei (18 decimals; 1 BNB = 1e18 wei). Returns `bnb_wei` and `gas_reserve_wei` (wei to hold back for the BSC tx's own gas; spendable = bnb_wei - gas_reserve_wei). Use this to confirm a BNB/USDT deposit landed BEFORE quoting an on-ramp, and to verify the BNB you received after an exfer_to_bnb swap (the swap tools settle the BNB leg but do not echo your BSC balance). Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_pool_info",
+    "description": "Swap pool configuration + current rate/reserves. Use it to confirm a pool is available (walletd started with --swap-pool) and to check how much EXFER you can get before quoting. Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_get_quote",
+    "description": "Quote a cross-chain swap — NO funds move. `direction` is 'bnb_to_exfer' (on-ramp: receive EXFER) or 'exfer_to_bnb' (off-ramp: spend EXFER, receive BNB). `amount_in` is a decimal string in the INPUT asset's units: BNB for bnb_to_exfer, EXFER for exfer_to_bnb. `from` is always the EXFER-side address regardless of direction — the address that RECEIVES EXFER (bnb_to_exfer) or FUNDS the EXFER it spends (exfer_to_bnb); it is NOT the BNB source (the BNB leg always uses this wallet's own derived BSC address). Returns a swap record: `swap_id` (pass to exfer_swap_execute before `expires_at`), quoted `amount_out` (+ `amount_out_units` in smallest units), `fee_bps` (pool fee), and `network_fee_bnb` (the BSC gas estimate for the on-chain leg, informational — paid from your BSC balance, not added to amount_in). Some fields are direction-specific and may be null: bnb_to_exfer populates `pool_bsc_address` + `bsc_timeout_sec`; exfer_to_bnb populates `pool_exfer_pubkey` + `exfer_timeout_height`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "bnb_to_exfer",
+            "exfer_to_bnb"
+          ]
+        },
+        "amount_in": {
+          "type": "string",
+          "description": "Decimal amount in the input asset."
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "EXFER address for the EXFER leg (64 hex)."
+        },
+        "flow": {
+          "type": "string",
+          "enum": [
+            "v1",
+            "v2"
+          ],
+          "description": "Optional protocol flow. 'v2' (pool-locks-first; the default — the user locks once and walks away, the pool settles both legs and a buy is much faster) or 'v1' (legacy user-locks-first). Omit to use v2."
+        }
+      },
+      "required": [
+        "direction",
+        "amount_in",
+        "from"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_status",
+    "description": "Look up one swap's current lifecycle state by `swap_id`. Read-only. Poll this after exfer_swap_execute. Status lifecycle: quoted -> user_locked -> pool_locked -> claiming -> completed. TERMINAL states are 'completed' (success), 'refunded', and 'failed'; keep polling on any other value. Intermediate states can be skipped between polls (cross-chain settlement is fast). In the v2 (pool-locks-first) flow the local status goes quoted -> user_locked -> completed (the pool settles both legs), so don't wait for pool_locked/claiming there.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "swap_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "swap_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_list",
+    "description": "List swaps this wallet has initiated (the local journal). Read-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_execute",
+    "description": "Execute a quoted swap by `swap_id`. MOVES FUNDS — locks the input leg of the cross-chain atomic swap. Then poll exfer_swap_status until the status is terminal. No per-call human approval; bound your float. Status lifecycle: quoted -> user_locked -> pool_locked -> claiming -> completed. TERMINAL states are 'completed' (success), 'refunded', and 'failed'; keep polling on any other value. Intermediate states can be skipped between polls (cross-chain settlement is fast). In the v2 (pool-locks-first) flow the local status goes quoted -> user_locked -> completed (the pool settles both legs), so don't wait for pool_locked/claiming there.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "swap_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "swap_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_swap_refund",
+    "description": "Refund a stalled or expired swap by `swap_id` (recovery path). SPENDS a transaction to reclaim the locked input leg.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "swap_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "swap_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "exfer_check_update",
+    "description": "Check whether a newer exfer-mcp release is available on PyPI. Read-only: no wallet access, no spend, no walletd needed. Returns current/latest version, whether your running version was YANKED (a security recall — update promptly), and how to update. exfer-mcp NEVER auto-updates; updating is a deliberate version re-pin and never touches your wallet keystore/datadir. Call this when the user asks about updates, or proactively mention it if 'update_available' or 'current_version_yanked' is true.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+]

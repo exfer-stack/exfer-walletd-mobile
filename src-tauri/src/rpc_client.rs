@@ -122,6 +122,11 @@ fn scope_for_method(method: &str) -> Scope {
         // HTLC lifecycle moves funds — Spend. (Previously missing: fell through
         // to Read and walletd rejected with -32001.)
         | "htlc_lock" | "htlc_claim" | "htlc_reclaim"
+        // quote_issue signs a binding EXFER-QUOTE credential with a managed
+        // key (Spend-posture, even though it broadcasts nothing). exfer-mcp ran
+        // every call on the single spend-scope token, so the native tool layer
+        // must use Spend here too — Read would be rejected with -32001.
+        | "quote_issue"
         // Cross-chain swap: quoting reserves a preimage, execute/refund move
         // funds across both legs; bsc_send_bnb withdraws BNB — all Spend.
         | "swap_get_quote" | "swap_execute" | "swap_refund"
@@ -187,6 +192,22 @@ pub async fn forward_rpc(
     method: &str,
     params: Value,
 ) -> Result<Value, AppError> {
+    forward_rpc_with_timeout(client, conn, method, params, None).await
+}
+
+/// Like [`forward_rpc`] but lets the caller override the per-request HTTP
+/// timeout. The shared pinned client is built with a fixed 30 s timeout
+/// ([`pinned_client`]); the long-poll wait tools (`wait_for_tx` /
+/// `wait_for_payment`) hold the connection open for up to `timeout_secs`
+/// (clamped server-side at 600 s), so they pass a larger value here to keep
+/// the HTTP read from firing before walletd's own wait completes.
+pub async fn forward_rpc_with_timeout(
+    client: &reqwest::Client,
+    conn: &ConnectionInfo,
+    method: &str,
+    params: Value,
+    timeout: Option<std::time::Duration>,
+) -> Result<Value, AppError> {
     let scope = scope_for_method(method);
     let body = json!({
         "jsonrpc": "2.0",
@@ -195,10 +216,15 @@ pub async fn forward_rpc(
         "params":  params,
     });
 
-    let resp: Value = client
+    let mut req = client
         .post(&conn.base_url)
         .bearer_auth(conn.token_for(scope))
-        .json(&body)
+        .json(&body);
+    if let Some(t) = timeout {
+        req = req.timeout(t);
+    }
+
+    let resp: Value = req
         .send()
         .await
         .map_err(|e| AppError::Transport(e.to_string()))?

@@ -10,6 +10,7 @@ mod mcp_registry;
 mod mcp_supervisor;
 mod miner;
 mod mnemonic;
+mod native_tools;
 mod rpc_client;
 mod secrets;
 mod walletd_supervisor;
@@ -508,7 +509,7 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
 /// it can't talk to a public host. These calls run server-side (Rust) so the
 /// webview never makes them itself (same rule as walletd) and remote CORS
 /// headers don't apply.
-fn public_https_client() -> Result<reqwest::Client, String> {
+pub(crate) fn public_https_client() -> Result<reqwest::Client, String> {
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls = rustls::ClientConfig::builder()
