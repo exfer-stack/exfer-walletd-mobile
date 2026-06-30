@@ -97,6 +97,21 @@ function fmtUnits(raw: string | undefined, decimals: number, frac = 4): string {
   }
 }
 
+/** Parse a human BNB decimal string (e.g. "0.0004") to wei (1e18) as exact
+ *  integer BigInt math — never a float, so there's no rounding at the edges.
+ *  The inverse of fmtUnits. Returns 0n for an empty/unparseable string. */
+function parseBnbWei(human: string): bigint {
+  const s = (human ?? "").trim();
+  if (!s) return 0n;
+  const [w = "0", f = ""] = s.split(".");
+  const frac = (f + "000000000000000000").slice(0, 18); // pad/truncate to 18dp
+  try {
+    return BigInt(w || "0") * 1_000_000_000_000_000_000n + BigInt(frac || "0");
+  } catch {
+    return 0n;
+  }
+}
+
 /** Light haptic feedback where supported (no-op on desktop / unsupported). */
 function buzz(pattern: number | number[]) {
   try {
@@ -208,6 +223,14 @@ function mmss(sec: number): string {
 }
 
 const AMOUNT_RE = /^\d+(\.\d{1,18})?$/;
+
+// Gas held back for a buy's BSC HTLC-lock transaction. BNB is the gas token on
+// BSC, so a buy must keep enough BNB to PAY for the lock tx ON TOP OF the amount
+// it locks. ~0.0003 BNB covers a ~100k-gas lock at BSC's ~1–5 gwei. Without this
+// reserve a user could set the amount to their entire BNB balance, the pool would
+// front its EXFER lock, and the user's BNB lock could never be funded — stranding
+// the swap until it auto-refunds. (buyMax already holds back 0.0005, a hair more.)
+const BNB_GAS_RESERVE_WEI = 300000000000000n; // 0.0003 BNB
 
 interface PoolInfo {
   mid: number;
@@ -581,6 +604,20 @@ export function SwapSheet({
   const belowMin = amountValid && minAmount > 0 && Number(amount) < minAmount;
   const minUnit = sendUnit;
 
+  // Buy gas guard (item [4]): a buy must keep enough BNB to PAY the BSC lock tx's
+  // gas ON TOP OF the amount it locks. When the typed amount leaves no room for
+  // BNB_GAS_RESERVE_WEI, block Review (and say why) rather than letting it strand
+  // at execute. Mirrors the belowMin gate. doExecute re-checks as the backstop.
+  const buyGasShort =
+    !sell &&
+    bscBal != null &&
+    amountValid &&
+    (() => {
+      let bal = 0n;
+      try { bal = BigInt(bscBal.bnb); } catch { return false; }
+      return bal < parseBnbWei(amount) + BNB_GAS_RESERVE_WEI;
+    })();
+
   // ── Consolidated fees (item [4]) ──
   // The "Fees ≈ $X" chip = ONLY the money that actually leaves the user: the
   // liquidity fee (to the pool) + the on-chain network fee. Price impact is NOT a
@@ -684,6 +721,20 @@ export function SwapSheet({
 
   async function doExecute() {
     if (!quote) return;
+    // Buy guard: a buy LOCKS BNB on BSC and must ALSO pay that lock tx's gas (BNB
+    // is the gas token). If the amount eats the whole balance there's nothing left
+    // to send the lock — the pool fronts its EXFER, the user's BNB lock can never
+    // be funded, and the swap strands until it auto-refunds. Block it BEFORE we
+    // commit (and before biometric), never after the pool has locked.
+    if (direction === "bnb_to_exfer" && bscBal) {
+      let balanceWei = 0n;
+      try { balanceWei = BigInt(bscBal.bnb); } catch { balanceWei = 0n; }
+      const amountWei = parseBnbWei(amount);
+      if (balanceWei < amountWei + BNB_GAS_RESERVE_WEI) {
+        setErr(t("swap.insufficientBnbGas"));
+        return;
+      }
+    }
     buzz(10);
     const bio = await biometricStatus();
     if (bio.available) {
@@ -1065,7 +1116,7 @@ export function SwapSheet({
             className="btn btn-block"
             // While the buy side still needs BNB the amount can't be acted on —
             // keep Review truly inert (not just dimmed) until funded.
-            disabled={busy || !amountValid || needsFunding || noExferToSell || belowMin}
+            disabled={busy || !amountValid || needsFunding || noExferToSell || belowMin || buyGasShort}
             onClick={getQuote}
           >
             {busy ? <Spinner /> : t("swap.review")}
@@ -1261,6 +1312,11 @@ export function SwapSheet({
             the daemon's reject (item [6]). Review is disabled in the footer. */}
         {belowMin && (
           <div style={{ color: "#fbbf24", fontSize: 12.5, lineHeight: 1.5, marginBottom: 4 }}>{t("err.amountTooSmall")}</div>
+        )}
+        {/* Buy amount leaves no BNB for the lock tx's gas — same treatment as
+            belowMin: an inline reason, Review disabled in the footer (item [4]). */}
+        {buyGasShort && !belowMin && (
+          <div style={{ color: "#fbbf24", fontSize: 12.5, lineHeight: 1.5, marginBottom: 4 }}>{t("swap.insufficientBnbGas")}</div>
         )}
         <label className="eyebrow">{sell ? t("swap.from") : t("swap.receiveTo")}</label>
         <AddrPicker items={pickList} value={fromAddr} onChange={setFrom} />
