@@ -249,6 +249,13 @@ fn build_walletd_config(datadir: &std::path::Path, desktop_cfg: &DesktopConfig) 
         spend_cap_per_tx: None,
         spend_cap_per_period: None,
         spend_cap_period_secs: 86_400,
+        // New in the swap-pool-hardening walletd (b84af8a). Reconcile on
+        // restart so the embedded walletd never re-spends a UTXO it already
+        // locked before an app restart (mempool-seeded InFlightUtxos) — a real
+        // robustness win for the user's own swap locks. The lock watchdog
+        // (rebroadcast evicted locks) is a pool-operator concern, off here.
+        inflight_reconcile: true,
+        lock_watchdog: false,
     }
 }
 

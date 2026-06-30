@@ -56,7 +56,7 @@ exfer-stratum      = { git = "https://github.com/exfer-stack/exfer-agent-miner",
 # swap-recovery hotfixes (settle-over-refund + swap_refresh RPC, was 8b4d396) and
 # the stranded-lock journal-independent recovery (5ad5ca7). Keep desktop on the
 # SAME rev.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "9b7a818ee531c19a2920cc28ece6359025991841" }
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "b84af8adf00b1cd216e32e8a32dddc4a9040ffd2" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables

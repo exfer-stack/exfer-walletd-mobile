@@ -2449,7 +2449,7 @@ dependencies = [
 [[package]]
 name = "exfer-walletd"
 version = "1.15.2"
-source = "git+https://github.com/exfer-stack/exfer-walletd?rev=9b7a818ee531c19a2920cc28ece6359025991841#9b7a818ee531c19a2920cc28ece6359025991841"
+source = "git+https://github.com/exfer-stack/exfer-walletd?rev=b84af8adf00b1cd216e32e8a32dddc4a9040ffd2#b84af8adf00b1cd216e32e8a32dddc4a9040ffd2"
 dependencies = [
  "alloy",
  "anyhow",
