@@ -6,5 +6,5 @@
 
 ## What's new
 
-- The AI assistant now prompts you to add your AI provider key in Settings before it can chat — shown as a clean banner with an "Open settings" button, not a confusing placeholder. Your balances, transfers, and swaps were always real; this only changes the assistant.
-- Layout fixes: the assistant header no longer sits under the phone's status bar, and the bottom tab bar is no longer covered by the system navigation bar, so everything is easy to tap.
+- The in-wallet AI assistant's tools now run fully on-device. Previously the assistant tried to launch a helper process that isn't available on phones, so some of its actions could fail; they're now native and reliable.
+- More resilient cross-chain swaps: the embedded wallet engine now recovers its in-flight locks after a restart, so a swap interrupted by an app restart won't get stuck or accidentally re-spend, and swap errors are reported more precisely.
