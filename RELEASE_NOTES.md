@@ -6,5 +6,5 @@
 
 ## What's new
 
-- The in-wallet AI assistant's tools now run fully on-device. Previously the assistant tried to launch a helper process that isn't available on phones, so some of its actions could fail; they're now native and reliable.
-- More resilient cross-chain swaps: the embedded wallet engine now recovers its in-flight locks after a restart, so a swap interrupted by an app restart won't get stuck or accidentally re-spend, and swap errors are reported more precisely.
+- AI assistant screen polish: the message box no longer clips the bottom of your text, the Send button is sized to match the input, short chats no longer leave a big empty gap, and the header now matches the rest of the app.
+- New: Diagnostics. Settings now has a "Debug logs" section to Copy or Export the app's recent logs — so if a swap or anything else misbehaves, you can hand over an exact log instead of guessing.
