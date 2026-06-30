@@ -329,9 +329,14 @@ export function AgentTab({ lang }: { lang: Lang }) {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
+    // The field is border-box; scrollHeight excludes the 1px top+bottom border, so
+    // height=scrollHeight leaves the content box 2px short and shaves the bottom of
+    // CJK glyphs (full em box) — Latin x-height hides it. Add the border back.
+    const cs = getComputedStyle(el);
+    const bw = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
     const max = 132; // ~6 rows at the field's line-height
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
-    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+    el.style.height = `${Math.min(el.scrollHeight + bw, max)}px`;
+    el.style.overflowY = el.scrollHeight + bw > max ? "auto" : "hidden";
   }, [input]);
 
   const patchLast = useCallback((fn: (t: Turn) => void) => {
@@ -507,8 +512,9 @@ export function AgentTab({ lang }: { lang: Lang }) {
 
   return (
     <div className="agent-tab" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ padding: "calc(6px + max(var(--safe-top), 28px)) 14px 0" }}>
+      <div style={{ padding: "calc(var(--safe-top) + 10px) 20px 0" }}>
         <AppBar
+          large
           title={t("nav.agent")}
           right={
             <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
@@ -528,9 +534,9 @@ export function AgentTab({ lang }: { lang: Lang }) {
           }
         />
       </div>
-      <div ref={scrollRef} className="agent-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 12px 12px" }}>
+      <div ref={scrollRef} className="agent-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 20px 12px" }}>
         {turns.length === 0 && (
-          <div style={{ textAlign: "center", paddingTop: "16%" }}>
+          <div style={{ textAlign: "center", margin: "auto 0" }}>
             <h2 className="title-lg">{t("agent.empty.title")}</h2>
             <p className="dim" style={{ margin: "8px 0 6px", fontSize: "14px", lineHeight: 1.5 }}>{t("agent.empty.subtitle")}</p>
             <p className="faint" style={{ margin: "0 8px 18px", fontSize: "12.5px", lineHeight: 1.5 }}>{t("agent.empty.safety")}</p>
@@ -552,11 +558,12 @@ export function AgentTab({ lang }: { lang: Lang }) {
           </div>
         )}
 
-        {truncated && turns.length > 0 && (
-          <p className="faint" style={{ textAlign: "center", fontSize: "12px", margin: "8px 0 2px" }} data-testid="agent-trimmed">{t("agent.conv.trimmed")}</p>
-        )}
-
-        {turns.map((tn, i) =>
+        {turns.length > 0 && (
+          <div style={{ marginTop: "auto" }}>
+            {truncated && (
+              <p className="faint" style={{ textAlign: "center", fontSize: "12px", margin: "8px 0 2px" }} data-testid="agent-trimmed">{t("agent.conv.trimmed")}</p>
+            )}
+            {turns.map((tn, i) =>
           tn.role === "user" ? (
             <div key={i} style={{ textAlign: "right", margin: "8px 0" }}>
               <span className="card" style={{ display: "inline-block", padding: "8px 12px", textAlign: "left" }}>{tn.text}</span>
@@ -662,6 +669,8 @@ export function AgentTab({ lang }: { lang: Lang }) {
               })}
             </div>
           ),
+            )}
+          </div>
         )}
       </div>
 
@@ -682,7 +691,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
         </div>
       )}
 
-      <div className="agent-composer" style={{ display: "flex", gap: "8px", alignItems: "flex-end", padding: "12px 12px calc(12px + env(safe-area-inset-bottom))" }}>
+      <div className="agent-composer" style={{ display: "flex", gap: "8px", alignItems: "flex-end", padding: "12px 20px calc(12px + env(safe-area-inset-bottom))" }}>
         {needsKey ? (
           // No LLM key in the installed app: a clean prompt (message + CTA) that
           // fills the row, instead of a dead disabled input + a cramped button with
@@ -696,7 +705,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
             <textarea
               ref={inputRef}
               className="field"
-              style={{ flex: 1, resize: "none", lineHeight: 1.4 }}
+              style={{ flex: 1, resize: "none" }}
               rows={1}
               placeholder={t("agent.composer.placeholder")}
               value={input}

@@ -503,6 +503,13 @@ body {
 .agent-card .md-table-wrap { background: var(--surface); border-color: var(--border); }
 /* Composer row: a quiet top divider + the page bg so it floats above the scroll. */
 .agent-composer { border-top: 1px solid var(--border-soft); background: var(--bg); }
+/* One-row textarea floor: the field is border-box, so a collapsed row is line(22.4)
+   + padding(28) + border(2) ≈ 52px. The JS auto-resize adds the border back; this is
+   the static floor so the placeholder/last line never clips even before it runs. */
+.agent-composer textarea.field { min-height: 52px; }
+/* Send/Stop/Regenerate: height-match the one-row input instead of the full-size CTA
+   (padding 15/20, 16px) which read oversized next to it. flex-end keeps them flush. */
+.agent-composer .btn { height: 52px; padding: 0 16px; font-size: 15px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; }
 /* Suggestion chips: pressable cards, not full-width stadium pills. */
 .agent-chip {
   background: var(--surface);
@@ -516,8 +523,10 @@ body {
 .agent-chip:active { background: var(--surface-2); transform: scale(.98); }
 
 /* The chat scroll area: hide the OS scrollbar (the rest of the app does too) and
-   never allow a horizontal scrollbar — long tool output / addresses must wrap. */
-.agent-scroll { scrollbar-width: none; overflow-x: hidden; }
+   never allow a horizontal scrollbar — long tool output / addresses must wrap.
+   Flex column so the message wrapper's margin-top:auto can bottom-anchor a short
+   conversation (no dead void) while a long one still scrolls, top reachable. */
+.agent-scroll { display: flex; flex-direction: column; scrollbar-width: none; overflow-x: hidden; }
 .agent-scroll::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ── toasts ─────────────────────────────────────────────────────── */
