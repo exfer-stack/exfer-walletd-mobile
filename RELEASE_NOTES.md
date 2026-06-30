@@ -6,5 +6,4 @@
 
 ## What's new
 
-- AI assistant screen polish: the message box no longer clips the bottom of your text, the Send button is sized to match the input, short chats no longer leave a big empty gap, and the header now matches the rest of the app.
-- New: Diagnostics. Settings now has a "Debug logs" section to Copy or Export the app's recent logs — so if a swap or anything else misbehaves, you can hand over an exact log instead of guessing.
+- Buying EXFER now checks, before it starts, that your BNB covers the amount PLUS the small network fee needed to lock it — with a clear message if it doesn't. Previously you could start a buy that spent your whole BNB balance, leaving nothing for gas, so the lock could never go through and the swap got stuck waiting. (No funds were ever at risk — an unlocked buy simply can't complete.)
