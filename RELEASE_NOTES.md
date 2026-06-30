@@ -6,4 +6,4 @@
 
 ## What's new
 
-- Buying EXFER now checks, before it starts, that your BNB covers the amount PLUS the small network fee needed to lock it — with a clear message if it doesn't. Previously you could start a buy that spent your whole BNB balance, leaving nothing for gas, so the lock could never go through and the swap got stuck waiting. (No funds were ever at risk — an unlocked buy simply can't complete.)
+- Clearer guidance while a buy is being set up: the app now reminds you to keep it open until your payment is locked — closing or backgrounding it during that step could leave the swap waiting. The time estimate is also more realistic (1–3 minutes). Your funds are never at risk; a buy that hasn't locked simply can't complete.
