@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { copyText } from "../../lib/clipboard";
+import { pushLog } from "../../lib/debugLog";
 import { useWallet } from "../../lib/wallet";
 import { useToast } from "../../lib/toast";
 import { rpc, formatBalanceCompact, splitBalanceCompact } from "../../lib/rpc";
@@ -622,10 +623,18 @@ export function SwapSheet({
         // leave, and the pool settles both legs. Requires a v2-capable walletd.
         flow: "v2",
       });
+      pushLog("info", "swap: quote received", {
+        swap_id: q.swap_id,
+        direction,
+        amount_in: amount.trim(),
+        amount_out: q.amount_out,
+        flow: q.flow,
+      });
       setQuote(q);
       setImpactAck(false);
       setStep(2);
     } catch (e) {
+      pushLog("error", "swap: quote failed", { direction, amount_in: amount.trim(), error: String((e as { message?: string })?.message ?? e) });
       setErr(humanizeError(e));
     } finally {
       setBusy(false);
@@ -688,6 +697,7 @@ export function SwapSheet({
     }
     setBusy(true);
     setErr(null);
+    pushLog("info", "swap: execute", { swap_id: quote.swap_id, direction, flow: quote.flow });
     try {
       const r = await rpc<SwapRec>("swap_execute", { swap_id: quote.swap_id });
       // Snapshot the REALIZED EXFER/USD for THIS swap (amount_out/amount_in ×
@@ -713,6 +723,7 @@ export function SwapSheet({
           : t("swap.startedBody"),
       );
     } catch (e) {
+      pushLog("error", "swap: execute failed", { swap_id: quote.swap_id, error: String((e as { message?: string })?.message ?? e) });
       // An expired quote is recoverable: re-quote IN PLACE on the review step
       // (don't bounce to step 1 and lose context). The countdown should normally
       // refresh before this fires; this is the backstop.
@@ -763,6 +774,9 @@ export function SwapSheet({
   // a resumed one).
   const watchId = quote?.swap_id ?? resumeSwapId;
   const pollRef = useRef<number | null>(null);
+  // Last status we logged for this swap, so we record each transition once
+  // (not every 2s poll) — that's what makes a stuck/failed swap legible later.
+  const loggedStatusRef = useRef<string | null>(null);
   useEffect(() => {
     if (step !== 3 || !watchId) return;
     let cancelled = false;
@@ -770,6 +784,10 @@ export function SwapSheet({
       try {
         const r = await rpc<SwapRec>("swap_status", { swap_id: watchId });
         if (cancelled) return;
+        if (r.status !== loggedStatusRef.current) {
+          loggedStatusRef.current = r.status;
+          pushLog("info", "swap: status", { swap_id: watchId, status: r.status, error: r.error ?? undefined });
+        }
         setLive(r);
         if (["completed", "refunded", "failed"].includes(r.status)) {
           refresh();

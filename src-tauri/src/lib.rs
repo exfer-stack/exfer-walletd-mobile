@@ -24,7 +24,7 @@ use mcp_supervisor::{
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
-    write_desktop_config, AppCtx, BootstrapStatus, KEYRING_SERVICE,
+    write_desktop_config, AppCtx, BootstrapStatus, LogBuffer, LogTeeMaker, KEYRING_SERVICE,
 };
 
 #[tauri::command]
@@ -447,6 +447,27 @@ async fn set_indexer_config(
     cfg.indexer_rpc = if trimmed.is_empty() { None } else { Some(trimmed) };
     write_desktop_config(&datadir, &cfg).map_err(|e| format!("persisting config: {e}"))?;
     restart(&ctx).await.map_err(|e| e.to_user_string())
+}
+
+/// Diagnostic dump for "debug log export": the app version + platform, then the
+/// embedded walletd's captured log (the shared `tracing` stream, ring-buffered
+/// in [`LogBuffer`]). The frontend pairs this with its own console ring buffer
+/// (`getDebugLog()`) so a user can copy / share one self-contained report.
+/// Read-only; never touches keys or funds.
+#[tauri::command]
+fn get_debug_logs(logs: State<'_, LogBuffer>) -> Result<String, String> {
+    let version = env!("CARGO_PKG_VERSION");
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let body = logs.snapshot();
+    let body = if body.is_empty() {
+        "(no walletd log captured yet)".to_string()
+    } else {
+        body
+    };
+    Ok(format!(
+        "app version: {version}\nplatform: {os}/{arch}\n\n=== walletd log ===\n{body}"
+    ))
 }
 
 /// Wipe everything on this device: stop the embedded walletd, delete the
@@ -951,12 +972,19 @@ async fn agent_confirm_consent(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Capture the walletd/app `tracing` stream into a bounded ring buffer for
+    // "debug log export" (Settings → Diagnostics → get_debug_logs), while still
+    // printing to stderr. walletd runs in-process, so this shared stream is the
+    // in-process equivalent of capturing a subprocess's stdout/stderr.
+    let log_buffer = LogBuffer::new();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,exfer_walletd=info,exfer_walletd_desktop=debug".into()),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(LogTeeMaker {
+            buf: log_buffer.clone(),
+        })
         .init();
 
     #[allow(unused_mut)]
@@ -973,6 +1001,8 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_barcode_scanner::init());
         builder = builder.plugin(tauri_plugin_biometric::init());
     }
+    // Make the captured-log ring buffer readable by the `get_debug_logs` command.
+    builder = builder.manage(log_buffer);
     builder
         .setup(|app| {
             // Resolve the per-platform app-data dir and stash it in the
@@ -1035,6 +1065,7 @@ pub fn run() {
             set_node_rpc,
             get_indexer_config,
             set_indexer_config,
+            get_debug_logs,
             reset_wallet,
             export_wallet_key,
             import_wallet_key,

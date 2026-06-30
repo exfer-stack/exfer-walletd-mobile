@@ -16,7 +16,10 @@ import {
   exportVaultFile,
   importVaultFile,
   formatExfer,
+  getDebugLogs,
 } from "../lib/rpc";
+import { getDebugLog } from "../lib/debugLog";
+import { copyText } from "../lib/clipboard";
 import { saveBytes } from "../lib/fsfile";
 import { humanizeError } from "../lib/errors";
 import { useT, LANGS, type Lang } from "../lib/i18n";
@@ -159,6 +162,45 @@ export function Settings({
       toast.success(t("set.exported"), t("set.exportedJson"));
     } catch (e) {
       toast.error(t("set.exportLabels"), humanizeError(e));
+    }
+  }
+
+  // Build one self-contained diagnostic report: the frontend console ring
+  // buffer + the walletd-side report (version / platform / walletd log). The
+  // walletd half is Tauri-only and degrades to a note in browser-dev.
+  async function buildDebugReport(): Promise<string> {
+    const front = getDebugLog();
+    let walletd: string;
+    try {
+      walletd = await getDebugLogs();
+    } catch (e) {
+      walletd = `(walletd log unavailable: ${humanizeError(e)})`;
+    }
+    return [
+      `exfer wallet debug report — ${new Date().toISOString()}`,
+      `app v${APP_VERSION}`,
+      "",
+      "=== app (frontend) log ===",
+      front || "(empty)",
+      "",
+      walletd,
+    ].join("\n");
+  }
+  async function copyDebug() {
+    try {
+      const ok = await copyText(await buildDebugReport());
+      if (ok) toast.success(t("set.dbgCopied"), t("set.dbgCopiedBody"));
+      else toast.error(t("set.dbgCopyFail"));
+    } catch (e) {
+      toast.error(t("set.dbgCopyFail"), humanizeError(e));
+    }
+  }
+  async function exportDebug() {
+    try {
+      const loc = await download(await buildDebugReport(), `exfer-debug-${today()}.txt`);
+      toast.success(t("set.dbgExported"), t("set.dbgExportedBody", { loc }));
+    } catch (e) {
+      toast.error(t("set.dbgExportFail"), humanizeError(e));
     }
   }
 
@@ -346,6 +388,32 @@ export function Settings({
             value={String(status?.in_flight_transfers ?? 0)}
             last
           />
+        </div>
+
+        {/* Diagnostics — capture app + walletd logs to copy or share for support. */}
+        <Section label={t("set.secDebug")} />
+        <div className="card" style={{ padding: 16, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 13 }}>
+            <span style={iconBox}>
+              <Icon name="info" size={20} />
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: "block", fontSize: 15.5, fontWeight: 500 }}>
+                {t("set.debugLogs")}
+              </span>
+              <span className="faint" style={{ display: "block", fontSize: 12.5, marginTop: 2, lineHeight: 1.5 }}>
+                {t("set.debugLogsSub")}
+              </span>
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-secondary btn-sm btn-block" style={{ flex: 1 }} onClick={copyDebug}>
+              {t("set.dbgCopy")}
+            </button>
+            <button className="btn btn-sm btn-block" style={{ flex: 1 }} onClick={exportDebug}>
+              {t("set.dbgExport")}
+            </button>
+          </div>
         </div>
 
         {/* Danger */}

@@ -130,6 +130,17 @@ export function resetWallet(): Promise<BootstrapStatus> {
   return invoke<BootstrapStatus>("reset_wallet");
 }
 
+/** The walletd-side debug report: app version + platform + the embedded
+ *  walletd's captured log ring buffer. Tauri-only — in browser-dev there is no
+ *  embedded walletd, so return a short note instead of crashing on the missing
+ *  command. The frontend pairs this with its own console buffer (getDebugLog). */
+export function getDebugLogs(): Promise<string> {
+  if (devmock.isActive()) {
+    return Promise.resolve("(browser dev — no embedded walletd log captured)");
+  }
+  return invoke<string>("get_debug_logs");
+}
+
 /// Export one address as an official Exfer `wallet.key` (EXFK) file,
 /// encrypted with `exportPassword`. `walletPassword` authorizes pulling
 /// the secret from walletd; Rust builds + hex-encodes the EXFK blob and we

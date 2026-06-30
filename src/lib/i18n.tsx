@@ -1094,6 +1094,19 @@ const EN = {
   "lock.useBiometric": "Use fingerprint / Face ID",
   "lock.pwLabel": "Wallet password",
   "lock.pwWrong": "Incorrect password. Try again.",
+
+  // settings — diagnostics / debug logs
+  "set.secDebug": "Diagnostics",
+  "set.debugLogs": "Debug logs",
+  "set.debugLogsSub": "Capture recent app & walletd logs to copy or share for support.",
+  "set.dbgCopy": "Copy",
+  "set.dbgExport": "Export",
+  "set.dbgCopied": "Logs copied",
+  "set.dbgCopiedBody": "Paste them into your support message.",
+  "set.dbgCopyFail": "Couldn't copy logs",
+  "set.dbgExported": "Logs exported",
+  "set.dbgExportedBody": "Saved to {loc}.",
+  "set.dbgExportFail": "Couldn't export logs",
 } as const;
 
 export type MsgKey = keyof typeof EN;
@@ -2109,6 +2122,19 @@ const ZH: Record<MsgKey, string> = {
   "lock.useBiometric": "用指纹 / 面容解锁",
   "lock.pwLabel": "钱包密码",
   "lock.pwWrong": "密码错误，请重试。",
+
+  // settings — diagnostics / debug logs
+  "set.secDebug": "诊断",
+  "set.debugLogs": "调试日志",
+  "set.debugLogsSub": "导出最近的 App 与 walletd 日志，便于复制或分享给客服排查。",
+  "set.dbgCopy": "复制",
+  "set.dbgExport": "导出",
+  "set.dbgCopied": "日志已复制",
+  "set.dbgCopiedBody": "可粘贴到反馈消息中。",
+  "set.dbgCopyFail": "复制日志失败",
+  "set.dbgExported": "日志已导出",
+  "set.dbgExportedBody": "已保存到 {loc}。",
+  "set.dbgExportFail": "导出日志失败",
 };
 
 const DICT: Record<Lang, Record<MsgKey, string>> = { en: EN, zh: ZH };

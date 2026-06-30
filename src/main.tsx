@@ -1,3 +1,6 @@
+// Side-effect import FIRST: patches console.* into the debug-log ring buffer
+// (Settings → Diagnostics) before any other module can log at startup.
+import "./lib/debugLog";
 import React from "react";
 import ReactDOM from "react-dom/client";
 // Self-hosted (offline, Tauri-friendly) typefaces: Geist for UI, Geist Mono

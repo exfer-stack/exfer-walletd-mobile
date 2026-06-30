@@ -14,8 +14,10 @@
 //! variant it gets back.
 
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use exfer_walletd::config::Config;
 use exfer_walletd::sse_client::WalletNudge;
@@ -63,6 +65,105 @@ TiAd+cw7MH3pK+bxkCf4I038dROruAaFLw0=
 // data, so no bearer token is needed — matching the node's open posture.
 pub const DEFAULT_INDEXER_RPC: &str = "http://64.176.231.198:9335";
 pub const DESKTOP_CONFIG_FILE: &str = "desktop-config.json";
+
+/// Cap on the captured-log ring buffer (lines). ~500 is enough to hold a stuck
+/// swap's whole trail while staying small in memory.
+const LOG_RING_CAP: usize = 500;
+
+/// A bounded ring buffer of formatted log lines, shared between the tracing
+/// writer (producer) and the `get_debug_logs` command (consumer). Held in Tauri
+/// app state.
+///
+/// NB: the embedded walletd is NOT a child process — it runs in-process via
+/// `exfer_walletd::run_embedded`, so there is no child stdout/stderr to pipe.
+/// walletd (and this supervisor) log through `tracing`, so the in-process
+/// equivalent of "capture the subprocess's stdio" is to tee the shared tracing
+/// stream into this buffer (see [`LogTee`] / [`LogTeeMaker`], wired up in
+/// `lib.rs::run`). A std `Mutex` (not tokio) is used because the tracing writer
+/// is synchronous and the lock is never held across an `.await`.
+#[derive(Clone)]
+pub struct LogBuffer {
+    lines: Arc<StdMutex<VecDeque<String>>>,
+}
+
+impl LogBuffer {
+    pub fn new() -> Self {
+        Self {
+            lines: Arc::new(StdMutex::new(VecDeque::with_capacity(LOG_RING_CAP))),
+        }
+    }
+
+    /// Append one line, evicting the oldest once the cap is reached. A poisoned
+    /// lock is swallowed — log capture must never panic the app.
+    pub fn push_line(&self, line: String) {
+        if let Ok(mut q) = self.lines.lock() {
+            while q.len() >= LOG_RING_CAP {
+                q.pop_front();
+            }
+            q.push_back(line);
+        }
+    }
+
+    /// Snapshot the buffer oldest-first, joined by newlines.
+    pub fn snapshot(&self) -> String {
+        self.lines
+            .lock()
+            .map(|q| q.iter().cloned().collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default()
+    }
+}
+
+impl Default for LogBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A `std::io::Write` that tees every formatted tracing line into a
+/// [`LogBuffer`] AND to stderr (so `adb logcat` / a terminal still see them,
+/// preserving the prior `with_writer(stderr)` behaviour).
+pub struct LogTee {
+    buf: LogBuffer,
+}
+
+impl std::io::Write for LogTee {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        // Keep printing to stderr exactly as before.
+        let _ = std::io::stderr().write_all(data);
+        // The fmt formatter writes one formatted event (terminated by '\n') per
+        // call; split defensively so a multi-line message still lands as
+        // separate buffer entries.
+        if let Ok(s) = std::str::from_utf8(data) {
+            for line in s.split('\n') {
+                let line = line.trim_end_matches('\r');
+                if !line.is_empty() {
+                    self.buf.push_line(line.to_string());
+                }
+            }
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stderr().flush()
+    }
+}
+
+/// `MakeWriter` adapter so a [`LogBuffer`] can back `tracing_subscriber::fmt`'s
+/// `.with_writer(..)`. Each event gets a fresh [`LogTee`] over the shared buffer.
+#[derive(Clone)]
+pub struct LogTeeMaker {
+    pub buf: LogBuffer,
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogTeeMaker {
+    type Writer = LogTee;
+    fn make_writer(&'a self) -> Self::Writer {
+        LogTee {
+            buf: self.buf.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
