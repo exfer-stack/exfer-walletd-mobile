@@ -18,9 +18,7 @@ mod walletd_supervisor;
 use serde_json::Value;
 use tauri::{Manager, State};
 
-use mcp_supervisor::{
-    mcp_call_tool, mcp_list_tools, mcp_start, McpCtx,
-};
+use mcp_supervisor::{mcp_call_tool, mcp_list_tools, mcp_start, McpCtx};
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
@@ -179,8 +177,7 @@ async fn unlock_with_password(
 #[tauri::command]
 async fn validate_vault(vault_hex: String, file_password: String) -> Result<usize, String> {
     let blob = hex::decode(&vault_hex).map_err(|_| "vault file not valid hex".to_string())?;
-    exfer_walletd::store::validate_vault(&blob, file_password.as_bytes())
-        .map_err(|e| e.to_string())
+    exfer_walletd::store::validate_vault(&blob, file_password.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -235,7 +232,9 @@ async fn address_balance(
     let v = rpc_client::forward_rpc(client, conn, "get_balance", params)
         .await
         .ok()?;
-    v.get("balance").and_then(|b| b.as_u64()).or_else(|| v.as_u64())
+    v.get("balance")
+        .and_then(|b| b.as_u64())
+        .or_else(|| v.as_u64())
 }
 
 /// Preview the two addresses a 24-word phrase maps to (standard BIP39 vs the
@@ -406,10 +405,7 @@ async fn get_node_rpc(ctx: State<'_, AppCtx>) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn set_node_rpc(
-    ctx: State<'_, AppCtx>,
-    url: String,
-) -> Result<BootstrapStatus, String> {
+async fn set_node_rpc(ctx: State<'_, AppCtx>, url: String) -> Result<BootstrapStatus, String> {
     let url = url.trim().to_string();
     if url.is_empty() {
         return Err("node_rpc URL must not be empty".into());
@@ -448,7 +444,11 @@ async fn set_indexer_config(
     let mut cfg = read_desktop_config(&datadir);
     // Blank ⇒ store None so effective_indexer_rpc falls back to the default.
     let trimmed = rpc.trim().to_string();
-    cfg.indexer_rpc = if trimmed.is_empty() { None } else { Some(trimmed) };
+    cfg.indexer_rpc = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
     write_desktop_config(&datadir, &cfg).map_err(|e| format!("persisting config: {e}"))?;
     restart(&ctx).await.map_err(|e| e.to_user_string())
 }
@@ -511,7 +511,10 @@ async fn reset_wallet(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String>
     // Only fail the whole wipe if something we actually needed gone is still
     // there — a stray un-removable temp file shouldn't block a reset.
     if !failures.is_empty() {
-        return Err(format!("could not fully wipe wallet data: {}", failures.join("; ")));
+        return Err(format!(
+            "could not fully wipe wallet data: {}",
+            failures.join("; ")
+        ));
     }
 
     // 3. Clear the keychain passphrase (best-effort; missing entry is fine).
@@ -560,7 +563,9 @@ async fn get_market_price() -> Result<String, String> {
     if !resp.status().is_success() {
         return Err(format!("price endpoint returned {}", resp.status()));
     }
-    resp.text().await.map_err(|e| format!("reading price body: {e}"))
+    resp.text()
+        .await
+        .map_err(|e| format!("reading price body: {e}"))
 }
 
 /// Fetch OHLC candles for the EXFER market (price chart). Returns the raw JSON
@@ -588,7 +593,9 @@ async fn get_market_klines(interval: String, limit: u32) -> Result<String, Strin
     if !resp.status().is_success() {
         return Err(format!("klines endpoint returned {}", resp.status()));
     }
-    resp.text().await.map_err(|e| format!("reading klines body: {e}"))
+    resp.text()
+        .await
+        .map_err(|e| format!("reading klines body: {e}"))
 }
 
 /// Fetch the BNB/USDT spot price from Binance's public API. Returns the raw
@@ -606,7 +613,9 @@ async fn get_bnb_price() -> Result<String, String> {
     if !resp.status().is_success() {
         return Err(format!("bnb price endpoint returned {}", resp.status()));
     }
-    resp.text().await.map_err(|e| format!("reading bnb price body: {e}"))
+    resp.text()
+        .await
+        .map_err(|e| format!("reading bnb price body: {e}"))
 }
 
 /// Fetch the latest published GitHub release for the mobile wallet. Returns the
@@ -625,7 +634,9 @@ async fn check_latest_release() -> Result<String, String> {
     if !resp.status().is_success() {
         return Err(format!("release endpoint returned {}", resp.status()));
     }
-    resp.text().await.map_err(|e| format!("reading release body: {e}"))
+    resp.text()
+        .await
+        .map_err(|e| format!("reading release body: {e}"))
 }
 
 // ── exfer-vote (community governance) proxy ─────────────────────────────────
@@ -938,6 +949,57 @@ async fn llm_fetch(
     })
 }
 
+/// CORS-free HTTPS the webview can't do itself, for first-party capability tools
+/// (web_fetch / web_search) that read the public web. No secrets are injected —
+/// unlike `llm_fetch` this is a plain proxied request. The body is capped so a
+/// huge page can't blow up the webview; the cut is snapped to a UTF-8 boundary.
+#[derive(serde::Deserialize)]
+struct FetchUrlReq {
+    url: String,
+    #[serde(default)]
+    method: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    headers: Option<std::collections::HashMap<String, String>>,
+}
+#[derive(serde::Serialize)]
+struct FetchUrlResp {
+    status: u16,
+    body: String,
+}
+#[tauri::command]
+async fn fetch_url(req: FetchUrlReq) -> Result<FetchUrlResp, String> {
+    if !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+        return Err("url must be http(s)".into());
+    }
+    let client = public_https_client()?;
+    let method = reqwest::Method::from_bytes(req.method.unwrap_or_else(|| "GET".into()).as_bytes())
+        .unwrap_or(reqwest::Method::GET);
+    let mut b = client.request(method, &req.url);
+    if let Some(h) = req.headers {
+        for (k, v) in h {
+            b = b.header(k, v);
+        }
+    }
+    if let Some(body) = req.body {
+        b = b.body(body);
+    }
+    let resp = b.send().await.map_err(|e| format!("fetch failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let full = resp.text().await.map_err(|e| format!("read body: {e}"))?;
+    let body = if full.len() > 200_000 {
+        let mut end = 200_000;
+        while !full.is_char_boundary(end) {
+            end -= 1;
+        }
+        full[..end].to_string()
+    } else {
+        full
+    };
+    Ok(FetchUrlResp { status, body })
+}
+
 #[tauri::command]
 async fn set_llm_api_key(
     ctx: State<'_, AppCtx>,
@@ -951,9 +1013,11 @@ async fn set_llm_api_key(
 #[tauri::command]
 async fn has_llm_api_key(ctx: State<'_, AppCtx>, provider: String) -> Result<bool, String> {
     let datadir = ctx.inner.lock().await.datadir.clone();
-    Ok(secrets::get_passphrase(&llm_key_service(&provider), &datadir)
-        .map_err(|e| e.to_string())?
-        .is_some())
+    Ok(
+        secrets::get_passphrase(&llm_key_service(&provider), &datadir)
+            .map_err(|e| e.to_string())?
+            .is_some(),
+    )
 }
 
 /// Confirm a money-moving agent action by re-checking the wallet passphrase
@@ -961,10 +1025,7 @@ async fn has_llm_api_key(ctx: State<'_, AppCtx>, provider: String) -> Result<boo
 /// gate is the biometric prompt in the AgentConsentSheet; this is the parity
 /// back-stop so the `confirmConsent()` invoke always has a backend.
 #[tauri::command]
-async fn agent_confirm_consent(
-    ctx: State<'_, AppCtx>,
-    passphrase: String,
-) -> Result<bool, String> {
+async fn agent_confirm_consent(ctx: State<'_, AppCtx>, passphrase: String) -> Result<bool, String> {
     let datadir = ctx.inner.lock().await.datadir.clone();
     let stored = secrets::get_passphrase(KEYRING_SERVICE, &datadir)
         .map_err(|e| e.to_string())?
@@ -1013,10 +1074,7 @@ pub fn run() {
             // managed AppCtx; everything else (datadir creation, token
             // files, sealed seed) is handled inside walletd's
             // `run_embedded`.
-            let datadir = app
-                .path()
-                .app_data_dir()
-                .expect("resolving app_data_dir");
+            let datadir = app.path().app_data_dir().expect("resolving app_data_dir");
             std::fs::create_dir_all(&datadir).expect("creating app_data_dir");
             let ctx = AppCtx::new(datadir.clone());
             app.manage(ctx.clone());
@@ -1039,10 +1097,7 @@ pub fn run() {
                         // persisted by an older build), drop it so we don't
                         // auto-fail every launch — the UI will prompt instead.
                         if matches!(st, BootstrapStatus::NeedsPassword) {
-                            let _ = secrets::delete_passphrase(
-                                KEYRING_SERVICE,
-                                &datadir_for_spawn,
-                            );
+                            let _ = secrets::delete_passphrase(KEYRING_SERVICE, &datadir_for_spawn);
                         }
                     }
                     Ok(None) => {
@@ -1083,6 +1138,7 @@ pub fn run() {
             vote_api_post,
             vote_media_get,
             llm_fetch,
+            fetch_url,
             set_llm_api_key,
             has_llm_api_key,
             agent_confirm_consent,

@@ -1,27 +1,37 @@
-//! Multi-server MCP supervisor.
+//! Multi-server tool supervisor.
 //!
 //! The built-in `exfer` server is implemented NATIVELY in Rust (see
-//! `native_tools`): each MCP tool-call is translated in-process into a walletd
+//! `native_tools`): each tool call is translated in-process into a walletd
 //! JSON-RPC call on THIS app's embedded walletd (URL + scope tokens + TLS
-//! fingerprint from `ConnectionInfo`), so the agent operates on the user's real
-//! wallet — no second walletd, no second keystore. It used to spawn the
-//! `uvx exfer-mcp` Python sidecar, but Android/iOS have no Python/uvx (the spawn
-//! failed with "No such file or directory"), so the tool layer is now native.
-//! The `exfer` server is implicit, always enabled, and not user-removable.
+//! fingerprint from `ConnectionInfo`). No uvx, no Python, no subprocess — the
+//! agent's wallet tools have zero environment dependency (which matters doubly
+//! on iOS/Android, where the old `uvx exfer-mcp` sidecar could not run). The
+//! `exfer` server is implicit, always enabled, and not user-removable, and the
+//! `exfer_` name prefix is RESERVED for it (see [`is_reserved_tool_name`]).
 //!
-//! On top of that, the user can register extra MCP servers (Claude-Code style):
-//! other stdio child processes or streamable-http endpoints (see
-//! `mcp_registry`). User servers are multiplexed into one
-//! `HashMap<serverId, RunningService>`; tool calls route to the owning server by
-//! tool name. The built-in `exfer` tools are dispatched natively (not in that
-//! map); on a name collision a user server's duplicate is dropped (exfer wins).
+//! On top of that, the user registers extra tools as REMOTE HTTP endpoints —
+//! never local processes (the `uvx`/stdio path is gone, so nothing depends on
+//! the user's machine having Python/Node):
+//!   - `transport = "httptool"` — the BASE wire format. A tool is a single URL
+//!     that answers `POST {url}` with `{"op":"list"}` -> `{ tools: [...] }` and
+//!     `{"op":"call","name","args"}` -> `{ content, isError }`. Authorable as one
+//!     serverless function; no MCP protocol to implement.
+//!   - `transport = "http"` — a remote MCP server over streamable-http (rmcp),
+//!     kept as an OPTIONAL adapter for the existing hosted-MCP ecosystem.
+//!
+//! Security (strict): third-party tools are read/compute only. They reach their
+//! own endpoint, never walletd; they may not use the reserved `exfer_` prefix;
+//! and the native consent gate (money moves) is never delegable to them. A
+//! "pay" tool returns a payment request that the native (consent-gated)
+//! `exfer_transfer` executes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 use rmcp::{
     model::CallToolRequestParams, service::RoleClient, service::RunningService,
-    transport::StreamableHttpClientTransport, transport::TokioChildProcess, ServiceExt,
+    transport::StreamableHttpClientTransport, ServiceExt,
 };
 use serde_json::{json, Value};
 use tauri::State;
@@ -35,10 +45,18 @@ use crate::walletd_supervisor::AppCtx;
 /// The reserved id of the built-in wallet server.
 pub const EXFER_SERVER_ID: &str = "exfer";
 
-/// Managed Tauri state: the set of running MCP clients, keyed by server id. The
-/// built-in `exfer` client lives under `EXFER_SERVER_ID`; user servers under
-/// their own ids. Lazily populated — a server is connected the first time its
-/// tools are needed.
+/// The reserved name prefix for the built-in wallet server. A third-party tool
+/// may not claim any name under it, so it can never impersonate a wallet tool
+/// (anti-spoofing) nor reach native dispatch. Native wallet tools are
+/// `exfer_generate_address`, `exfer_transfer`, `exfer_mine_start`, and so on —
+/// all `exfer_`. External tools use the `ext__<provider>__<tool>` convention.
+pub fn is_reserved_tool_name(name: &str) -> bool {
+    name.starts_with("exfer_")
+}
+
+/// Managed Tauri state: live rmcp clients for `transport="http"` servers, keyed
+/// by server id. `httptool` servers are stateless (one URL, no handshake) and
+/// are NOT stored here.
 pub struct McpCtx {
     inner: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 }
@@ -51,9 +69,8 @@ impl McpCtx {
     }
 
     /// Drop a server's live connection (best-effort cancel). Called when a user
-    /// server is removed, disabled, or re-added with new wiring, so the next
-    /// `mcp_list_tools` reconnects it fresh. The built-in `exfer` id is never
-    /// dropped through here in normal flow, but is permitted (it just re-spawns).
+    /// server is removed, disabled, or re-added, so the next `mcp_list_tools`
+    /// reconnects it fresh. A no-op for `httptool` (nothing to drop).
     pub async fn drop_server(&self, id: &str) {
         if let Some(svc) = self.inner.lock().await.remove(id) {
             let _ = svc.cancel().await;
@@ -67,53 +84,102 @@ impl Default for McpCtx {
     }
 }
 
-/// exfer-mcp EXTERNAL-mode env pointed at the embedded walletd.
-///
-/// Retained for reference / a possible dev escape hatch only — the built-in
-/// `exfer` server is now 100% native (`native_tools`) and never spawns
-/// `uvx exfer-mcp`. See [`ensure_exfer`].
-#[allow(dead_code)]
-fn external_env(conn: &ConnectionInfo) -> HashMap<String, String> {
-    let mut e = HashMap::new();
-    e.insert("WALLETD_URL".into(), conn.base_url.clone());
-    // exfer-mcp speaks to walletd with a SINGLE bearer token (WALLETD_AUTH_TOKEN),
-    // not the desktop's per-scope read/manage/spend triple. The spend-scope token
-    // is the most privileged, so it covers the agent's reads AND writes
-    // (transfer / swap / sign). Sending the wrong env makes exfer-mcp exit on
-    // startup ("WALLETD_AUTH_TOKEN is unset") and the agent hangs awaiting tools.
-    e.insert("WALLETD_AUTH_TOKEN".into(), conn.token_spend.clone());
-    if !conn.fingerprint.is_empty() {
-        e.insert("WALLETD_FINGERPRINT".into(), conn.fingerprint.clone());
-    }
-    // The on-ramp tools use the community pool + its pinned CA by default.
-    e.insert("EXFER_ENABLE_SWAP".into(), "1".into());
-    e
+// ── remote HTTP tool ("httptool") — the base wire format ──────────────────────
+
+/// The shared HTTPS client for remote tool calls (webpki roots, sane timeout).
+fn tool_http_client() -> Result<reqwest::Client, String> {
+    crate::public_https_client()
 }
 
-/// Build the exfer-mcp child command (the same pinned package as before).
+/// Read a tool's bearer secret from the secure store (host-side injection — the
+/// key never enters the webview or the tool-selection LLM), mirroring
+/// `llm_fetch`. `None`/empty `auth_ref` => an unauthenticated (public) tool,
+/// which is the Phase-1 default (search, prices, explorers, forums).
 ///
-/// Unused now that the built-in server is native; kept for reference.
-#[allow(dead_code)]
-fn exfer_command(env: HashMap<String, String>) -> tokio::process::Command {
-    let bin = std::env::var("EXFER_MCP_CMD").unwrap_or_else(|_| "uvx".into());
-    let pin = std::env::var("EXFER_MCP_PIN").unwrap_or_else(|_| "exfer-mcp==0.7.1".into());
-    let mut cmd = tokio::process::Command::new(bin);
-    cmd.arg(pin);
-    for (k, v) in env {
-        cmd.env(k, v);
+/// Mobile divergence from desktop: this repo's `secrets::get_passphrase` is
+/// `(service, data_dir)` (the secret is a per-install file on Android), so the
+/// datadir is threaded down from the command layer.
+fn tool_auth(auth_ref: &Option<String>, datadir: &Path) -> Option<String> {
+    let r = auth_ref.as_ref()?;
+    if r.trim().is_empty() {
+        return None;
     }
-    cmd
+    crate::secrets::get_passphrase(r, datadir).ok().flatten()
 }
 
-/// Spawn + MCP-handshake a stdio child server.
-async fn connect_stdio(
-    cmd: tokio::process::Command,
-) -> Result<RunningService<RoleClient, ()>, String> {
-    let transport = TokioChildProcess::new(cmd).map_err(|e| format!("spawn server: {e}"))?;
-    ().serve(transport)
+/// POST one op to a plain-HTTP tool endpoint, injecting the bearer secret
+/// host-side. Returns the parsed JSON body.
+async fn httptool_post(
+    url: &str,
+    auth: &Option<String>,
+    datadir: &Path,
+    body: Value,
+) -> Result<Value, String> {
+    let client = tool_http_client()?;
+    let mut req = client
+        .post(url)
+        .header("content-type", "application/json")
+        .body(body.to_string());
+    if let Some(tok) = tool_auth(auth, datadir) {
+        req = req.bearer_auth(tok);
+    }
+    let resp = req
+        .send()
         .await
-        .map_err(|e| format!("mcp handshake failed: {e}"))
+        .map_err(|e| format!("tool request failed: {e}"))?;
+    resp.json::<Value>()
+        .await
+        .map_err(|e| format!("tool response was not JSON: {e}"))
 }
+
+/// List a plain-HTTP tool endpoint's tools. Reserved-prefix (`exfer_`) names are
+/// dropped so a remote endpoint can never advertise a wallet-looking tool.
+async fn httptool_list(
+    url: &str,
+    auth: &Option<String>,
+    datadir: &Path,
+) -> Result<Vec<Value>, String> {
+    let v = httptool_post(url, auth, datadir, json!({ "op": "list" })).await?;
+    let tools = v
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(tools
+        .into_iter()
+        .filter(|t| {
+            let name = t.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return false;
+            }
+            if is_reserved_tool_name(name) {
+                tracing::warn!(tool = %name, %url, "dropping remote tool using the reserved exfer_ prefix");
+                return false;
+            }
+            true
+        })
+        .collect())
+}
+
+/// Call a plain-HTTP tool. The endpoint returns the same `{content,isError}`
+/// envelope `mcp_call_tool` yields, so the TS host handles it unchanged.
+async fn httptool_call(
+    url: &str,
+    auth: &Option<String>,
+    datadir: &Path,
+    name: &str,
+    args: Value,
+) -> Result<Value, String> {
+    httptool_post(
+        url,
+        auth,
+        datadir,
+        json!({ "op": "call", "name": name, "args": args }),
+    )
+    .await
+}
+
+// ── remote MCP over streamable-http (optional ecosystem adapter) ──────────────
 
 /// Connect + MCP-handshake a streamable-http server.
 async fn connect_http(url: &str) -> Result<RunningService<RoleClient, ()>, String> {
@@ -123,77 +189,40 @@ async fn connect_http(url: &str) -> Result<RunningService<RoleClient, ()>, Strin
         .map_err(|e| format!("mcp http handshake failed: {e}"))
 }
 
-/// Ensure the built-in exfer server is connected, returning early if it already
-/// is. Held separately from user servers because it needs live walletd conn.
-///
-/// No longer called: the built-in `exfer` server is native (`native_tools`) and
-/// never spawns the `uvx exfer-mcp` sidecar (which can't run on mobile). Kept
-/// for reference; remove once the native path has soaked.
-#[allow(dead_code)]
-async fn ensure_exfer(mcp: &McpCtx, env: HashMap<String, String>) -> Result<(), String> {
-    {
-        let guard = mcp.inner.lock().await;
-        if guard.contains_key(EXFER_SERVER_ID) {
-            return Ok(());
-        }
-    }
-    let client = connect_stdio(exfer_command(env)).await?;
-    mcp.inner
-        .lock()
-        .await
-        .entry(EXFER_SERVER_ID.to_string())
-        .or_insert(client);
-    Ok(())
-}
-
-/// Ensure a user server (stdio or http) is connected. A connect failure is
-/// returned to the caller, which logs + skips that server (one bad server must
-/// not take the whole agent down).
+/// Ensure an `http` (MCP) user server is connected. `httptool` is stateless (no
+/// persistent connection). `stdio` is refused: local-process/uvx tools are gone,
+/// so nothing can depend on the user's machine having a toolchain.
 async fn ensure_user_server(mcp: &McpCtx, cfg: &McpServerConfig) -> Result<(), String> {
-    {
-        let guard = mcp.inner.lock().await;
-        if guard.contains_key(&cfg.id) {
-            return Ok(());
-        }
-    }
-    let client = match cfg.transport.as_str() {
-        "stdio" => {
-            let command = cfg
-                .command
-                .as_ref()
-                .filter(|c| !c.trim().is_empty())
-                .ok_or("stdio server is missing a command")?;
-            let mut cmd = tokio::process::Command::new(command);
-            if let Some(args) = &cfg.args {
-                cmd.args(args);
-            }
-            if let Some(env) = &cfg.env {
-                for (k, v) in env {
-                    cmd.env(k, v);
+    match cfg.transport.as_str() {
+        "httptool" => Ok(()),
+        "http" => {
+            {
+                let guard = mcp.inner.lock().await;
+                if guard.contains_key(&cfg.id) {
+                    return Ok(());
                 }
             }
-            connect_stdio(cmd).await?
-        }
-        "http" => {
             let url = cfg
                 .url
                 .as_ref()
                 .filter(|u| !u.trim().is_empty())
                 .ok_or("http server is missing a url")?;
-            connect_http(url).await?
+            let client = connect_http(url).await?;
+            mcp.inner
+                .lock()
+                .await
+                .entry(cfg.id.clone())
+                .or_insert(client);
+            Ok(())
         }
-        other => return Err(format!("unknown transport \"{other}\"")),
-    };
-    mcp.inner
-        .lock()
-        .await
-        .entry(cfg.id.clone())
-        .or_insert(client);
-    Ok(())
+        "stdio" => {
+            Err("stdio/uvx tools are no longer supported — add an HTTP tool URL instead".into())
+        }
+        other => Err(format!("unknown transport \"{other}\"")),
+    }
 }
 
-/// Read the embedded walletd connection (url + tokens + fingerprint) from the
-/// app context, erroring if walletd isn't ready yet.
+/// Read the embedded walletd connection (url + tokens + fingerprint).
 async fn conn_of(app: &AppCtx) -> Result<Arc<ConnectionInfo>, String> {
     let inner = app.inner.lock().await;
     inner
@@ -202,9 +231,7 @@ async fn conn_of(app: &AppCtx) -> Result<Arc<ConnectionInfo>, String> {
         .ok_or_else(|| "walletd not ready".to_string())
 }
 
-/// Read the cached fingerprint-pinned reqwest client (loopback to walletd) from
-/// the app context. Pairs with [`conn_of`]; both must be present once walletd is
-/// ready (the supervisor sets them together).
+/// Read the cached fingerprint-pinned reqwest client (loopback to walletd).
 async fn client_of(app: &AppCtx) -> Result<reqwest::Client, String> {
     let inner = app.inner.lock().await;
     inner
@@ -213,18 +240,16 @@ async fn client_of(app: &AppCtx) -> Result<reqwest::Client, String> {
         .ok_or_else(|| "walletd not ready".to_string())
 }
 
-/// Kept for back-compat with the existing call site (the Agent page pre-warms
-/// the agent). The built-in `exfer` server is native and stateless, so there is
-/// nothing to spawn — this is now a no-op that just confirms the app is up.
+/// Back-compat with the Agent page's pre-warm call. The built-in `exfer` server
+/// is native + stateless, so there is nothing to spawn — a no-op.
 #[tauri::command]
 pub async fn mcp_start(_app: State<'_, AppCtx>, _mcp: State<'_, McpCtx>) -> Result<(), String> {
     Ok(())
 }
 
 /// One server's metadata in the `mcp_list_tools` response (id + the consent
-/// class the TS host should apply to its tools). The built-in exfer server is
-/// reported as `auto` here; its real per-tool policy lives in core EXFER_POLICY,
-/// which the host layers on top by server id.
+/// class the TS host applies to its tools). The built-in exfer server reports
+/// `auto`; its real per-tool policy lives in core EXFER_POLICY.
 #[derive(serde::Serialize)]
 struct ServerMeta {
     id: String,
@@ -232,20 +257,17 @@ struct ServerMeta {
     default_consent: String,
 }
 
-/// Merge the tools of every enabled server (built-in exfer + user servers) into
-/// one list. Raw tool names; each entry tagged with its owning `server` id. On a
-/// name collision the exfer server wins and the duplicate is dropped + warned.
-/// Returns `{ tools, servers }` (servers carries each server's defaultConsent).
+/// Merge the tools of every enabled server (built-in exfer + remote user tools)
+/// into one list. Each entry is tagged with its owning `server` id. The built-in
+/// exfer tools are added FIRST and win any name collision; any remote tool using
+/// the reserved `exfer_` prefix is dropped. Returns `{ tools, servers }`.
 #[tauri::command]
 pub async fn mcp_list_tools(
     app: State<'_, AppCtx>,
     mcp: State<'_, McpCtx>,
 ) -> Result<Value, String> {
-    // The built-in `exfer` server is native + static: list its tools in-process
-    // (no walletd readiness needed to enumerate; calls fail-late if not ready).
-    // exfer is added FIRST so it wins any tool-name collision with a user server.
     let mut merged: Vec<Value> = native_tools::list();
-    let mut seen: std::collections::HashSet<String> = merged
+    let mut seen: HashSet<String> = merged
         .iter()
         .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(str::to_string))
         .collect();
@@ -258,26 +280,71 @@ pub async fn mcp_list_tools(
     let datadir = app.inner.lock().await.datadir.clone();
     let registry = load_registry(&datadir);
 
-    // Connect each enabled user server lazily; a failure is logged + skipped so
-    // one broken server doesn't break the agent.
-    let mut user_order: Vec<String> = Vec::new();
+    // `httptool` servers are listed inline (stateless HTTP). `http` (MCP) servers
+    // are connected here, then their tools are read from the live clients below.
+    let mut http_order: Vec<String> = Vec::new();
     for cfg in registry.iter().filter(|c| c.enabled) {
-        if let Err(e) = ensure_user_server(&mcp, cfg).await {
-            tracing::warn!(server = %cfg.id, error = %e, "skipping MCP server that failed to connect");
-            continue;
+        match cfg.transport.as_str() {
+            "httptool" => {
+                let Some(url) = cfg.url.as_deref().filter(|u| !u.trim().is_empty()) else {
+                    tracing::warn!(server = %cfg.id, "httptool server is missing a url; skipping");
+                    continue;
+                };
+                match httptool_list(url, &cfg.auth_ref, &datadir).await {
+                    Ok(tools) => {
+                        for t in tools {
+                            let name = match t.get("name").and_then(|n| n.as_str()) {
+                                Some(n) => n.to_string(),
+                                None => continue,
+                            };
+                            if !seen.insert(name.clone()) {
+                                tracing::warn!(tool = %name, server = %cfg.id, "duplicate tool name; dropping");
+                                continue;
+                            }
+                            let schema = t
+                                .get("parameters")
+                                .or_else(|| t.get("inputSchema"))
+                                .cloned()
+                                .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+                            merged.push(json!({
+                                "name": name,
+                                "description": t.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                                "inputSchema": schema,
+                                "server": cfg.id,
+                            }));
+                        }
+                        server_meta.push(ServerMeta {
+                            id: cfg.id.clone(),
+                            default_consent: cfg.default_consent.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(server = %cfg.id, error = %e, "skipping httptool server that failed to list");
+                    }
+                }
+            }
+            "http" => {
+                if let Err(e) = ensure_user_server(&mcp, cfg).await {
+                    tracing::warn!(server = %cfg.id, error = %e, "skipping MCP server that failed to connect");
+                    continue;
+                }
+                server_meta.push(ServerMeta {
+                    id: cfg.id.clone(),
+                    default_consent: cfg.default_consent.clone(),
+                });
+                http_order.push(cfg.id.clone());
+            }
+            other => {
+                tracing::warn!(server = %cfg.id, transport = %other, "skipping unsupported transport (stdio/uvx removed)");
+            }
         }
-        server_meta.push(ServerMeta {
-            id: cfg.id.clone(),
-            default_consent: cfg.default_consent.clone(),
-        });
-        user_order.push(cfg.id.clone());
     }
 
-    // Gather tools from each connected user server, dropping any whose name
-    // collides with a native exfer tool (or an earlier user server).
+    // Read tools from each connected rmcp (http) server, dropping reserved-prefix
+    // names and any that collide with an earlier tool.
     {
         let guard = mcp.inner.lock().await;
-        for server_id in &user_order {
+        for server_id in &http_order {
             let Some(client) = guard.get(server_id) else {
                 continue;
             };
@@ -287,12 +354,12 @@ pub async fn mcp_list_tools(
                 .map_err(|e| format!("list_tools {server_id}: {e}"))?;
             for t in tools {
                 let name = t.name.to_string();
+                if is_reserved_tool_name(&name) {
+                    tracing::warn!(tool = %name, server = %server_id, "dropping MCP tool using the reserved exfer_ prefix");
+                    continue;
+                }
                 if !seen.insert(name.clone()) {
-                    tracing::warn!(
-                        tool = %name,
-                        server = %server_id,
-                        "duplicate tool name; exfer server wins, dropping this one"
-                    );
+                    tracing::warn!(tool = %name, server = %server_id, "duplicate tool name; exfer server wins, dropping this one");
                     continue;
                 }
                 merged.push(json!({
@@ -309,24 +376,43 @@ pub async fn mcp_list_tools(
     Ok(json!({ "tools": merged, "servers": servers_json }))
 }
 
-/// Build the name -> serverId routing map across the built-in exfer server and
-/// every enabled user server, honoring the same collision rule (exfer wins).
+/// Build the name -> serverId routing map across every enabled remote server
+/// (`httptool` + `http`). Native `exfer_*` tools are NOT in this map — they are
+/// dispatched natively before routing is consulted.
 async fn route_map(app: &AppCtx, mcp: &McpCtx) -> HashMap<String, String> {
     let datadir = app.inner.lock().await.datadir.clone();
     let registry = load_registry(&datadir);
-    let mut order: Vec<String> = vec![EXFER_SERVER_ID.to_string()];
-    order.extend(registry.iter().filter(|c| c.enabled).map(|c| c.id.clone()));
-
     let mut map: HashMap<String, String> = HashMap::new();
+
+    // httptool: fetch /list (stateless). First writer wins.
+    for cfg in registry
+        .iter()
+        .filter(|c| c.enabled && c.transport == "httptool")
+    {
+        if let Some(url) = cfg.url.as_deref().filter(|u| !u.trim().is_empty()) {
+            if let Ok(tools) = httptool_list(url, &cfg.auth_ref, &datadir).await {
+                for t in tools {
+                    if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
+                        map.entry(name.to_string())
+                            .or_insert_with(|| cfg.id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // http (rmcp): from the connected clients.
     let guard = mcp.inner.lock().await;
-    for server_id in &order {
-        let Some(client) = guard.get(server_id) else {
-            continue;
-        };
-        if let Ok(tools) = client.list_all_tools().await {
-            for t in tools {
-                map.entry(t.name.to_string())
-                    .or_insert_with(|| server_id.clone());
+    for cfg in registry
+        .iter()
+        .filter(|c| c.enabled && c.transport == "http")
+    {
+        if let Some(client) = guard.get(&cfg.id) {
+            if let Ok(tools) = client.list_all_tools().await {
+                for t in tools {
+                    map.entry(t.name.to_string())
+                        .or_insert_with(|| cfg.id.clone());
+                }
             }
         }
     }
@@ -340,19 +426,30 @@ pub async fn mcp_call_tool(
     name: String,
     args: Value,
 ) -> Result<Value, String> {
-    // Built-in exfer tools are native: dispatch in-process against the embedded
-    // walletd (no uvx). native_tools::call always returns the MCP envelope, so
-    // even a walletd-not-ready / RPC error surfaces as {isError:true} text.
+    // 1. Built-in exfer tools are native: dispatch in-process against the
+    //    embedded walletd. native_tools::call always returns the MCP envelope.
     if native_tools::is_native(&name) {
         let conn = conn_of(&app).await?;
         let client = client_of(&app).await?;
         return Ok(native_tools::call(&name, args, &conn, &client).await);
     }
 
-    // Otherwise route to a user-registered MCP server (stdio / http). Make sure
-    // enabled user servers are connected so their tools are routable.
+    // 2. Belt-and-suspenders: a non-native `exfer_` name must never route to a
+    //    remote source. `mcp_list_tools` already drops such names, so the model
+    //    should never call one — refuse loudly if it somehow does.
+    if is_reserved_tool_name(&name) {
+        return Err(format!(
+            "\"{name}\" uses the reserved exfer_ prefix but is not a built-in wallet tool"
+        ));
+    }
+
+    // 3. Remote tool. Connect any enabled http (MCP) servers so routing sees them.
     let datadir = app.inner.lock().await.datadir.clone();
-    for cfg in load_registry(&datadir).iter().filter(|c| c.enabled) {
+    let registry = load_registry(&datadir);
+    for cfg in registry
+        .iter()
+        .filter(|c| c.enabled && c.transport == "http")
+    {
         if let Err(e) = ensure_user_server(&mcp, cfg).await {
             tracing::warn!(server = %cfg.id, error = %e, "user MCP server unavailable for call");
         }
@@ -364,19 +461,62 @@ pub async fn mcp_call_tool(
         .cloned()
         .ok_or_else(|| format!("no server provides tool {name}"))?;
 
-    let arguments = args.as_object().cloned();
-    let guard = mcp.inner.lock().await;
-    let client = guard
-        .get(&server_id)
-        .ok_or_else(|| format!("server {server_id} not connected"))?;
-    let res = client
-        .call_tool(CallToolRequestParams {
-            name: name.clone().into(),
-            arguments,
-            meta: None,
-            task: None,
-        })
-        .await
-        .map_err(|e| format!("call_tool {name}: {e}"))?;
-    serde_json::to_value(res).map_err(|e| e.to_string())
+    let cfg = registry
+        .iter()
+        .find(|c| c.id == server_id)
+        .ok_or_else(|| format!("server {server_id} not registered"))?;
+
+    match cfg.transport.as_str() {
+        "httptool" => {
+            let url = cfg
+                .url
+                .as_deref()
+                .filter(|u| !u.trim().is_empty())
+                .ok_or_else(|| format!("httptool server {server_id} is missing a url"))?;
+            httptool_call(url, &cfg.auth_ref, &datadir, &name, args).await
+        }
+        "http" => {
+            let arguments = args.as_object().cloned();
+            let guard = mcp.inner.lock().await;
+            let client = guard
+                .get(&server_id)
+                .ok_or_else(|| format!("server {server_id} not connected"))?;
+            let res = client
+                .call_tool(CallToolRequestParams {
+                    name: name.clone().into(),
+                    arguments,
+                    meta: None,
+                    task: None,
+                })
+                .await
+                .map_err(|e| format!("call_tool {name}: {e}"))?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
+        other => Err(format!(
+            "server {server_id} has unsupported transport \"{other}\""
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserves_the_exfer_prefix_for_native_wallet_tools() {
+        assert!(is_reserved_tool_name("exfer_transfer"));
+        assert!(is_reserved_tool_name("exfer_mine_start"));
+        assert!(is_reserved_tool_name("exfer_generate_address"));
+    }
+
+    #[test]
+    fn does_not_reserve_third_party_or_capability_names() {
+        assert!(!is_reserved_tool_name("ext__acme__search"));
+        assert!(!is_reserved_tool_name("web_fetch"));
+        assert!(!is_reserved_tool_name("web_search"));
+        assert!(!is_reserved_tool_name("time"));
+        // a name that only starts with "exfer" (no underscore) is NOT reserved —
+        // every native wallet tool is `exfer_...`.
+        assert!(!is_reserved_tool_name("exfercoin_price"));
+    }
 }

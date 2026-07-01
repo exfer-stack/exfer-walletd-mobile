@@ -632,7 +632,11 @@ export function AgentTab({ lang }: { lang: Lang }) {
                   // walletd errors come back as non-isError content, so trust the
                   // status OR sniff an error shape — never show a green check on a
                   // failed call.
-                  const errored = b.card.status === "error" || (s !== "" && s !== "declined" && /(\berror\b|invalid params|\bfailed\b|code\s*-?\d|no [\w/]+ key|seedless)/i.test(s));
+                  // Match an error VALUE, not the JSON field name: swap results
+                  // carry `"error":null` on SUCCESS, and a bare /\berror\b/ flagged
+                  // those as failed. Real failures still set status==="error" or
+                  // carry a string error value / plain-text error phrase.
+                  const errored = b.card.status === "error" || (s !== "" && s !== "declined" && /("error"\s*:\s*"[^"]|invalid params|\bfailed\b|code\s*-?\d|no [\w/]+ key|seedless)/i.test(s));
                   const declined = s === "declined";
                   const showRaw = s !== "" && !declined && (errored || !SUMMARIZED_TOOLS.has(b.card.name));
                   return (

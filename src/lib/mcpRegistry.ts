@@ -1,17 +1,22 @@
-// MCP server registry (mobile). Same config shape as desktop/Rust (the shared
-// contract) so it plugs straight into a native multi-MCP host when mobile Rust
-// lands. Until then mobile only runs the built-in exfer-mcp on-device, so this
-// is purely the manager UI's persistence layer: the list of *user-added*
-// servers, kept in localStorage. The built-in "exfer" server is implicit
-// (always enabled, not user-removable) and never stored here.
+// User-added MCP server registry — the TS face of the Rust `mcp_registry`
+// commands. Shape is identical across Rust + both UIs (see the shared interface
+// contract). The built-in `exfer` server is implicit: it is never stored here,
+// never listed, and not user-removable.
+//
+// In the real Tauri app these go through the Rust commands (which persist to
+// `<datadir>/mcp-servers.json`, the same file the native tool router reads). In
+// browser-dev (vite, no Tauri) there is no Rust side, so each call falls back to
+// a localStorage-backed registry so the settings UI is still drivable headless.
 
-const STORAGE_KEY = "exfer.mcp.servers.v1";
+import { inTauri } from "./agentHost";
 
-/** A user-added MCP server. Identical fields to the desktop/Rust contract. */
 export interface McpServerConfig {
   id: string;
   label: string;
-  transport: "stdio" | "http";
+  // Remote-only going forward: `httptool` (single-URL tool endpoint) or `http`
+  // (streamable-http MCP). `stdio` is kept only so any legacy entry already in
+  // the registry still renders; the backend refuses to add or run one.
+  transport: "stdio" | "httptool" | "http";
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -20,41 +25,64 @@ export interface McpServerConfig {
   defaultConsent: "auto" | "gated";
 }
 
-function read(): McpServerConfig[] {
+const LS_KEY = "exfer.mcpServers";
+
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(cmd, args);
+}
+
+// ── browser-dev localStorage fallback ─────────────────────────────────────────
+
+function lsLoad(): McpServerConfig[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? (parsed as McpServerConfig[]) : [];
   } catch {
     return [];
   }
 }
 
-function write(list: McpServerConfig[]): void {
+function lsSave(servers: McpServerConfig[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    localStorage.setItem(LS_KEY, JSON.stringify(servers));
   } catch {
-    /* storage full / unavailable — registry stays in-memory for this session */
+    /* dev-only; ignore quota / disabled-storage */
   }
 }
 
-/** User-added servers only (the built-in exfer server is implicit, never here). */
-export function listServers(): McpServerConfig[] {
-  return read();
+// ── public API (Tauri command, localStorage fallback in browser-dev) ──────────
+
+export async function mcpListServers(): Promise<McpServerConfig[]> {
+  if (!inTauri()) return lsLoad();
+  return tauriInvoke<McpServerConfig[]>("mcp_list_servers");
 }
 
-/** Add (or replace, on id collision) a server. */
-export function addServer(cfg: McpServerConfig): void {
-  const list = read().filter((s) => s.id !== cfg.id);
-  list.push(cfg);
-  write(list);
+export async function mcpAddServer(cfg: McpServerConfig): Promise<void> {
+  if (cfg.id === "exfer") throw new Error('"exfer" is reserved for the built-in wallet server');
+  if (!inTauri()) {
+    const servers = lsLoad().filter((s) => s.id !== cfg.id);
+    servers.push(cfg);
+    lsSave(servers);
+    return;
+  }
+  await tauriInvoke<void>("mcp_add_server", { cfg });
 }
 
-export function removeServer(id: string): void {
-  write(read().filter((s) => s.id !== id));
+export async function mcpRemoveServer(id: string): Promise<void> {
+  if (!inTauri()) {
+    lsSave(lsLoad().filter((s) => s.id !== id));
+    return;
+  }
+  await tauriInvoke<void>("mcp_remove_server", { id });
 }
 
-export function setEnabled(id: string, enabled: boolean): void {
-  write(read().map((s) => (s.id === id ? { ...s, enabled } : s)));
+export async function mcpSetEnabled(id: string, enabled: boolean): Promise<void> {
+  if (!inTauri()) {
+    lsSave(lsLoad().map((s) => (s.id === id ? { ...s, enabled } : s)));
+    return;
+  }
+  await tauriInvoke<void>("mcp_set_enabled", { id, enabled });
 }

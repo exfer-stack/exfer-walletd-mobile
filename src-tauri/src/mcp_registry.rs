@@ -22,24 +22,33 @@ use crate::walletd_supervisor::AppCtx;
 pub struct McpServerConfig {
     pub id: String,
     pub label: String,
-    /// `"stdio"` (spawn a child process) or `"http"` (streamable-http endpoint).
+    /// `"httptool"` (plain HTTP tool: one URL, `{op:list|call}`) or `"http"`
+    /// (remote MCP over streamable-http). `"stdio"` (local uvx/child process) is
+    /// no longer accepted — every tool is a remote URL so nothing depends on the
+    /// user's environment.
     pub transport: String,
-    /// stdio: the executable to run.
+    /// Legacy stdio field, retained only so old registry files deserialize; never
+    /// spawned (see `mcp_supervisor::ensure_user_server`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
-    /// stdio: argv after `command`.
+    /// Legacy stdio field (unused).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
-    /// stdio: extra env vars for the child.
+    /// Legacy stdio field (unused).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env: Option<std::collections::HashMap<String, String>>,
-    /// http: the endpoint URL.
+    /// The endpoint URL (required for both `httptool` and `http`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     pub enabled: bool,
     /// Consent class applied to EVERY tool this server exposes ("auto" | "gated").
     /// The TS host turns this into a per-server `ToolPolicy` and merges it.
     pub default_consent: String,
+    /// Optional keychain service id for a bearer secret injected host-side on
+    /// `httptool` calls (mirrors `llm_fetch`). Absent => a public tool (the
+    /// Phase-1 default: search, prices, explorers, forums).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_ref: Option<String>,
 }
 
 const REGISTRY_FILE: &str = "mcp-servers.json";
@@ -81,20 +90,42 @@ pub async fn mcp_list_servers(app: State<'_, AppCtx>) -> Result<Vec<McpServerCon
     Ok(load_registry(&datadir_of(&app).await))
 }
 
-/// Add (or replace, by id) a user server. The reserved id `exfer` is rejected so
-/// a user server can never shadow the built-in wallet tools.
-#[tauri::command]
-pub async fn mcp_add_server(
-    app: State<'_, AppCtx>,
-    mcp: State<'_, McpCtx>,
-    cfg: McpServerConfig,
-) -> Result<(), String> {
+/// Validate a user server config before it is persisted. Pure (no I/O) so the
+/// security rules are unit-testable: the reserved id `exfer` is rejected so a
+/// user server can never shadow the built-in wallet tools; the old uvx/stdio
+/// transport is rejected so nothing can depend on the user's machine having a
+/// toolchain; and a URL is required (a tool is always a remote endpoint).
+pub(crate) fn validate_server_config(cfg: &McpServerConfig) -> Result<(), String> {
     if cfg.id.trim().is_empty() {
         return Err("server id must not be empty".into());
     }
     if cfg.id == "exfer" {
         return Err("\"exfer\" is reserved for the built-in wallet server".into());
     }
+    match cfg.transport.as_str() {
+        "httptool" | "http" => {}
+        "stdio" => {
+            return Err(
+                "stdio/uvx tools are no longer supported — add an HTTP tool URL instead".into(),
+            )
+        }
+        other => return Err(format!("unknown transport \"{other}\"")),
+    }
+    if cfg.url.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        return Err("an HTTP tool needs a url".into());
+    }
+    Ok(())
+}
+
+/// Add (or replace, by id) a user server. See [`validate_server_config`] for the
+/// rejection rules.
+#[tauri::command]
+pub async fn mcp_add_server(
+    app: State<'_, AppCtx>,
+    mcp: State<'_, McpCtx>,
+    cfg: McpServerConfig,
+) -> Result<(), String> {
+    validate_server_config(&cfg)?;
     let datadir = datadir_of(&app).await;
     let mut servers = load_registry(&datadir);
     servers.retain(|s| s.id != cfg.id);
@@ -148,4 +179,58 @@ pub async fn mcp_set_enabled(
         mcp.drop_server(&id).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(id: &str, transport: &str, url: Option<&str>) -> McpServerConfig {
+        McpServerConfig {
+            id: id.into(),
+            label: "x".into(),
+            transport: transport.into(),
+            command: None,
+            args: None,
+            env: None,
+            url: url.map(|u| u.into()),
+            enabled: true,
+            default_consent: "auto".into(),
+            auth_ref: None,
+        }
+    }
+
+    #[test]
+    fn accepts_httptool_and_http_with_a_url() {
+        assert!(
+            validate_server_config(&cfg("web", "httptool", Some("https://tools.example/x")))
+                .is_ok()
+        );
+        assert!(
+            validate_server_config(&cfg("mcp", "http", Some("https://mcp.example/sse"))).is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_stdio_uvx_transport() {
+        let e = validate_server_config(&cfg("x", "stdio", Some("https://x"))).unwrap_err();
+        assert!(e.contains("no longer supported"), "{e}");
+    }
+
+    #[test]
+    fn rejects_reserved_exfer_id() {
+        assert!(validate_server_config(&cfg("exfer", "httptool", Some("https://x"))).is_err());
+    }
+
+    #[test]
+    fn requires_a_url() {
+        assert!(validate_server_config(&cfg("x", "httptool", None)).is_err());
+        assert!(validate_server_config(&cfg("x", "httptool", Some("  "))).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_id_and_unknown_transport() {
+        assert!(validate_server_config(&cfg("  ", "httptool", Some("https://x"))).is_err());
+        assert!(validate_server_config(&cfg("x", "carrier-pigeon", Some("https://x"))).is_err());
+    }
 }

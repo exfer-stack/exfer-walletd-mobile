@@ -7,10 +7,12 @@
 // provided by the Agent page (it owns the confirmation card).
 
 import {
+  capabilityTools,
   createProvider,
   mergePolicies,
   EXFER_POLICY,
   type ConsentClass,
+  type HostBridge,
   type LLMProvider,
   type ProviderConfig,
   type StreamEvent,
@@ -18,6 +20,7 @@ import {
   type ToolPolicy,
   type AgentToolResult,
 } from "exfer-agent";
+import { rpc } from "./rpc";
 
 export function inTauri(): boolean {
   return typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
@@ -73,49 +76,23 @@ export async function confirmConsent(passphrase: string): Promise<boolean> {
   return tauriInvoke<boolean>("agent_confirm_consent", { passphrase });
 }
 
-// ── native in-app miner tools ────────────────────────────────────────────────
+// ── first-party capability tools (native, in-process) ────────────────────────
 //
-// The on-device CPU miner is a NATIVE Tauri command (mine_start/stop/status),
-// not an exfer-mcp tool — iOS/Android can't run the desktop downloaded-binary
-// path. We inject these three tool defs alongside the MCP tools so the agent can
-// drive mining, and route them to the native commands. mine_start is
-// consent-gated (policy "earn") → biometric on a real device.
-const MINING_TOOL_DEFS: ToolDef[] = [
-  {
-    name: "exfer_mine_start",
-    description:
-      "Start mining EXFER on this device's CPU, paying out to your address. Defaults to the SOLO pool (full block reward to you; no shared-pool payout threshold). Uses battery/CPU. Generate an address first with exfer_generate_address.",
-    parameters: {
-      type: "object",
-      properties: {
-        address: { type: "string", description: "Your 64-hex payout address." },
-        pool: { type: "string", description: "Optional stratum pool URL (ssl://host:port). Default: the solo pool." },
-        threads: { type: "number", description: "CPU threads (1-4). Default 1 — Argon2id is memory-hard." },
-      },
-      required: ["address"],
-    },
-  },
-  { name: "exfer_mine_stop", description: "Stop the in-app miner.", parameters: { type: "object", properties: {} } },
-  {
-    name: "exfer_mine_status",
-    description: "Current in-app miner status: running, hashrate, shares accepted/rejected, pool authorization, uptime.",
-    parameters: { type: "object", properties: {} },
-  },
-];
-
-const MINING_TOOL_NAMES = new Set(MINING_TOOL_DEFS.map((d) => d.name));
-
-/** Route a native miner tool call to its Tauri command, returning the same
- *  {content,isError} shape executeTool yields for MCP tools. */
-async function execNativeMiner(name: string, args: Record<string, unknown>): Promise<AgentToolResult> {
-  const cmd = name === "exfer_mine_start" ? "mine_start" : name === "exfer_mine_stop" ? "mine_stop" : "mine_status";
-  try {
-    const status = await tauriInvoke<unknown>(cmd, args);
-    return { content: JSON.stringify(status), isError: false };
-  } catch (e) {
-    return { content: `Miner error: ${String(e)}`, isError: true };
-  }
-}
+// The shared exfer-agent core owns the first-party capability layer: the market
+// price/network/block/transaction readers, web_fetch/web_search/time, AND the
+// on-device CPU miner (mine_start/stop/status — a NATIVE Tauri command, since
+// iOS/Android can't run the desktop downloaded-binary path). Each tool reaches
+// existing plumbing through three host primitives (walletd rpc, native command,
+// CORS-free fetch). We inject `cap.defs` alongside the MCP tools and route any
+// `cap.has(name)` call to `cap.call(...)`; mine_start stays consent-gated
+// (policy "earn") → biometric on a real device.
+const tauriBridge: HostBridge = {
+  rpc: (method, params) => rpc(method, params ?? {}),
+  command: (name, args) => tauriInvoke(name, args ?? {}),
+  fetchText: (url, init) =>
+    tauriInvoke("fetch_url", { req: { url, method: init?.method, body: init?.body, headers: init?.headers } }),
+};
+const cap = capabilityTools(tauriBridge);
 
 export const realTools: ToolSource = {
   listTools: () =>
@@ -125,11 +102,11 @@ export const realTools: ToolSource = {
         description: t.description ?? "",
         parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
       })),
-      ...MINING_TOOL_DEFS,
+      ...cap.defs,
     ]),
   executeTool: (name, args) =>
-    MINING_TOOL_NAMES.has(name)
-      ? execNativeMiner(name, args)
+    cap.has(name)
+      ? cap.call(name, args)
       : tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("mcp_call_tool", { name, args }).then((r) => ({
           content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
           isError: r.isError === true,
@@ -171,6 +148,32 @@ interface BridgeListToolsResult {
   servers?: { id: string; defaultConsent: ConsentClass }[];
 }
 
+// Browser-preview capability bridge. walletd rpc goes through the same `rpc`
+// helper (which forwards to the REAL walletd on the browser-real path), so the
+// pure-rpc capability tools (price/network/block/tx) run for real in the
+// preview. Native commands don't exist without Tauri: the miner reports it's
+// app-only (non-error, so the consent gate + UI still exercise), any other
+// command rejects, and get_bnb_price failure is swallowed by the price tool.
+// `fetchText` uses the browser's own fetch, so web_fetch/web_search degrade on
+// CORS — acceptable, they need the native host to read the open web.
+const browserBridge: HostBridge = {
+  rpc: (method, params) => rpc(method, params ?? {}),
+  async command<T>(name: string): Promise<T> {
+    if (name === "mine_start" || name === "mine_stop" || name === "mine_status") {
+      return {
+        running: false,
+        note: "The on-device miner runs in the installed Android/iOS app; it is not available in the browser dev preview.",
+      } as T;
+    }
+    throw new Error(`native command "${name}" is only available in the installed app`);
+  },
+  fetchText: async (url, init) => {
+    const r = await fetch(url, { method: init?.method, body: init?.body, headers: init?.headers });
+    return { status: r.status, body: await r.text() };
+  },
+};
+const browserCap = capabilityTools(browserBridge);
+
 /** Real ToolSource over the /mcp bridge (POST /mcp/list_tools, /mcp/call_tool).
  *  Mirrors realTools/desktop but with global fetch through the vite proxy. */
 export const browserRealTools: ToolSource = {
@@ -183,23 +186,15 @@ export const browserRealTools: ToolSource = {
         description: t.description ?? "",
         parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
       })),
-      // The native miner only exists in the installed app; expose the defs here
-      // so the agent + consent gate + UI are exercisable in the browser preview.
-      ...MINING_TOOL_DEFS,
+      // First-party capability defs (price/network/web/time + miner) so the
+      // agent + consent gate + UI are exercisable in the browser preview.
+      ...browserCap.defs,
     ];
   },
   executeTool: async (name, args) => {
-    // The miner is a native command (no Tauri in the browser). Be honest rather
-    // than faking a run: report it's app-only. The consent gate still fires.
-    if (MINING_TOOL_NAMES.has(name)) {
-      return {
-        content: JSON.stringify({
-          running: false,
-          note: "The on-device miner runs in the installed Android/iOS app; it is not available in the browser dev preview.",
-        }),
-        isError: false,
-      };
-    }
+    // First-party capability tools run in-process via the browser bridge (native
+    // ones — the miner — degrade honestly; the consent gate still fires).
+    if (browserCap.has(name)) return browserCap.call(name, args);
     const res = await fetch("/mcp/call_tool", {
       method: "POST",
       headers: { "content-type": "application/json" },

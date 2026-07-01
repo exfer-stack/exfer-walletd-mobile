@@ -1,83 +1,107 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useT, type MsgKey } from "../lib/i18n";
 import { Sheet, Field } from "./ui";
 import { Icon } from "../lib/icons";
-import { listServers, addServer, removeServer, setEnabled, type McpServerConfig } from "../lib/mcpRegistry";
+import {
+  mcpListServers,
+  mcpAddServer,
+  mcpRemoveServer,
+  mcpSetEnabled,
+  type McpServerConfig,
+} from "../lib/mcpRegistry";
 
 // MCP / skill manager (mobile) as a bottom sheet. Lists the built-in exfer
 // server (read-only, always on) plus any user-added servers, with add / remove /
-// enable. Config is persisted to localStorage via mcpRegistry — the same
-// McpServerConfig shape the desktop Rust host uses, so these entries plug into a
-// native multi-MCP host when mobile Rust lands. Execution of user servers is
-// deferred (no on-device MCP host yet); this is the config surface.
+// enable. Config round-trips through the Rust `mcp_registry` commands (persisted
+// to `<datadir>/mcp-servers.json`), which is the SAME file the native tool router
+// reads — so an added tool is live in chat immediately, no on-device MCP host
+// required. New servers are remote-only `httptool` URLs (one endpoint that speaks
+// `{op:list|call}`); the old uvx/stdio path is gone.
 
 type T = ReturnType<typeof useT>["t"];
 
-// Curated one-tap catalog. A plain data array so adding more presets later
-// (other-chain data, price, etc.) is trivial. Each row maps to an
-// McpServerConfig the registry already understands; labelKey/subKey are i18n
-// keys so the catalog is localized. defaultConsent reflects each preset's
-// nature — these two are read-only, so "auto".
+// Curated one-tap catalog. A plain data array so presets can be added later; each
+// row maps to an httptool McpServerConfig the registry + native router understand
+// (labelKey/subKey are i18n keys so the catalog stays localized).
+//
+// The former websearch/time/coinprice/explorer presets were removed: web search,
+// time, coin price and the block explorer are now FIRST-PARTY capability tools
+// baked into the app (via exfer-agent's capability layer), so there's nothing to
+// "add". The Add form below still takes real third-party httptool URLs.
 interface CatalogEntry {
   id: string;
   labelKey: MsgKey;
   subKey: MsgKey;
-  transport: "stdio" | "http";
-  command?: string;
-  args?: string[];
-  url?: string;
+  url: string;
   defaultConsent: "auto" | "gated";
 }
 
-const RECOMMENDED_CATALOG: CatalogEntry[] = [
-  {
-    id: "websearch",
-    labelKey: "mcp.catalog.websearch.label",
-    subKey: "mcp.catalog.websearch.sub",
-    transport: "stdio",
-    command: "uvx",
-    args: ["duckduckgo-mcp-server"],
-    defaultConsent: "auto",
-  },
-  {
-    id: "time",
-    labelKey: "mcp.catalog.time.label",
-    subKey: "mcp.catalog.time.sub",
-    transport: "stdio",
-    command: "uvx",
-    args: ["mcp-server-time"],
-    defaultConsent: "auto",
-  },
-];
+const RECOMMENDED_CATALOG: CatalogEntry[] = [];
 
 export function McpManagerSheet({ onClose }: { onClose: () => void }) {
   const { t } = useT();
-  // Local mirror of the registry; re-read after every mutation so the list and
-  // the add form stay in sync without a global store.
-  const [servers, setServers] = useState<McpServerConfig[]>(() => listServers());
+  // Registry mirror, loaded from (and re-read after every mutation on) the Rust
+  // side so the list and the add form stay in sync without a global store.
+  const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [adding, setAdding] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const refresh = () => setServers(listServers());
+  const [busy, setBusy] = useState(false);
 
-  // Already-added ids, so a catalog row shows "Added" + hides its add button
-  // instead of letting the user stack a duplicate.
+  const refresh = () =>
+    mcpListServers()
+      .then(setServers)
+      .catch(() => setServers([]));
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  // Already-added ids, so a catalog row disappears once added instead of letting
+  // the user stack a duplicate.
   const addedIds = new Set(servers.map((s) => s.id));
-  // Catalog rows still available to add.
   const catalog = RECOMMENDED_CATALOG.filter((c) => !addedIds.has(c.id));
 
-  // One-tap add: build an McpServerConfig from the catalog entry and persist it
-  // via the same registry path the manual add form uses.
-  const addFromCatalog = (c: CatalogEntry) => {
-    const cfg: McpServerConfig = {
-      id: c.id,
-      label: t(c.labelKey),
-      transport: c.transport,
-      enabled: true,
-      defaultConsent: c.defaultConsent,
-      ...(c.transport === "http" ? { url: c.url } : { command: c.command, args: c.args ?? [] }),
-    };
-    addServer(cfg);
-    refresh();
+  // One-tap add: build an httptool McpServerConfig from the catalog entry and
+  // persist it via the same registry path the manual add form uses.
+  const addFromCatalog = async (c: CatalogEntry) => {
+    if (busy || addedIds.has(c.id)) return;
+    setBusy(true);
+    try {
+      const cfg: McpServerConfig = {
+        id: c.id,
+        label: t(c.labelKey),
+        transport: "httptool",
+        url: c.url,
+        enabled: true,
+        defaultConsent: c.defaultConsent,
+      };
+      await mcpAddServer(cfg);
+      await refresh();
+    } catch {
+      /* best-effort; a failed add just leaves the row available to retry */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onToggle = async (id: string, enabled: boolean) => {
+    setBusy(true);
+    try {
+      await mcpSetEnabled(id, enabled);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRemove = async (id: string) => {
+    setBusy(true);
+    try {
+      await mcpRemoveServer(id);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (adding) {
@@ -86,18 +110,16 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
         t={t}
         onClose={(saved) => {
           setAdding(false);
-          if (saved) refresh();
+          if (saved) void refresh();
         }}
       />
     );
   }
 
-  // Add-server is disabled up front: there's no on-device MCP host yet, so the
-  // form would only persist config that can't run. Lead with "built-in already
-  // works"; tuck the form behind Advanced.
+  // Add is now live: httptool tools run through the native router immediately.
   const footer = (
-    <button type="button" className="btn btn-block" disabled aria-disabled="true" title={t("mcp.deferredNote")} data-testid="mcp-add-open">
-      {t("mcp.addDisabled")}
+    <button type="button" className="btn btn-block" onClick={() => setAdding(true)} data-testid="mcp-add-open">
+      {t("mcp.add")}
     </button>
   );
 
@@ -143,7 +165,8 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
                     type="button"
                     className="btn btn-secondary btn-sm"
                     style={{ flex: "0 0 auto" }}
-                    onClick={() => addFromCatalog(c)}
+                    disabled={busy}
+                    onClick={() => void addFromCatalog(c)}
                     data-testid="mcp-catalog-add"
                   >
                     <span className="h-row" style={{ gap: "4px", alignItems: "center" }}>
@@ -157,7 +180,7 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Advanced disclosure: user-added servers (config-only until native host). */}
+        {/* Advanced disclosure: user-added servers. */}
         <button
           type="button"
           className="btn-ghost btn-sm"
@@ -178,7 +201,7 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</div>
                   <div className="faint mono" style={{ fontSize: 12, wordBreak: "break-all", marginTop: 2 }}>
-                    {s.transport === "http" ? s.url : [s.command, ...(s.args ?? [])].join(" ")}
+                    {s.url ?? [s.command, ...(s.args ?? [])].join(" ")}
                   </div>
                   <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>
                     {t(`mcp.consent.${s.defaultConsent}` as MsgKey)}
@@ -190,10 +213,8 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
                     type="button"
                     className={s.enabled ? "pill pill-accent" : "pill"}
                     style={{ cursor: "pointer", fontSize: "0.72rem", padding: "4px 9px" }}
-                    onClick={() => {
-                      setEnabled(s.id, !s.enabled);
-                      refresh();
-                    }}
+                    disabled={busy}
+                    onClick={() => void onToggle(s.id, !s.enabled)}
                     data-testid="mcp-toggle"
                   >
                     {s.enabled ? t("mcp.enabled") : t("mcp.disabled")}
@@ -202,10 +223,8 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
                     type="button"
                     className="icon-btn"
                     aria-label={t("mcp.remove")}
-                    onClick={() => {
-                      removeServer(s.id);
-                      refresh();
-                    }}
+                    disabled={busy}
+                    onClick={() => void onRemove(s.id)}
                     data-testid="mcp-remove"
                   >
                     <Icon name="trash" size={17} />
@@ -217,51 +236,51 @@ export function McpManagerSheet({ onClose }: { onClose: () => void }) {
         ))}
 
         {showAdvanced && (
-          <>
-            <button type="button" className="btn btn-secondary btn-block" onClick={() => setAdding(true)} data-testid="mcp-add-advanced">
-              {t("mcp.add")}
-            </button>
-            <p className="faint" style={{ fontSize: 12, lineHeight: 1.5, marginTop: "2px" }}>{t("mcp.deferredNote")}</p>
-          </>
+          <p className="faint" style={{ fontSize: 12, lineHeight: 1.5, marginTop: "2px" }}>{t("mcp.deferredNote")}</p>
         )}
       </div>
     </Sheet>
   );
 }
 
-// Add-server form. Mirrors the McpServerConfig fields; transport switches between
-// a stdio command line and an http url.
+// Add-server form. New servers are remote httptool URLs: one endpoint that
+// answers `{op:list}` / `{op:call}`. Collect a name + url; the native router
+// picks the tools up on the next list.
 function McpAddSheet({ t, onClose }: { t: T; onClose: (saved: boolean) => void }) {
   const [label, setLabel] = useState("");
-  const [transport, setTransport] = useState<"stdio" | "http">("stdio");
-  const [command, setCommand] = useState("");
-  const [argsLine, setArgsLine] = useState("");
   const [url, setUrl] = useState("");
   const [defaultConsent, setDefaultConsent] = useState<"auto" | "gated">("gated");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const valid = label.trim().length > 0 && (transport === "http" ? url.trim().length > 0 : command.trim().length > 0);
+  const valid = label.trim().length > 0 && url.trim().length > 0;
 
-  const onSave = () => {
-    if (!valid) return;
+  const onSave = async () => {
+    if (!valid || busy) return;
     const id = `${label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${Date.now().toString(36)}`;
     const cfg: McpServerConfig = {
       id,
       label: label.trim(),
-      transport,
+      transport: "httptool",
+      url: url.trim(),
       enabled: true,
       defaultConsent,
-      ...(transport === "http"
-        ? { url: url.trim() }
-        : { command: command.trim(), args: argsLine.trim() ? argsLine.trim().split(/\s+/) : [] }),
     };
-    addServer(cfg);
-    onClose(true);
+    setBusy(true);
+    setError(null);
+    try {
+      await mcpAddServer(cfg);
+      onClose(true);
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+      setBusy(false);
+    }
   };
 
   const footer = (
     <div className="h-row" style={{ gap: "10px" }}>
       <button type="button" className="btn btn-secondary btn-block" onClick={() => onClose(false)}>{t("mcp.cancel")}</button>
-      <button type="button" className="btn btn-block" disabled={!valid} onClick={onSave} data-testid="mcp-add-save">{t("mcp.save")}</button>
+      <button type="button" className="btn btn-block" disabled={!valid || busy} onClick={() => void onSave()} data-testid="mcp-add-save">{t("mcp.save")}</button>
     </div>
   );
 
@@ -271,32 +290,18 @@ function McpAddSheet({ t, onClose }: { t: T; onClose: (saved: boolean) => void }
         <Field label={t("mcp.field.label")}>
           <input className="field" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("mcp.field.labelPh")} data-testid="mcp-label" />
         </Field>
-        <Field label={t("mcp.field.transport")}>
-          <select className="field" value={transport} onChange={(e) => setTransport(e.target.value as "stdio" | "http")} data-testid="mcp-transport">
-            <option value="stdio">stdio</option>
-            <option value="http">http</option>
-          </select>
+        <Field label={t("mcp.field.url")} help={t("mcp.field.urlHelp")}>
+          <input className="field mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://tools.exfer.dev/…" data-testid="mcp-url" />
         </Field>
-        {transport === "http" ? (
-          <Field label={t("mcp.field.url")}>
-            <input className="field mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" data-testid="mcp-url" />
-          </Field>
-        ) : (
-          <>
-            <Field label={t("mcp.field.command")}>
-              <input className="field mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" data-testid="mcp-command" />
-            </Field>
-            <Field label={t("mcp.field.args")} help={t("mcp.field.argsHelp")}>
-              <input className="field mono" value={argsLine} onChange={(e) => setArgsLine(e.target.value)} placeholder="-y some-mcp-server" data-testid="mcp-args" />
-            </Field>
-          </>
-        )}
         <Field label={t("mcp.field.consent")} help={t("mcp.field.consentHelp")}>
           <select className="field" value={defaultConsent} onChange={(e) => setDefaultConsent(e.target.value as "auto" | "gated")} data-testid="mcp-consent">
             <option value="gated">{t("mcp.consent.gated")}</option>
             <option value="auto">{t("mcp.consent.auto")}</option>
           </select>
         </Field>
+        {error && (
+          <p role="alert" className="text-red" style={{ fontSize: 12.5 }} data-testid="mcp-add-error">{error}</p>
+        )}
       </div>
     </Sheet>
   );
