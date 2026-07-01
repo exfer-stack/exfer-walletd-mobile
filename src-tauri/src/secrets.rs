@@ -54,46 +54,78 @@ mod imp {
 #[cfg(target_os = "android")]
 mod imp {
     //! Android fallback: a 0600 file inside the app-private data dir.
-    //! `service` is ignored (the dir is already per-install). The path is
-    //! resolved from the data dir Tauri hands the app — NOT from `$HOME`,
-    //! which is unset or non-writable on some OEM ROMs (Huawei EMUI /
-    //! HarmonyOS), where the old `$HOME`-based path made `set_passphrase`
-    //! fail and blocked wallet creation entirely.
+    //! One file PER `service`, so distinct secrets never clobber each
+    //! other — the wallet keystore passphrase (`crate::KEYRING_SERVICE`)
+    //! and the per-provider LLM API keys (`{KEYRING_SERVICE}-llm:{provider}`)
+    //! each get their own file. (Before this, every service shared one
+    //! `.exfer-keystore-passphrase` file, so saving an LLM key wiped the
+    //! wallet passphrase and vice-versa.) The path is resolved from the
+    //! data dir Tauri hands the app — NOT from `$HOME`, which is unset or
+    //! non-writable on some OEM ROMs (Huawei EMUI / HarmonyOS), where the
+    //! old `$HOME`-based path made `set_passphrase` fail and blocked
+    //! wallet creation entirely.
     use anyhow::Context;
     use std::path::{Path, PathBuf};
 
-    fn path(data_dir: &Path) -> PathBuf {
-        data_dir.join(".exfer-keystore-passphrase")
+    /// The filename every secret shared before the per-service split. Now
+    /// only the wallet keystore service reads it, as a migration source.
+    const LEGACY_KEYSTORE_FILE: &str = ".exfer-keystore-passphrase";
+
+    /// Filesystem-safe per-service filename component: every char that is
+    /// not `[A-Za-z0-9]` becomes `-`. e.g. `com.exfer.wallet-llm:deepseek`
+    /// → `com-exfer-wallet-llm-deepseek`.
+    fn slug(service: &str) -> String {
+        service
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect()
     }
 
-    /// Where versions <= 0.5.4 wrote the passphrase: `$HOME` if set, else the
-    /// temp dir. We moved it into `data_dir` in 0.5.5; these are checked on
-    /// read so an upgrade doesn't lose silent unlock.
+    fn path(service: &str, data_dir: &Path) -> PathBuf {
+        data_dir.join(format!(".exfer-secret-{}", slug(service)))
+    }
+
+    /// Where versions <= 0.5.4 wrote the (single, shared) keystore
+    /// passphrase: `$HOME` if set, else the temp dir. These are checked on
+    /// read for the keystore service ONLY so an upgrade doesn't lose silent
+    /// unlock. Other services must not read them — after the pre-split
+    /// clobbering bug they may hold a different secret's value.
     fn legacy_paths() -> Vec<PathBuf> {
         let mut v = Vec::new();
         if let Some(home) = std::env::var_os("HOME") {
-            v.push(PathBuf::from(home).join(".exfer-keystore-passphrase"));
+            v.push(PathBuf::from(home).join(LEGACY_KEYSTORE_FILE));
         }
-        v.push(std::env::temp_dir().join(".exfer-keystore-passphrase"));
+        v.push(std::env::temp_dir().join(LEGACY_KEYSTORE_FILE));
         v
     }
 
-    pub fn get_passphrase(_service: &str, data_dir: &Path) -> anyhow::Result<Option<String>> {
-        let p = path(data_dir);
+    pub fn get_passphrase(service: &str, data_dir: &Path) -> anyhow::Result<Option<String>> {
+        let p = path(service, data_dir);
         match std::fs::read_to_string(&p) {
             Ok(s) => return Ok(Some(s)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(anyhow::Error::new(e).context("reading passphrase file")),
+            Err(e) => return Err(anyhow::Error::new(e).context("reading secret file")),
         }
-        // Not in the new location — fall back to the pre-0.5.5 paths. Moving
-        // this file (without a fallback) made upgrades drop to the
-        // Create/Restore screen as if the wallet were gone, even though the
-        // keystore itself was always safe in data_dir. Migrate it forward so
-        // it stays put from here on.
-        for legacy in legacy_paths() {
+        // No per-service file yet. Only the wallet keystore passphrase has
+        // legacy locations worth migrating — and only IT may read them,
+        // since the pre-split shared files could now hold a different
+        // secret's value (e.g. a clobbered LLM key). Every other service
+        // simply reports "not stored" so it never adopts a stray value.
+        if service != crate::KEYRING_SERVICE {
+            return Ok(None);
+        }
+        // Keystore service: fall back to the shared per-data-dir file
+        // (pre-split), then the pre-0.5.5 $HOME/temp paths. Moving this
+        // without a fallback made upgrades drop to the Create/Restore
+        // screen as if the wallet were gone, even though the keystore
+        // itself was always safe in data_dir. Migrate whatever we find
+        // forward to the new per-service path so it stays put from here on.
+        let mut candidates = vec![data_dir.join(LEGACY_KEYSTORE_FILE)];
+        candidates.extend(legacy_paths());
+        for legacy in candidates {
             match std::fs::read_to_string(&legacy) {
                 Ok(s) => {
-                    let _ = set_passphrase(_service, data_dir, &s);
+                    let _ = set_passphrase(service, data_dir, &s);
                     return Ok(Some(s));
                 }
                 Err(_) => continue,
@@ -102,13 +134,13 @@ mod imp {
         Ok(None)
     }
 
-    pub fn set_passphrase(_service: &str, data_dir: &Path, value: &str) -> anyhow::Result<()> {
+    pub fn set_passphrase(service: &str, data_dir: &Path, value: &str) -> anyhow::Result<()> {
         // The data dir is created at startup, but be defensive: a missing
         // parent here would otherwise surface as a confusing "password"
         // error through the frontend humanizer.
         let _ = std::fs::create_dir_all(data_dir);
-        let p = path(data_dir);
-        std::fs::write(&p, value).context("writing passphrase file")?;
+        let p = path(service, data_dir);
+        std::fs::write(&p, value).context("writing secret file")?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -117,11 +149,11 @@ mod imp {
         Ok(())
     }
 
-    pub fn delete_passphrase(_service: &str, data_dir: &Path) -> anyhow::Result<()> {
-        match std::fs::remove_file(path(data_dir)) {
+    pub fn delete_passphrase(service: &str, data_dir: &Path) -> anyhow::Result<()> {
+        match std::fs::remove_file(path(service, data_dir)) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(anyhow::Error::new(e).context("deleting passphrase file")),
+            Err(e) => Err(anyhow::Error::new(e).context("deleting secret file")),
         }
     }
 }

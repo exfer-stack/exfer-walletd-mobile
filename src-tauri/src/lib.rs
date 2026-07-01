@@ -24,8 +24,12 @@ use mcp_supervisor::{
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
-    write_desktop_config, AppCtx, BootstrapStatus, LogBuffer, LogTeeMaker, KEYRING_SERVICE,
+    write_desktop_config, AppCtx, BootstrapStatus, LogBuffer, LogTeeMaker,
 };
+// Re-exported at the crate root as `pub(crate)` so the Android file-backed
+// secrets fallback (`secrets::imp`) can tell the wallet keystore service
+// apart from per-provider LLM key services (`crate::KEYRING_SERVICE`).
+pub(crate) use walletd_supervisor::KEYRING_SERVICE;
 
 #[tauri::command]
 async fn bootstrap_status(ctx: State<'_, AppCtx>) -> Result<BootstrapStatus, String> {
