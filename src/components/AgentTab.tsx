@@ -978,7 +978,7 @@ function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: Retur
           // alert glyph, so the gravity reads at a glance.
           <p className="banner banner-danger" role="alert" style={{ marginTop: "10px", display: "flex", gap: "8px", alignItems: "flex-start" }}>
             <span style={{ flex: "0 0 auto", display: "inline-flex", marginTop: "1px" }}><Icon name="alert" size={16} /></span>
-            <span>{t("agent.consent.risk")}</span>
+            <span>{t(card.toolName === "exfer_sign_message" ? "agent.consent.riskSign" : "agent.consent.risk")}</span>
           </p>
         )}
         {/* Reassure that declining is safe — it just cancels, nothing moves. */}

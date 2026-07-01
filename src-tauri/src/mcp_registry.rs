@@ -153,8 +153,8 @@ pub async fn mcp_remove_server(
 }
 
 /// Enable/disable a user server. Disabling also tears down its live connection
-/// (and its tools vanish from `mcp_list_tools`); enabling lets the next
-/// `mcp_list_tools` connect it lazily.
+/// (and its tools vanish from `tool_list`); enabling lets the next
+/// `tool_list` connect it lazily.
 #[tauri::command]
 pub async fn mcp_set_enabled(
     app: State<'_, AppCtx>,

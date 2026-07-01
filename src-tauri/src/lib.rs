@@ -18,7 +18,7 @@ mod walletd_supervisor;
 use serde_json::Value;
 use tauri::{Manager, State};
 
-use mcp_supervisor::{mcp_call_tool, mcp_list_tools, mcp_start, McpCtx};
+use mcp_supervisor::{tool_call, tool_list, mcp_start, McpCtx};
 
 use walletd_supervisor::{
     read_desktop_config, restart, restore, start_with_app, stop, wallet_exists,
@@ -1143,8 +1143,8 @@ pub fn run() {
             has_llm_api_key,
             agent_confirm_consent,
             mcp_start,
-            mcp_list_tools,
-            mcp_call_tool,
+            tool_list,
+            tool_call,
             mcp_registry::mcp_list_servers,
             mcp_registry::mcp_add_server,
             mcp_registry::mcp_remove_server,

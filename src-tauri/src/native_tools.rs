@@ -84,7 +84,7 @@ pub fn is_native(name: &str) -> bool {
     IMPLEMENTED.contains(&name)
 }
 
-/// The implemented tool defs, each tagged `server:"exfer"`, for `mcp_list_tools`.
+/// The implemented tool defs, each tagged `server:"exfer"`, for `tool_list`.
 /// Parses the bundled manifest and keeps only [`IMPLEMENTED`] entries, preserving
 /// each def's `name` / `description` / `inputSchema` verbatim.
 pub fn list() -> Vec<Value> {

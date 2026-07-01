@@ -96,7 +96,7 @@ const cap = capabilityTools(tauriBridge);
 
 export const realTools: ToolSource = {
   listTools: () =>
-    tauriInvoke<{ tools: { name: string; description?: string; inputSchema?: unknown }[] }>("mcp_list_tools").then((r) => [
+    tauriInvoke<{ tools: { name: string; description?: string; inputSchema?: unknown }[] }>("tool_list").then((r) => [
       ...r.tools.map((t) => ({
         name: t.name,
         description: t.description ?? "",
@@ -107,7 +107,7 @@ export const realTools: ToolSource = {
   executeTool: (name, args) =>
     cap.has(name)
       ? cap.call(name, args)
-      : tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("mcp_call_tool", { name, args }).then((r) => ({
+      : tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("tool_call", { name, args }).then((r) => ({
           content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
           isError: r.isError === true,
         })),

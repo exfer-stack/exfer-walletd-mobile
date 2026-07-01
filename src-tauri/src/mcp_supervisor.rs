@@ -69,7 +69,7 @@ impl McpCtx {
     }
 
     /// Drop a server's live connection (best-effort cancel). Called when a user
-    /// server is removed, disabled, or re-added, so the next `mcp_list_tools`
+    /// server is removed, disabled, or re-added, so the next `tool_list`
     /// reconnects it fresh. A no-op for `httptool` (nothing to drop).
     pub async fn drop_server(&self, id: &str) {
         if let Some(svc) = self.inner.lock().await.remove(id) {
@@ -162,7 +162,7 @@ async fn httptool_list(
 }
 
 /// Call a plain-HTTP tool. The endpoint returns the same `{content,isError}`
-/// envelope `mcp_call_tool` yields, so the TS host handles it unchanged.
+/// envelope `tool_call` yields, so the TS host handles it unchanged.
 async fn httptool_call(
     url: &str,
     auth: &Option<String>,
@@ -247,7 +247,7 @@ pub async fn mcp_start(_app: State<'_, AppCtx>, _mcp: State<'_, McpCtx>) -> Resu
     Ok(())
 }
 
-/// One server's metadata in the `mcp_list_tools` response (id + the consent
+/// One server's metadata in the `tool_list` response (id + the consent
 /// class the TS host applies to its tools). The built-in exfer server reports
 /// `auto`; its real per-tool policy lives in core EXFER_POLICY.
 #[derive(serde::Serialize)]
@@ -262,7 +262,7 @@ struct ServerMeta {
 /// exfer tools are added FIRST and win any name collision; any remote tool using
 /// the reserved `exfer_` prefix is dropped. Returns `{ tools, servers }`.
 #[tauri::command]
-pub async fn mcp_list_tools(
+pub async fn tool_list(
     app: State<'_, AppCtx>,
     mcp: State<'_, McpCtx>,
 ) -> Result<Value, String> {
@@ -420,7 +420,7 @@ async fn route_map(app: &AppCtx, mcp: &McpCtx) -> HashMap<String, String> {
 }
 
 #[tauri::command]
-pub async fn mcp_call_tool(
+pub async fn tool_call(
     app: State<'_, AppCtx>,
     mcp: State<'_, McpCtx>,
     name: String,
@@ -435,7 +435,7 @@ pub async fn mcp_call_tool(
     }
 
     // 2. Belt-and-suspenders: a non-native `exfer_` name must never route to a
-    //    remote source. `mcp_list_tools` already drops such names, so the model
+    //    remote source. `tool_list` already drops such names, so the model
     //    should never call one — refuse loudly if it somehow does.
     if is_reserved_tool_name(&name) {
         return Err(format!(
