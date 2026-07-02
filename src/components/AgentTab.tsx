@@ -176,12 +176,33 @@ function humanizeTool(t: T, name: string, summary: string): string {
         return t("agent.tool.sub.quote", { in: String(r.amount_in), out: String(r.amount_out) });
       case "exfer_swap_execute":
         return t("agent.tool.sub.swapStarted", { id: shortHash(String(r.swap_id ?? "")) });
-      case "exfer_network_status":
-        return t("agent.tool.sub.networkStatus", {
-          height: String(r.tip_height ?? "—"),
-          peers: String(r.peer_count ?? 0),
-          mempool: String(r.mempool_size ?? 0),
+      case "exfer_swap_pool_info":
+        return t("agent.tool.sub.poolInfo", {
+          bnb: Number(r.bnb_reserve ?? 0).toFixed(3),
+          exfer: Math.round(Number(r.exfer_reserve ?? 0)).toLocaleString("en-US"),
+          fee: String(Number(r.fee_bps ?? 0) / 100),
         });
+      case "exfer_network_status": {
+        // get_status nests height under tip.height and lists upstream_nodes[] —
+        // NOT tip_height/peer_count/mempool_size.
+        const tip = r.tip as { height?: number } | undefined;
+        const ups = Array.isArray(r.upstream_nodes) ? r.upstream_nodes.length : undefined;
+        return t("agent.tool.sub.networkStatus", {
+          height: String(tip?.height ?? r.tip_height ?? "—"),
+          peers: String(ups ?? r.peer_count ?? 0),
+          mempool: String(r.in_flight_transfers ?? r.mempool_size ?? 0),
+        });
+      }
+      case "exfer_get_block_height":
+        return t("agent.tool.sub.blockHeight", { height: String(r.height ?? "?") });
+      case "exfer_bsc_get_address":
+        return t("agent.tool.sub.bscAddress", { address: shortHash(String(r.address ?? "")) });
+      case "exfer_bsc_get_balance":
+        return t("agent.tool.sub.bscBalance", { bnb: (Number(r.bnb_wei ?? 0) / 1e18).toFixed(6) });
+      case "exfer_get_address_history": {
+        const n = Array.isArray(r.history) ? r.history.length : Array.isArray(r) ? r.length : (r.count ?? "—");
+        return t("agent.tool.sub.historyCount", { n: String(n) });
+      }
       case "exfer_network_hashrate":
         return t("agent.tool.sub.hashrate", {
           rate: r.est_hashrate_hs != null ? `${formatHashrate(Number(r.est_hashrate_hs))}` : "—",
