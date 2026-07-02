@@ -422,6 +422,12 @@ function LockScreen({
   const [pw, setPw] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
   const [pwErr, setPwErr] = useState(false);
+  // Fire the auto-biometric-prompt at most once per biometric view. Without this
+  // the effect below re-ran on every App re-render (its `unlock` dep changes
+  // identity because `onUnlocked` is an inline arrow), re-opening the system
+  // sheet mid-unlock — the "flashing" lock/password screen. Reset when the user
+  // switches to password mode so switching back re-arms the prompt.
+  const didPrompt = useRef(false);
 
   const unlock = useCallback(async () => {
     setBusy(true);
@@ -429,10 +435,13 @@ function LockScreen({
     const ok = await biometricUnlock(t("lock.unlock"));
     if (ok) {
       // Bring the embedded walletd back if the lock sealed it (no-op when it's
-      // still running). We do NOT gate re-entry on this: a silent-restore miss
-      // surfaces through the normal status polling as "offline" (recoverable),
-      // never as a hard lockout behind the biometric screen.
-      await unlockWallet();
+      // still running). FIRE-AND-FORGET: on mobile the OS suspends the daemon in
+      // the background, so this restarts it + reconnects to the node, which is
+      // SLOW on a weak network. Do NOT `await` it — that hung the "Unlocking…"
+      // screen for the whole restart. Per the design, a restore miss surfaces
+      // through normal status polling as "connecting/offline" (recoverable),
+      // never as a hard lockout. Enter the wallet immediately.
+      void unlockWallet();
       setBusy(false);
       onUnlocked();
     } else {
@@ -466,7 +475,9 @@ function LockScreen({
   // needed — but never re-trigger it once the user has switched to the
   // password field (that would yank focus / reopen the system sheet).
   useEffect(() => {
-    if (!deciding && !pwMode) void unlock();
+    if (deciding || pwMode || didPrompt.current) return;
+    didPrompt.current = true;
+    void unlock();
   }, [deciding, pwMode, unlock]);
 
   return (
@@ -549,6 +560,7 @@ function LockScreen({
               style={{ marginTop: 10 }}
               disabled={busy || deciding}
               onClick={() => {
+                didPrompt.current = false; // re-arm auto-prompt if they switch back
                 setPwMode(true);
                 setFailed(false);
               }}
