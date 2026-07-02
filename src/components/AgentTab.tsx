@@ -155,6 +155,10 @@ function humanizeTool(t: T, name: string, summary: string): string {
         return t("agent.tool.sub.cryptoOverview", { name: String(r.name ?? r.token_address ?? ""), price: String(r.price_usd ?? "?") });
       case "crypto_token_security":
         return t("agent.tool.sub.cryptoSecurity", { verdict: String(r.verdict ?? "?"), n: String(Array.isArray(r.flags) ? r.flags.length : 0) });
+      case "crypto_token_holders":
+        return t("agent.tool.sub.cryptoHolders", { n: String(r.holder_count ?? "?"), pct: String(r.top10_concentration_pct ?? "?") });
+      case "crypto_token_trades":
+        return t("agent.tool.sub.cryptoTrades", { flow: String(r.net_flow_usd ?? "?"), buyers: String(r.unique_buyers ?? 0), sellers: String(r.unique_sellers ?? 0) });
       case "crypto_gem_scan":
         return t("agent.tool.sub.cryptoGemScan", { n: String(Array.isArray(r.candidates) ? r.candidates.length : 0), chain: String(r.chain ?? "") });
       case "web_search": {

@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.40"
+version     = "1.0.41"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
