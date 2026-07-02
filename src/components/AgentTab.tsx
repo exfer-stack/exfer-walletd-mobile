@@ -119,9 +119,46 @@ function formatHashrate(hs: number): string {
 
 // A localized one-line summary of a tool result. Falls back to a clipped raw
 // summary for anything we don't have a template for.
+// Collapse a raw payload into ONE short line for the always-visible subline —
+// the full text lives in the collapsed Details. Without this, a tool whose
+// result isn't a tidy JSON object (web_fetch page text, a truncated payload)
+// floods the transcript. Also folds literal "\n" and whitespace runs to a space.
+function clampLine(s: string, n = 140): string {
+  const one = s.replace(/\\n|\s+/g, " ").trim();
+  return one.length > n ? `${one.slice(0, n)}…` : one;
+}
+
 function humanizeTool(t: T, name: string, summary: string): string {
+  // web_fetch returns a large page-text payload that the session truncates for
+  // display, so its JSON often won't parse. Pull url + status by regex first —
+  // works on a truncated prefix too.
+  if (name === "web_fetch") {
+    const u = summary.match(/"url"\s*:\s*"([^"]+)"/)?.[1];
+    if (u) {
+      const st = summary.match(/"status"\s*:\s*(\d+)/)?.[1] ?? "—";
+      let host = u;
+      try { host = new URL(u).host; } catch { /* keep as-is */ }
+      return t("agent.tool.sub.fetched", { host, status: st });
+    }
+  }
   try {
     const r = JSON.parse(summary) as Record<string, unknown>;
+    switch (name) {
+      case "web_search": {
+        const results = Array.isArray(r.results) ? r.results : [];
+        if (results.length) return t("agent.tool.sub.searchHits", { n: results.length, src: String(r.source ?? "web") });
+        return clampLine(String(r.note ?? t("agent.tool.sub.searchNone")));
+      }
+      case "web_fetch": {
+        let host = String(r.url ?? "");
+        try { host = new URL(host).host; } catch { /* keep as-is */ }
+        return t("agent.tool.sub.fetched", { host, status: String(r.status ?? "—") });
+      }
+      case "time":
+        return String(r.local ?? r.iso_utc ?? summary);
+      case "exfer_price":
+        return t("agent.tool.sub.price", { usd: Number(r.usd_per_exfer ?? 0).toPrecision(4) });
+    }
     switch (name) {
       case "exfer_get_balance":
         return t("agent.tool.sub.balance", { amt: formatExfer(Number(r.balance)) });
@@ -183,10 +220,10 @@ function humanizeTool(t: T, name: string, summary: string): string {
       case "exfer_mine_stop":
         return t("agent.tool.sub.mineStopped");
       default:
-        return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
+        return clampLine(summary);
     }
   } catch {
-    return summary;
+    return clampLine(summary);
   }
 }
 
@@ -197,6 +234,91 @@ function prettyRaw(summary: string): string {
   } catch {
     return summary;
   }
+}
+
+// Fold a burst of consecutive tool cards (a research/multi-step run) into ONE
+// collapsed row, so a 15-step run doesn't stack 15 full-width cards. Text and
+// sub-agent blocks break a run; short runs (< 3) stay flat.
+type Grouped = Block | { kind: "toolgroup"; cards: ToolCard[] };
+
+function groupBlocks(blocks: Block[]): Grouped[] {
+  const out: Grouped[] = [];
+  for (const b of blocks) {
+    if (b.kind === "tool") {
+      const last = out[out.length - 1];
+      if (last && last.kind === "toolgroup") last.cards.push(b.card);
+      else out.push({ kind: "toolgroup", cards: [b.card] });
+    } else {
+      out.push(b);
+    }
+  }
+  return out;
+}
+
+function toolGroupLabel(t: T, cards: ToolCard[]): string {
+  const searches = cards.filter((c) => c.name === "web_search").length;
+  const fetches = cards.filter((c) => c.name === "web_fetch").length;
+  const other = cards.length - searches - fetches;
+  const parts: string[] = [];
+  if (searches) parts.push(t("agent.tool.sub.groupSearches", { n: searches }));
+  if (fetches) parts.push(t("agent.tool.sub.groupFetches", { n: fetches }));
+  if (other) parts.push(t("agent.tool.sub.groupOther", { n: other }));
+  return parts.join(" · ") || t("agent.tool.sub.groupSteps", { n: cards.length });
+}
+
+function renderToolCard(t: T, card: ToolCard, key: number | string) {
+  const s = card.summary ?? "";
+  const running = card.status === "running";
+  // Don't sniff free-text tools (web_fetch/web_search): their summary is
+  // arbitrary web content that legitimately contains "failed"/"error". Trust isError.
+  const freeText = card.name === "web_fetch" || card.name === "web_search";
+  const errored = card.status === "error" || (!freeText && s !== "" && s !== "declined" && /("error"\s*:\s*"[^"]|invalid params|\bfailed\b|code\s*-?\d|no [\w/]+ key|seedless)/i.test(s));
+  const declined = s === "declined";
+  const showRaw = s !== "" && !declined && (errored || !SUMMARIZED_TOOLS.has(card.name));
+  return (
+    <div key={key} className="agent-card" style={{ padding: "9px 11px", margin: "5px 0", overflow: "hidden" }} data-testid="tool-card">
+      <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0 }}>
+        {running ? (
+          <span style={{ flex: "0 0 auto", display: "inline-flex" }}><Spinner size={14} /></span>
+        ) : (
+          <span style={{ flex: "0 0 auto", color: errored ? "#f87171" : "#34d399" }}>{errored ? "✕" : "✓"}</span>
+        )}
+        <span className="agent-tool-title">{toolLabel(t, card.name)}</span>
+        {card.gated && card.status === "running" && <span className="pill pill-warn" style={{ flex: "0 0 auto" }}>{t("agent.tool.gated")}</span>}
+      </div>
+      {s && (declined ? (
+        <div className="dim" style={{ marginTop: "5px" }}>{t("agent.consent.declined")}</div>
+      ) : (
+        <div className="agent-tool-sub" data-testid="tool-card-sub">
+          <Markdown source={humanizeTool(t, card.name, s)} />
+        </div>
+      ))}
+      {showRaw && (
+        <details className="agent-disc" style={{ marginTop: "6px" }} data-testid="tool-card-details">
+          <summary className="faint" style={{ fontSize: "12px" }}>{t("agent.tool.details")}</summary>
+          <div className="md" style={{ marginTop: "5px" }}>
+            <pre className="mono" style={{ fontSize: "11.5px" }}><code>{prettyRaw(s)}</code></pre>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function renderToolGroup(t: T, cards: ToolCard[], key: number | string) {
+  const running = cards.some((c) => c.status === "running");
+  const failed = cards.filter((c) => c.status === "error").length;
+  return (
+    <details key={key} className="agent-card agent-disc" style={{ padding: "9px 11px", margin: "5px 0", overflow: "hidden" }} data-testid="tool-group">
+      <summary className="h-row" style={{ gap: "7px", alignItems: "center" }}>
+        {running ? <Spinner size={14} /> : <span aria-hidden style={{ opacity: 0.55 }}>⚙</span>}
+        <span className="agent-tool-title">{toolGroupLabel(t, cards)}</span>
+        {running && <span className="agent-disc-status">{t("agent.tool.sub.groupRunning")}</span>}
+        {!running && failed > 0 && <span style={{ color: "#f87171" }}>· {t("agent.tool.sub.groupFailed", { n: failed })}</span>}
+      </summary>
+      <div style={{ marginTop: "6px" }}>{cards.map((c, k) => renderToolCard(t, c, k))}</div>
+    </details>
+  );
 }
 
 export function AgentTab({ lang }: { lang: Lang }) {
@@ -586,7 +708,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
                   <div className="faint" style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>{tn.thinking}</div>
                 </details>
               )}
-              {tn.blocks.map((b, j) => {
+              {groupBlocks(tn.blocks).map((b, j) => {
                 if (b.kind === "text") {
                   return b.text ? (
                     <div key={j} style={{ margin: "4px 0" }}>
@@ -626,50 +748,12 @@ export function AgentTab({ lang }: { lang: Lang }) {
                     </details>
                   );
                 }
-                {
-                  const s = b.card.summary ?? "";
-                  const running = b.card.status === "running";
-                  // walletd errors come back as non-isError content, so trust the
-                  // status OR sniff an error shape — never show a green check on a
-                  // failed call.
-                  // Match an error VALUE, not the JSON field name: swap results
-                  // carry `"error":null` on SUCCESS, and a bare /\berror\b/ flagged
-                  // those as failed. Real failures still set status==="error" or
-                  // carry a string error value / plain-text error phrase.
-                  const errored = b.card.status === "error" || (s !== "" && s !== "declined" && /("error"\s*:\s*"[^"]|invalid params|\bfailed\b|code\s*-?\d|no [\w/]+ key|seedless)/i.test(s));
-                  const declined = s === "declined";
-                  const showRaw = s !== "" && !declined && (errored || !SUMMARIZED_TOOLS.has(b.card.name));
-                  return (
-                    <div key={j} className="agent-card" style={{ padding: "9px 11px", margin: "5px 0", overflow: "hidden" }} data-testid="tool-card">
-                      <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0 }}>
-                        {running ? (
-                          <span style={{ flex: "0 0 auto", display: "inline-flex" }}><Spinner size={14} /></span>
-                        ) : (
-                          <span style={{ flex: "0 0 auto", color: errored ? "#f87171" : "#34d399" }}>{errored ? "✕" : "✓"}</span>
-                        )}
-                        <span className="agent-tool-title">{toolLabel(t, b.card.name)}</span>
-                        {b.card.gated && b.card.status === "running" && <span className="pill pill-warn" style={{ flex: "0 0 auto" }}>{t("agent.tool.gated")}</span>}
-                      </div>
-                      {s && (declined ? (
-                        <div className="dim" style={{ marginTop: "5px" }}>{t("agent.consent.declined")}</div>
-                      ) : (
-                        // Route the humanized subline through Markdown so any full
-                        // tx_id / address / swap_id becomes a copyable chip.
-                        <div className="agent-tool-sub" data-testid="tool-card-sub">
-                          <Markdown source={humanizeTool(t, b.card.name, s)} />
-                        </div>
-                      ))}
-                      {showRaw && (
-                        <details className="agent-disc" style={{ marginTop: "6px" }} data-testid="tool-card-details">
-                          <summary className="faint" style={{ fontSize: "12px" }}>{t("agent.tool.details")}</summary>
-                          <div className="md" style={{ marginTop: "5px" }}>
-                            <pre className="mono" style={{ fontSize: "11.5px" }}><code>{prettyRaw(s)}</code></pre>
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  );
+                if (b.kind === "toolgroup") {
+                  return b.cards.length >= 3
+                    ? renderToolGroup(t, b.cards, j)
+                    : b.cards.map((c, k) => renderToolCard(t, c, `${j}-${k}`));
                 }
+                return null;
               })}
             </div>
           ),
