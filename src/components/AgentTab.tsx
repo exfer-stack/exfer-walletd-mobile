@@ -4,6 +4,12 @@ import { useT, type Lang, type MsgKey } from "../lib/i18n";
 import { hostDeps, inTauri } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
 import { loadSearchConfig, saveSearchConfig, type SearchProvider } from "../lib/searchConfig";
+import { openExternal } from "../lib/openExternal";
+
+const SEARCH_KEY_URL: Record<string, string> = {
+  tavily: "https://app.tavily.com",
+  brave: "https://brave.com/search/api/",
+};
 import { formatExfer } from "../lib/rpc";
 import { agentError } from "../lib/errors";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
@@ -995,6 +1001,11 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
         </Field>
         <Field label={t("agent.settings.apiKey")} help={`${t("agent.settings.keyExplain")} ${t("agent.settings.keyNote")}`}>
           <PasswordField className="field" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={keySaved ? "••••••••" : "sk-…"} data-testid="settings-apikey" />
+          {preset.keyUrl && (
+            <button type="button" onClick={() => void openExternal(preset.keyUrl!)} style={{ background: "none", border: "none", padding: "6px 0 0", color: "#22d3ee", fontSize: "12.5px", textDecoration: "underline", cursor: "pointer" }} data-testid="settings-getkey-llm">
+              {t("agent.settings.getKey")} ↗
+            </button>
+          )}
           {keySaved && (
             <div className="h-row" style={{ gap: "5px", justifyContent: "flex-start", marginTop: "7px", color: "#34d399", fontSize: "12.5px" }} data-testid="settings-key-saved">
               <Icon name="check" size={14} />
@@ -1009,14 +1020,21 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
             <option value="free">{t("agent.settings.searchFree")}</option>
           </select>
           {searchProvider !== "free" && (
-            <PasswordField
-              className="field"
-              style={{ marginTop: "8px" }}
-              value={searchKey}
-              onChange={(e) => setSearchKey(e.target.value)}
-              placeholder={searchProvider === "tavily" ? "tvly-… (optional)" : "BSA… (optional)"}
-              data-testid="settings-search-key"
-            />
+            <>
+              <PasswordField
+                className="field"
+                style={{ marginTop: "8px" }}
+                value={searchKey}
+                onChange={(e) => setSearchKey(e.target.value)}
+                placeholder={searchProvider === "tavily" ? "tvly-… (optional)" : "BSA… (optional)"}
+                data-testid="settings-search-key"
+              />
+              {SEARCH_KEY_URL[searchProvider] && (
+                <button type="button" onClick={() => void openExternal(SEARCH_KEY_URL[searchProvider])} style={{ background: "none", border: "none", padding: "6px 0 0", color: "#22d3ee", fontSize: "12.5px", textDecoration: "underline", cursor: "pointer" }} data-testid="settings-getkey-search">
+                  {t("agent.settings.getKey")} ↗
+                </button>
+              )}
+            </>
           )}
         </Field>
       </div>
