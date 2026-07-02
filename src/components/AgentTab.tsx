@@ -3,6 +3,7 @@ import { AgentSession, type AgentEvent, type ChatMessage, type ConsentCard, type
 import { useT, type Lang, type MsgKey } from "../lib/i18n";
 import { hostDeps, inTauri } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
+import { loadSearchConfig, saveSearchConfig, type SearchProvider } from "../lib/searchConfig";
 import { formatExfer } from "../lib/rpc";
 import { agentError } from "../lib/errors";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
@@ -910,6 +911,9 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? preset.baseUrl);
   const [model, setModel] = useState(existing?.model ?? preset.defaultModel);
   const [apiKey, setApiKey] = useState("");
+  const existingSearch = loadSearchConfig();
+  const [searchProvider, setSearchProvider] = useState<SearchProvider>(existingSearch?.provider ?? "tavily");
+  const [searchKey, setSearchKey] = useState(existingSearch?.apiKey ?? "");
   const [saving, setSaving] = useState(false);
 
   const onPreset = (i: number) => {
@@ -939,6 +943,7 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
     const cfg: SavedConfig = { id: "user", label: preset.label, kind: preset.kind, baseUrl, model };
     saveConfig(cfg);
     if (apiKey.trim()) await saveApiKey("user", apiKey.trim());
+    saveSearchConfig({ provider: searchProvider, apiKey: searchProvider === "free" ? "" : searchKey.trim() });
     setSaving(false);
     onClose(true);
   };
@@ -979,6 +984,23 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
               <Icon name="check" size={14} />
               <span>{t("agent.settings.keySaved")}</span>
             </div>
+          )}
+        </Field>
+        <Field label={t("agent.settings.searchProvider")} help={t("agent.settings.searchExplain")}>
+          <select className="field" value={searchProvider} onChange={(e) => setSearchProvider(e.target.value as SearchProvider)} data-testid="settings-search-provider">
+            <option value="tavily">Tavily {t("agent.settings.searchAgentTag")}</option>
+            <option value="brave">Brave</option>
+            <option value="free">{t("agent.settings.searchFree")}</option>
+          </select>
+          {searchProvider !== "free" && (
+            <PasswordField
+              className="field"
+              style={{ marginTop: "8px" }}
+              value={searchKey}
+              onChange={(e) => setSearchKey(e.target.value)}
+              placeholder={searchProvider === "tavily" ? "tvly-… (optional)" : "BSA… (optional)"}
+              data-testid="settings-search-key"
+            />
           )}
         </Field>
       </div>

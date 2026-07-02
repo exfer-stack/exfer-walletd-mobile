@@ -21,6 +21,7 @@ import {
   type AgentToolResult,
 } from "exfer-agent";
 import { rpc } from "./rpc";
+import { resolveSearchConfig } from "./searchConfig";
 
 export function inTauri(): boolean {
   return typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
@@ -106,7 +107,7 @@ export const realTools: ToolSource = {
     ]),
   executeTool: (name, args) =>
     cap.has(name)
-      ? cap.call(name, args)
+      ? capabilityTools(tauriBridge, { search: resolveSearchConfig() }).call(name, args)
       : tauriInvoke<{ content: { type: string; text?: string }[]; isError?: boolean }>("tool_call", { name, args }).then((r) => ({
           content: r.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n"),
           isError: r.isError === true,
@@ -194,7 +195,7 @@ export const browserRealTools: ToolSource = {
   executeTool: async (name, args) => {
     // First-party capability tools run in-process via the browser bridge (native
     // ones — the miner — degrade honestly; the consent gate still fires).
-    if (browserCap.has(name)) return browserCap.call(name, args);
+    if (browserCap.has(name)) return capabilityTools(browserBridge, { search: resolveSearchConfig() }).call(name, args);
     const res = await fetch("/mcp/call_tool", {
       method: "POST",
       headers: { "content-type": "application/json" },
