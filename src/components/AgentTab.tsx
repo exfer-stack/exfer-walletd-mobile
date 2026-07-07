@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentSession, type AgentEvent, type ChatMessage, type ConsentCard, type ConsentField, type ToolPolicy } from "exfer-agent";
 import { useT, type Lang, type MsgKey } from "../lib/i18n";
-import { hostDeps, inTauri } from "../lib/agentHost";
+import { hostDeps, inTauri, confirmConsent } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
 import { loadSearchConfig, saveSearchConfig, type SearchProvider } from "../lib/searchConfig";
 import { openExternal } from "../lib/openExternal";
@@ -1044,14 +1044,39 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
 
 function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: ReturnType<typeof useT>["t"]; onResolve: (ok: boolean) => void }) {
   const [verifying, setVerifying] = useState(false);
+  // Resolve biometric availability up front (not only at tap) so we know whether
+  // to require the wallet-password fallback below. null = still checking, which
+  // keeps Approve disabled (fail-closed).
+  const [bioAvail, setBioAvail] = useState<boolean | null>(null);
+  const [passphrase, setPassphrase] = useState("");
+  const [authError, setAuthError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    biometricStatus()
+      .then((s) => alive && setBioAvail(s.available))
+      .catch(() => alive && setBioAvail(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  // Read biometric status AT ACTION TIME (not a pre-paint default) so an early
-  // tap can never approve a fund move without Face/Touch ID on a capable device.
+  // On a real device, re-auth is mandatory before a fund move: a biometric prompt
+  // when one is enrolled, else the wallet password verified constant-time in Rust
+  // (agent_confirm_consent). Never a bare tap — this closes the bypass where an
+  // `available:false` device used to auto-approve. Browser-dev has no keychain or
+  // biometric backend, so it passes through (mirrors the desktop consent card).
+  const needPass = inTauri() && bioAvail === false;
   const approve = async () => {
-    if (verifying) return;
+    if (verifying || bioAvail == null) return;
+    if (!inTauri()) return onResolve(true);
     setVerifying(true);
-    const s = await biometricStatus().catch(() => ({ available: false, type: 0 }));
-    const ok = s.available ? await biometricUnlock(t("agent.consent.reason")).catch(() => false) : true;
+    let ok = false;
+    if (bioAvail) {
+      ok = await biometricUnlock(t("agent.consent.reason")).catch(() => false);
+    } else {
+      ok = passphrase ? await confirmConsent(passphrase).catch(() => false) : false;
+      if (!ok) setAuthError(true);
+    }
     setVerifying(false);
     if (ok) onResolve(true);
   };
@@ -1100,7 +1125,13 @@ function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: Retur
       <button type="button" className="btn btn-secondary btn-block" onClick={() => onResolve(false)} data-testid="consent-decline">
         {t("agent.consent.decline")}
       </button>
-      <button type="button" className="btn btn-block" disabled={verifying} onClick={approve} data-testid="consent-approve">
+      <button
+        type="button"
+        className="btn btn-block"
+        disabled={verifying || bioAvail == null || (needPass && !passphrase)}
+        onClick={approve}
+        data-testid="consent-approve"
+      >
         {t("agent.consent.approve")}
       </button>
     </div>
@@ -1141,6 +1172,26 @@ function AgentConsentSheet({ card, t, onResolve }: { card: ConsentCard; t: Retur
             <span style={{ flex: "0 0 auto", display: "inline-flex", marginTop: "1px" }}><Icon name="alert" size={16} /></span>
             <span>{t(card.toolName === "exfer_sign_message" ? "agent.consent.riskSign" : "agent.consent.risk")}</span>
           </p>
+        )}
+        {needPass && (
+          // No biometric enrolled on this device — fall back to the wallet
+          // password (verified constant-time in Rust) so a fund move still needs
+          // re-auth. Without this, an unenrolled device approved on a bare tap.
+          <label style={{ display: "block", marginTop: "12px" }}>
+            <span className="dim" style={{ fontSize: "13px" }}>{t("agent.consent.passphrase")}</span>
+            <PasswordField
+              className="field"
+              style={{ width: "100%", marginTop: "4px" }}
+              value={passphrase}
+              onChange={(e) => {
+                setPassphrase(e.target.value);
+                setAuthError(false);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && passphrase && approve()}
+              data-testid="consent-passphrase"
+            />
+            {authError && <span style={{ fontSize: "12px", color: "#f87171" }}>{t("agent.consent.authFailed")}</span>}
+          </label>
         )}
         {/* Reassure that declining is safe — it just cancels, nothing moves. */}
         <p className="faint" style={{ fontSize: "12px", lineHeight: 1.5, marginTop: "10px", textAlign: "center" }}>
