@@ -29,6 +29,45 @@ function readDeepseekKey(): string {
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+// Browser-real path only: a dynamic server-side fetch proxy. The first-party
+// capability tools (crypto_* discovery, web_fetch/web_search) read the open web,
+// which the browser blocks cross-origin (CORS). On a real phone the Rust
+// `fetch_url` command forwards these server-side; in the browser preview there is
+// no such host, so without this the whole research surface goes dark on CORS.
+// This middleware is the browser-preview equivalent of `fetch_url`: POST
+// {url, method, body, headers} → it fetches server-side (in the vite process, no
+// CORS) and returns {status, body}. Dev-only; a shipped Tauri build never uses it.
+function webfetchPlugin() {
+  return {
+    name: "exfer-webfetch-proxy",
+    configureServer(server: { middlewares: { use: (fn: (req: any, res: any, next: () => void) => void) => void } }) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== "/webfetch" || req.method !== "POST") return next();
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", async () => {
+          try {
+            const { url, method, body, headers } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+            const r = await fetch(String(url), {
+              method: method ?? "GET",
+              body: body ?? undefined,
+              headers: headers ?? undefined,
+              signal: AbortSignal.timeout(25000),
+            });
+            const text = await r.text();
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify({ status: r.status, body: text }));
+          } catch (e) {
+            res.statusCode = 200; // return a soft status so the tool sees a 0/empty, not a proxy 500
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify({ status: 0, body: `webfetch error: ${e instanceof Error ? e.message : String(e)}` }));
+          }
+        });
+      });
+    },
+  };
+}
+
 // App version, baked in at build time from package.json so the update checker
 // can compare it against the latest GitHub release. Exposed as __APP_VERSION__.
 const APP_VERSION: string = JSON.parse(
@@ -58,7 +97,7 @@ export default defineConfig(async ({ mode }) => {
   const deepseekKey = readDeepseekKey();
 
   return {
-    plugins: [react()],
+    plugins: [react(), webfetchPlugin()],
 
     define: {
       __APP_VERSION__: JSON.stringify(APP_VERSION),

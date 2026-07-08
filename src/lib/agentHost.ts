@@ -168,9 +168,22 @@ const browserBridge: HostBridge = {
     }
     throw new Error(`native command "${name}" is only available in the installed app`);
   },
+  // Route through the same-origin /webfetch dev proxy (vite middleware) so the
+  // crypto_*/web_* tools read the open web WITHOUT CORS — the browser-preview
+  // equivalent of the phone's Rust fetch_url. A direct browser fetch here would
+  // be CORS-blocked for GeckoTerminal / GoPlus / DexScreener / DuckDuckGo.
   fetchText: async (url, init) => {
-    const r = await fetch(url, { method: init?.method, body: init?.body, headers: init?.headers });
-    return { status: r.status, body: await r.text() };
+    try {
+      const r = await fetch("/webfetch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url, method: init?.method, body: init?.body, headers: init?.headers }),
+      });
+      if (!r.ok) return { status: r.status, body: "" };
+      return (await r.json()) as { status: number; body: string };
+    } catch (e) {
+      return { status: 0, body: `webfetch unavailable: ${e instanceof Error ? e.message : String(e)}` };
+    }
   },
 };
 const browserCap = capabilityTools(browserBridge);
@@ -179,15 +192,25 @@ const browserCap = capabilityTools(browserBridge);
  *  Mirrors realTools/desktop but with global fetch through the vite proxy. */
 export const browserRealTools: ToolSource = {
   listTools: async () => {
-    const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    const r = (await res.json()) as BridgeListToolsResult;
-    return [
-      ...r.tools.map((t) => ({
+    // Wallet tools come from the /mcp bridge (real exfer-mcp + walletd). If that
+    // bridge isn't running (e.g. a research-only preview with no walletd), don't
+    // lose EVERY tool — still expose the first-party capability tools so the
+    // agent's on-chain research surface works standalone.
+    let walletDefs: ToolDef[] = [];
+    try {
+      const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const r = (await res.json()) as BridgeListToolsResult;
+      walletDefs = r.tools.map((t) => ({
         name: t.name,
         description: t.description ?? "",
         parameters: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
-      })),
-      // First-party capability defs (price/network/web/time + miner) so the
+      }));
+    } catch {
+      // walletd bridge down — capability-only research mode.
+    }
+    return [
+      ...walletDefs,
+      // First-party capability defs (price/network/web/crypto/time + miner) so the
       // agent + consent gate + UI are exercisable in the browser preview.
       ...browserCap.defs,
     ];
@@ -212,8 +235,13 @@ export const browserRealTools: ToolSource = {
   // server's tools take its defaultConsent. mergePolicies keeps the strictest
   // default so unknown tools stay fail-closed.
   getPolicy: async () => {
-    const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    const r = (await res.json()) as BridgeListToolsResult;
+    let r: BridgeListToolsResult;
+    try {
+      const res = await fetch("/mcp/list_tools", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      r = (await res.json()) as BridgeListToolsResult;
+    } catch {
+      return EXFER_POLICY; // no bridge → capability-only; exfer policy classifies them
+    }
     const servers = r.servers ?? [{ id: "exfer", defaultConsent: "auto" as ConsentClass }];
     const consentOf = new Map(servers.map((s) => [s.id, s.defaultConsent]));
     const policies: ToolPolicy[] = [EXFER_POLICY];
