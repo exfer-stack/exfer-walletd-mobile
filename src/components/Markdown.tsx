@@ -105,6 +105,8 @@ export function Markdown({ source }: { source: string }) {
                 ))}
               </ol>
             );
+          case "hr":
+            return <hr key={i} style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />;
           case "code":
             return (
               <pre key={i} className="mono">
