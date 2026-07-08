@@ -4,12 +4,16 @@ import { useT, type Lang, type MsgKey } from "../lib/i18n";
 import { hostDeps, inTauri, confirmConsent } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
 import { loadSearchConfig, saveSearchConfig, type SearchProvider } from "../lib/searchConfig";
+import { loadExplorerKey, saveExplorerKey } from "../lib/explorerConfig";
 import { openExternal } from "../lib/openExternal";
 
 const SEARCH_KEY_URL: Record<string, string> = {
   tavily: "https://app.tavily.com",
   brave: "https://brave.com/search/api/",
 };
+
+// One Etherscan V2 key works across every EVM chain the agent reads source on.
+const EXPLORER_KEY_URL = "https://etherscan.io/apis";
 import { formatExfer } from "../lib/rpc";
 import { agentError } from "../lib/errors";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
@@ -936,6 +940,7 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
   const existingSearch = loadSearchConfig();
   const [searchProvider, setSearchProvider] = useState<SearchProvider>(existingSearch?.provider ?? "tavily");
   const [searchKey, setSearchKey] = useState(existingSearch?.apiKey ?? "");
+  const [explorerKey, setExplorerKey] = useState(() => loadExplorerKey());
   const [saving, setSaving] = useState(false);
 
   const onPreset = (i: number) => {
@@ -966,6 +971,7 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
     saveConfig(cfg);
     if (apiKey.trim()) await saveApiKey("user", apiKey.trim());
     saveSearchConfig({ provider: searchProvider, apiKey: searchProvider === "free" ? "" : searchKey.trim() });
+    saveExplorerKey(explorerKey.trim());
     setSaving(false);
     onClose(true);
   };
@@ -1036,6 +1042,18 @@ function AgentSettingsSheet({ t, onClose }: { t: ReturnType<typeof useT>["t"]; o
               )}
             </>
           )}
+        </Field>
+        <Field label={t("agent.settings.explorerKey")} help={t("agent.settings.explorerExplain")}>
+          <PasswordField
+            className="field"
+            value={explorerKey}
+            onChange={(e) => setExplorerKey(e.target.value)}
+            placeholder="Etherscan API key (optional)"
+            data-testid="settings-explorer-key"
+          />
+          <button type="button" onClick={() => void openExternal(EXPLORER_KEY_URL)} style={{ background: "none", border: "none", padding: "6px 0 0", color: "#22d3ee", fontSize: "12.5px", textDecoration: "underline", cursor: "pointer" }} data-testid="settings-getkey-explorer">
+            {t("agent.settings.getKey")} ↗
+          </button>
         </Field>
       </div>
     </Sheet>
