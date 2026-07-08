@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentSession, type AgentEvent, type ChatMessage, type ConsentCard, type ConsentField, type ToolPolicy } from "exfer-agent";
+import { AgentSession, CAPABILITY_CONDUCT, type AgentEvent, type ChatMessage, type ConsentCard, type ConsentField, type ToolPolicy } from "exfer-agent";
 import { useT, type Lang, type MsgKey } from "../lib/i18n";
 import { hostDeps, inTauri, confirmConsent } from "../lib/agentHost";
 import { loadConfig, toProviderConfig, PROVIDER_PRESETS, saveConfig, saveApiKey, hasApiKey, type SavedConfig } from "../lib/agentConfig";
@@ -468,6 +468,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
         // Pin BOTH the parent's replies AND the {task} it hands to a research
         // sub-agent to the active language, so a 中文 session never shows an
         // English research task line next to a Chinese frame.
+        CAPABILITY_CONDUCT + " " +
         `When you call spawn_research_agent, write its task in ${langName}. ` +
         `Always respond in ${langName}.`,
     });
