@@ -107,6 +107,15 @@ export function Markdown({ source }: { source: string }) {
             );
           case "hr":
             return <hr key={i} style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />;
+          case "quote":
+            return (
+              <blockquote
+                key={i}
+                style={{ margin: "8px 0", padding: "2px 0 2px 12px", borderLeft: "3px solid var(--border)", color: "var(--muted, #9aa)" }}
+              >
+                {renderInline(b.c)}
+              </blockquote>
+            );
           case "code":
             return (
               <pre key={i} className="mono">

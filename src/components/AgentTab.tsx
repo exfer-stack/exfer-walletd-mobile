@@ -107,6 +107,24 @@ const SUMMARIZED_TOOLS = new Set([
   "exfer_mine_start",
   "exfer_mine_stop",
   "exfer_mine_status",
+  // First-party capability tools — without these here, their (often large,
+  // truncated) JSON payloads dumped raw into the transcript.
+  "exfer_price",
+  "exfer_self_audit",
+  "crypto_market_data",
+  "crypto_new_pools",
+  "crypto_trending",
+  "crypto_search_token",
+  "crypto_token_overview",
+  "crypto_token_security",
+  "crypto_token_holders",
+  "crypto_token_trades",
+  "crypto_honeypot_check",
+  "crypto_contract_source",
+  "crypto_gem_scan",
+  "web_search",
+  "web_fetch",
+  "time",
 ]);
 
 // A short copyable id (full value lives in Details + is selectable).
@@ -152,6 +170,19 @@ function humanizeTool(t: T, name: string, summary: string): string {
       return t("agent.tool.sub.fetched", { host, status: st });
     }
   }
+  // crypto_new_pools/trending/search return arrays bigger than the display cap,
+  // so their JSON arrives TRUNCATED and the JSON.parse below throws → raw dump.
+  // count + chain sit at the head of the payload, so pull them by regex first —
+  // this survives truncation where a full parse can't.
+  if (name === "crypto_new_pools" || name === "crypto_trending" || name === "crypto_search_token") {
+    const n = summary.match(/"count"\s*:\s*(\d+)/)?.[1];
+    if (n != null) {
+      const chain = summary.match(/"chain"\s*:\s*"([^"]+)"/)?.[1] ?? "";
+      if (name === "crypto_trending") return t("agent.tool.sub.cryptoTrending", { n, chain });
+      if (name === "crypto_search_token") return t("agent.tool.sub.cryptoSearch", { n });
+      return t("agent.tool.sub.cryptoPools", { n, chain });
+    }
+  }
   try {
     const r = JSON.parse(summary) as Record<string, unknown>;
     switch (name) {
@@ -171,6 +202,23 @@ function humanizeTool(t: T, name: string, summary: string): string {
         return t("agent.tool.sub.cryptoTrades", { flow: String(r.net_flow_usd ?? "?"), buyers: String(r.unique_buyers ?? 0), sellers: String(r.unique_sellers ?? 0) });
       case "crypto_gem_scan":
         return t("agent.tool.sub.cryptoGemScan", { n: String(Array.isArray(r.candidates) ? r.candidates.length : 0), chain: String(r.chain ?? "") });
+      case "crypto_honeypot_check":
+        return t("agent.tool.sub.honeypot", {
+          sell: r.can_sell === true ? "✓" : r.can_sell === false ? "✗" : "?",
+          src: String(r.sim_source ?? "?"),
+        });
+      case "crypto_contract_source":
+        return t("agent.tool.sub.contractSource", { v: r.is_verified === true ? "verified" : "unverified" });
+      case "crypto_market_data": {
+        const coins = Array.isArray(r.coins) ? r.coins.length : 0;
+        const fng = (r.fear_greed as { value?: unknown } | undefined)?.value;
+        return t("agent.tool.sub.marketData", { n: String(coins), fng: String(fng ?? "—") });
+      }
+      case "exfer_self_audit":
+        return t("agent.tool.sub.selfAudit", {
+          tvl: String((r.canonical_liquidity as { approx_tvl_usd?: unknown } | null)?.approx_tvl_usd ?? "?"),
+          reward: String(r.block_reward_now_exfer ?? "?"),
+        });
       case "web_search": {
         const results = Array.isArray(r.results) ? r.results : [];
         if (results.length) return t("agent.tool.sub.searchHits", { n: results.length, src: String(r.source ?? "web") });

@@ -158,9 +158,49 @@ interface BridgeListToolsResult {
 // command rejects, and get_bnb_price failure is swallowed by the price tool.
 // `fetchText` uses the browser's own fetch, so web_fetch/web_search degrade on
 // CORS — acceptable, they need the native host to read the open web.
+// Same-origin /webfetch dev proxy → server-side fetch (no CORS). Returns {status, body}.
+async function devWebfetch(url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }): Promise<{ status: number; body: string }> {
+  const r = await fetch("/webfetch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, method: init?.method, body: init?.body, headers: init?.headers }),
+  });
+  if (!r.ok) return { status: r.status, body: "" };
+  return (await r.json()) as { status: number; body: string };
+}
+
+// Read-only chain RPC methods safe to proxy to a real node in the browser preview.
+const DEV_CHAIN_RPC = new Set(["get_block_height", "get_status", "get_block_by_height", "get_block_by_id", "get_transaction", "get_node_info", "swap_price_klines"]);
+
 const browserBridge: HostBridge = {
-  rpc: (method, params) => rpc(method, params ?? {}),
+  // Browser preview normally routes rpc to devmock (fake). When VITE_EXFER_NODE_RPC
+  // / VITE_EXFER_SWAP_URL are set (dev QA only), proxy the READ-ONLY chain/swap
+  // reads to the real node/swap via /webfetch so the exfer-native tools
+  // (exfer_price / exfer_self_audit / network_status) exercise real data. Off by
+  // default; no endpoint is hardcoded (both come from the launch env).
+  async rpc<T>(method: string, params?: unknown): Promise<T> {
+    const NODE = import.meta.env.VITE_EXFER_NODE_RPC as string | undefined;
+    const SWAP = import.meta.env.VITE_EXFER_SWAP_URL as string | undefined;
+    if (SWAP && method === "swap_pool_info") {
+      const { status, body } = await devWebfetch(`${SWAP}/api/pool`, { method: "GET" });
+      if (status >= 200 && status < 400 && body) return JSON.parse(body) as T;
+      throw new Error(`swap_pool_info proxy HTTP ${status}`);
+    }
+    if (NODE && DEV_CHAIN_RPC.has(method)) {
+      const { body } = await devWebfetch(NODE, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: params ?? {} }) });
+      const j = (body ? JSON.parse(body) : {}) as { result?: T; error?: { message?: string } };
+      if (j.error) throw new Error(j.error.message ?? "node rpc error");
+      return j.result as T;
+    }
+    return rpc(method, params ?? {}) as Promise<T>;
+  },
   async command<T>(name: string): Promise<T> {
+    // Real BNB/USD anchor in the browser preview (used by exfer_price / self_audit).
+    if (name === "get_bnb_price") {
+      const { status, body } = await devWebfetch("https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT", { method: "GET" });
+      if (status >= 200 && status < 400 && body) return JSON.stringify({ price: (JSON.parse(body) as { price?: string }).price }) as T;
+      throw new Error("BNB price unavailable in preview");
+    }
     if (name === "mine_start" || name === "mine_stop" || name === "mine_status") {
       return {
         running: false,
