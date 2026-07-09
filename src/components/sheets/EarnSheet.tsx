@@ -18,6 +18,7 @@ import { Icon } from "../../lib/icons";
 import { useT } from "../../lib/i18n";
 import { formatHashrate, addrName } from "../../lib/format";
 import { shortAddress } from "../../lib/labels";
+import { AddrPicker } from "../AddrPicker";
 import { mineCommand, inTauri, type MineStatus } from "../../lib/agentHost";
 import { useToast } from "../../lib/toast";
 import { humanizeError } from "../../lib/errors";
@@ -275,18 +276,9 @@ export function EarnSheet({
               </span>
             </div>
           ) : (
-            <select
-              className="field mono"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              data-testid="earn-address"
-            >
-              {entries.map((e) => (
-                <option key={e.address} value={e.address}>
-                  {addrName(e)} · {shortAddress(e.address, 6, 6)}
-                </option>
-              ))}
-            </select>
+            // Same branded picker (identicon + name + short address + balance) as
+            // Swap/Liquidity, so choosing WHERE block rewards land is verifiable.
+            <AddrPicker items={entries} value={address} onChange={setAddress} />
           )}
         </Field>
 
@@ -298,7 +290,7 @@ export function EarnSheet({
             onChange={(v) => setThreads(Number(v))}
           />
           {(running ? Number(status?.threads ?? 1) : threads) > 1 && (
-            <div className="field-help" style={{ color: "#fcd34d" }}>{t("earn.threadsWarn")}</div>
+            <div className="field-help" style={{ color: "#fbbf24" }}>{t("earn.threadsWarn")}</div>
           )}
         </Field>
 
@@ -356,6 +348,7 @@ function Seg({
           key={v}
           type="button"
           disabled={disabled}
+          aria-pressed={value === v}
           onClick={() => onChange(v)}
           style={{
             border: 0,
