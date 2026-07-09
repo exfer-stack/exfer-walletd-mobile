@@ -78,6 +78,49 @@ export async function confirmConsent(passphrase: string): Promise<boolean> {
   return tauriInvoke<boolean>("agent_confirm_consent", { passphrase });
 }
 
+// ── native CPU miner (Earn) ───────────────────────────────────────────────────
+//
+// The miner is a NATIVE Tauri command (mine_start / mine_stop / mine_status),
+// since iOS/Android can't run the desktop downloaded-binary path. The Earn panel
+// (and the agent) drive it through here. In the browser dev preview there's no
+// native host, so — mirroring the agent's browserBridge.command — the calls
+// resolve (never reject) with an app-only note so the panel renders its full
+// controls plus a calm "runs in the installed app" state.
+
+/** Snapshot returned by the three miner commands (mirrors Rust `MineStatus`). */
+export interface MineStatus {
+  running: boolean;
+  pool?: string | null;
+  address?: string | null;
+  threads?: number;
+  hashrate_hs?: number;
+  authorized?: boolean;
+  jobs?: number;
+  submitted?: number;
+  accepted?: number;
+  rejected?: number;
+  uptime_seconds?: number;
+  /** Present ONLY in the browser dev preview — the miner is app-only there. */
+  note?: string;
+}
+
+/** Invoke a native miner command. In the installed app this hits the Rust
+ *  command (which may reject, e.g. a bad address or "already mining"); in the
+ *  browser preview it resolves with the app-only note so the UI can render a
+ *  calm "runs in the installed app" banner while still showing the controls. */
+export async function mineCommand(
+  name: "mine_start" | "mine_stop" | "mine_status",
+  args?: Record<string, unknown>,
+): Promise<MineStatus> {
+  if (!inTauri()) {
+    return {
+      running: false,
+      note: "The on-device miner runs in the installed Android/iOS app; it is not available in the browser dev preview.",
+    };
+  }
+  return tauriInvoke<MineStatus>(name, args);
+}
+
 // ── first-party capability tools (native, in-process) ────────────────────────
 //
 // The shared exfer-agent core owns the first-party capability layer: the market

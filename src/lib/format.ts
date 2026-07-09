@@ -28,6 +28,20 @@ export function formatBnb(n: number): string {
   return s;
 }
 
+/** Human-readable hashrate (H/s → kH/s/MH/s/…). Estimate-grade; shared by the
+ *  agent's miner cards and the Earn (mining) panel. */
+export function formatHashrate(hs: number): string {
+  if (!Number.isFinite(hs) || hs <= 0) return "0 H/s";
+  const units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
+  let v = hs;
+  let i = 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i += 1;
+  }
+  return `${v.toFixed(v < 10 && i > 0 ? 2 : 1)} ${units[i]}`;
+}
+
 /** Human name for an address row: a local label if set, else "Imported"
  *  (independent/imported keys) or "Address N" (HD-indexed). */
 export function addrName(entry: WalletEntry): string {

@@ -15,6 +15,7 @@ const SEARCH_KEY_URL: Record<string, string> = {
 // One Etherscan V2 key works across every EVM chain the agent reads source on.
 const EXPLORER_KEY_URL = "https://etherscan.io/apis";
 import { formatExfer } from "../lib/rpc";
+import { formatHashrate } from "../lib/format";
 import { agentError } from "../lib/errors";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { Sheet, CopyButton, AppBar, Field, PasswordField, Spinner } from "./ui";
@@ -130,20 +131,6 @@ const SUMMARIZED_TOOLS = new Set([
 // A short copyable id (full value lives in Details + is selectable).
 function shortHash(v: string): string {
   return v.length > 14 ? `${v.slice(0, 8)}…${v.slice(-6)}` : v;
-}
-
-// Human-readable hashrate (H/s → kH/s/MH/s/…). Estimate-grade; the card shows
-// the raw value under Details.
-function formatHashrate(hs: number): string {
-  if (!Number.isFinite(hs) || hs <= 0) return "0 H/s";
-  const units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
-  let v = hs;
-  let i = 0;
-  while (v >= 1000 && i < units.length - 1) {
-    v /= 1000;
-    i += 1;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 2 : 1)} ${units[i]}`;
 }
 
 // A localized one-line summary of a tool result. Falls back to a clipped raw
@@ -727,7 +714,7 @@ export function AgentTab({ lang }: { lang: Lang }) {
   // Gate the composer so the user configures a real provider key first; the mock
   // stays reachable only in browser-dev (!inTauri) for headless QA.
   const needsKey = inTauri() && !hasKey;
-  const examples = [t("agent.empty.ex1"), t("agent.empty.ex2"), t("agent.empty.ex3")];
+  const examples = [t("agent.empty.ex1"), t("agent.empty.ex2"), t("agent.empty.ex3"), t("agent.empty.ex4")];
 
   return (
     <div className="agent-tab" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>

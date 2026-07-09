@@ -24,6 +24,7 @@ import { ImportPhraseModal, ImportKeyFileModal } from "./modals/ImportModals";
 import { onSwapChanged } from "../lib/inflightLp";
 import { NewAddressModal } from "./modals/NewAddressModal";
 import { CreateBnbWalletSheet } from "./sheets/CreateBnbWalletSheet";
+import { EarnSheet } from "./sheets/EarnSheet";
 import { useBscWallet, revealBscMnemonic } from "../lib/bscWallet";
 import { biometricStatus, biometricUnlock } from "../lib/biometric";
 import { humanizeError } from "../lib/errors";
@@ -276,6 +277,8 @@ export function Home({
   // instead of a dead/blank control.
   const bsc = useBscWallet();
   const [createBnbOpen, setCreateBnbOpen] = useState(false);
+  // Earn (mining) panel — the wallet entry to the native CPU miner.
+  const [earnOpen, setEarnOpen] = useState(false);
 
   // Drop any cached BNB balance that belongs to a DIFFERENT address than the
   // wallet's current BNB key (a wallet switch / lock leaves a stale cache).
@@ -783,6 +786,39 @@ export function Home({
           </button>
         )}
 
+        {/* Earn — the wallet entry to the native CPU miner (solo / pool,
+            live status). Always shown; the panel handles the app-only preview
+            state and the "no address yet" case itself. */}
+        <button
+          onClick={() => setEarnOpen(true)}
+          className="card"
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 12,
+            padding: "13px 14px", marginBottom: 14, textAlign: "left",
+          }}
+          data-testid="earn-card"
+        >
+          <span
+            style={{
+              width: 36, height: 36, borderRadius: 11, flex: "0 0 auto",
+              display: "grid", placeItems: "center",
+              background: "color-mix(in srgb, var(--accent) 15%, transparent)",
+              color: "var(--accent)",
+            }}
+          >
+            <Icon name="coins" size={20} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{t("earn.cardTitle")}</span>
+            <span style={{ display: "block", fontSize: 12, color: "var(--text-faint)", lineHeight: 1.4, marginTop: 2 }}>
+              {t("earn.cardSub")}
+            </span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+
         <div className="h-row" style={{ marginBottom: 11 }}>
           <div className="eyebrow">{t("home.addresses")}</div>
           <button
@@ -1138,6 +1174,7 @@ export function Home({
           )}
         </Modal>
       )}
+      {earnOpen && <EarnSheet entries={entries} onClose={() => setEarnOpen(false)} />}
       {exportKey && <ExportBnbKeyModal onClose={() => setExportKey(false)} />}
       {createBnbOpen && (
         <CreateBnbWalletSheet
