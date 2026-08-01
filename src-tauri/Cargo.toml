@@ -1,6 +1,6 @@
 [package]
 name        = "exfer-walletd-mobile"
-version     = "1.0.47"
+version     = "1.0.48"
 description = "Mobile (iOS + Android) wallet for exfer. Embeds walletd in-process; one app → balance / receive / send / keyring management, keys never leave the device."
 edition     = "2021"
 license     = "MIT"
@@ -50,14 +50,15 @@ tokio-util         = { version = "0.7", features = ["rt"] }
 exfer-pow          = { git = "https://github.com/exfer-stack/exfer-agent-miner", rev = "32db5e1" }
 exfer-stratum      = { git = "https://github.com/exfer-stack/exfer-agent-miner", rev = "32db5e1" }
 
-# The embedded walletd. v1.15.3 (23e89ce): truthful + self-healing BUY refunds (never
+# The embedded walletd. v1.15.4 (42c58d6): record-less stranded-BNB recovery (reinstall/
+# new-device buys reclaim via the pool stranded-locks endpoint) + truthful BUY refunds (never
 # shows 已退款 over a still-locked BNB; stranded buys auto-recover on reopen). v2 swap: pool locks
 # its side FIRST so the user locks once and can walk away; the swap finishes on
 # its own and a BNB→EXFER buy settles in a few minutes. Carries forward the
 # swap-recovery hotfixes (settle-over-refund + swap_refresh RPC, was 8b4d396) and
 # the stranded-lock journal-independent recovery (5ad5ca7). Keep desktop on the
 # SAME rev.
-exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "23e89ce34f70a65905286f0d12268fa3946710a1" }
+exfer-walletd      = { git = "https://github.com/exfer-stack/exfer-walletd", rev = "42c58d6f27c2d38f01176e4c9a78632e842db5fa" }
 
 # HTTP client used by the Tauri Rust side to talk to the embedded
 # walletd over loopback HTTPS. `rustls-tls-manual-roots` disables
