@@ -82,11 +82,12 @@ type T = ReturnType<typeof useT>["t"];
 function toolLabel(t: T, name: string): string {
   const key = `agent.toolLabel.${name}` as MsgKey;
   const label = t(key);
-  // t() returns the EN fallback string when a key is missing only if the key
-  // exists; for a genuinely-unknown tool the key isn't in the table so t()
-  // returns the key itself — detect that and de-prefix the raw name instead.
-  if (label === key) return name.replace(/^exfer_/, "").replace(/_/g, " ");
-  return label;
+  // A missing key doesn't come back as the key — interpolate() turns the
+  // undefined lookup into "", so the old `label === key` guard never fired and
+  // every unlabelled tool (all of crypto_*, web_*) rendered a BLANK title.
+  // Treat empty as a miss too and de-prefix the raw name, same as desktop.
+  if (label && label !== key) return label;
+  return name.replace(/^exfer_/, "").replace(/_/g, " ");
 }
 
 // Tools whose result is folded into a dedicated humanized one-liner. For these

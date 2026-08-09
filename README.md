@@ -33,7 +33,7 @@ or restores one from a `.vault` backup.
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/wallet.png" width="170" alt="Wallet — total balance, addresses, BNB wallet and mining entry points" /></td>
-    <td align="center"><img src="docs/screenshots/agent.png" width="170" alt="Agent — an on-device analyst that asks before it moves money" /></td>
+    <td align="center"><img src="docs/screenshots/agent-tools.png" width="170" alt="Agent — honeypot, holder and trade-flow checks with their real results" /></td>
     <td align="center"><img src="docs/screenshots/activity.png" width="170" alt="Activity — on-chain history with real tx ids" /></td>
     <td align="center"><img src="docs/screenshots/settings.png" width="170" alt="Settings — language, theme, accent, node, indexer, vote" /></td>
   </tr>
@@ -60,10 +60,13 @@ or restores one from a `.vault` backup.
   </tr>
 </table>
 
-**Agent** is an on-device analyst: hunt fresh gems, sniff out honeypots, audit
-any contract, read the market. Every claim comes back with the tool call that
-produced it, and it can send, swap, or mine only behind a confirmation you can
-decline. Bring your own AI provider key in Settings.
+**Agent** is an on-device analyst. Bring your own LLM key (DeepSeek, OpenAI,
+OpenRouter, Groq, Together, Anthropic, or a local Ollama) and it gets the
+wallet's own tools — balance, chain tip, fee dry-runs, transfers, swaps,
+mining — plus market data, holder and trade flow, GoPlus security scans, live
+buy→sell honeypot simulation, verified contract source, and web search. Every
+claim comes back with the tool call that produced it, and anything that moves
+money stops for a confirmation you can decline.
 
 **Activity** is backed by the [exfer-indexer](https://github.com/exfer-stack/exfer-indexer):
 a complete per-address on-chain timeline with real tx ids and native **From / To**
