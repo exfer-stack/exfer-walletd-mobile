@@ -49,11 +49,13 @@ or restores one from a `.vault` backup.
   <tr>
     <td align="center"><img src="docs/screenshots/receive.png" width="170" alt="Receive — QR code, full address, share and copy" /></td>
     <td align="center"><img src="docs/screenshots/send.png" width="170" alt="Send — up to 16 recipients, paste or scan, Max" /></td>
+    <td align="center"><img src="docs/screenshots/swap.png" width="170" alt="Swap — EXFER/USD candlesticks, pool stats and the swap entry points" /></td>
     <td align="center"><img src="docs/screenshots/earn.png" width="170" alt="Earn — solo or pool CPU mining from the phone" /></td>
   </tr>
   <tr>
     <td align="center"><b>Receive</b><br/>QR + share</td>
     <td align="center"><b>Send</b><br/>up to 16 recipients</td>
+    <td align="center"><b>Swap</b><br/>chart + live pool rate</td>
     <td align="center"><b>Earn</b><br/>solo / pool mining</td>
   </tr>
 </table>
