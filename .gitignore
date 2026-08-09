@@ -38,5 +38,9 @@ dist/
 *.png
 *.jpg
 *.jpeg
+# ...except the README screenshots, which are the one set of images
+# this repo intentionally ships. Without this, `git add docs/screenshots`
+# silently no-ops on new files and the README ends up with broken links.
+!docs/screenshots/*.png
 test-results/
 .design-audit/

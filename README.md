@@ -49,7 +49,7 @@ or restores one from a `.vault` backup.
   <tr>
     <td align="center"><img src="docs/screenshots/receive.png" width="170" alt="Receive — QR code, full address, share and copy" /></td>
     <td align="center"><img src="docs/screenshots/send.png" width="170" alt="Send — up to 16 recipients, paste or scan, Max" /></td>
-    <td align="center"><img src="docs/screenshots/swap.png" width="170" alt="Swap — EXFER/USD candlesticks, pool stats and the swap entry points" /></td>
+    <td align="center"><img src="docs/screenshots/swap-chart.png" width="170" alt="Swap — EXFER/USD candlesticks, pool stats and the swap entry points" /></td>
     <td align="center"><img src="docs/screenshots/earn.png" width="170" alt="Earn — solo or pool CPU mining from the phone" /></td>
   </tr>
   <tr>
