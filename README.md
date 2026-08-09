@@ -25,26 +25,43 @@ bloat), a pure-black canvas with a single cyan accent, and Geist / Geist Mono.
 
 ## Screens
 
+A bottom tab bar — **Wallet** / **Agent** / **Swap** / **Activity** /
+**Settings**. Receive, Send, mining, swap, and each address's detail open as
+sheets over the tab you're on. First launch creates a password-encrypted wallet
+or restores one from a `.vault` backup.
+
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/wallet.png" width="160" alt="Wallet — balance and addresses" /></td>
-    <td align="center"><img src="docs/screenshots/activity.png" width="160" alt="Activity — From/To, on-chain history" /></td>
-    <td align="center"><img src="docs/screenshots/send.png" width="160" alt="Send — multiple recipients" /></td>
-    <td align="center"><img src="docs/screenshots/receive.png" width="160" alt="Receive — QR and address" /></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="160" alt="Settings — node, indexer, backup" /></td>
+    <td align="center"><img src="docs/screenshots/wallet.png" width="170" alt="Wallet — total balance, addresses, BNB wallet and mining entry points" /></td>
+    <td align="center"><img src="docs/screenshots/agent.png" width="170" alt="Agent — an on-device analyst that asks before it moves money" /></td>
+    <td align="center"><img src="docs/screenshots/activity.png" width="170" alt="Activity — on-chain history with real tx ids" /></td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="170" alt="Settings — language, theme, accent, node, indexer, vote" /></td>
   </tr>
   <tr>
     <td align="center"><b>Wallet</b><br/>balance + addresses</td>
+    <td align="center"><b>Agent</b><br/>gems · honeypots · audits</td>
     <td align="center"><b>Activity</b><br/>From / To · on-chain</td>
-    <td align="center"><b>Send</b><br/>up to 16 recipients</td>
-    <td align="center"><b>Receive</b><br/>QR + copy</td>
     <td align="center"><b>Settings</b><br/>node · indexer · backup</td>
   </tr>
 </table>
 
-A bottom tab bar — **Wallet** / **Activity** / **Settings**. Receive, Send, and
-each address's detail open as full-screen sheets. First launch creates a
-password-encrypted wallet or restores one from a `.vault` backup.
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/receive.png" width="170" alt="Receive — QR code, full address, share and copy" /></td>
+    <td align="center"><img src="docs/screenshots/send.png" width="170" alt="Send — up to 16 recipients, paste or scan, Max" /></td>
+    <td align="center"><img src="docs/screenshots/earn.png" width="170" alt="Earn — solo or pool CPU mining from the phone" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Receive</b><br/>QR + share</td>
+    <td align="center"><b>Send</b><br/>up to 16 recipients</td>
+    <td align="center"><b>Earn</b><br/>solo / pool mining</td>
+  </tr>
+</table>
+
+**Agent** is an on-device analyst: hunt fresh gems, sniff out honeypots, audit
+any contract, read the market. Every claim comes back with the tool call that
+produced it, and it can send, swap, or mine only behind a confirmation you can
+decline. Bring your own AI provider key in Settings.
 
 **Activity** is backed by the [exfer-indexer](https://github.com/exfer-stack/exfer-indexer):
 a complete per-address on-chain timeline with real tx ids and native **From / To**
@@ -52,27 +69,13 @@ counterparties — including deposits that landed while the app was closed. The
 indexer endpoint is configurable in Settings (it serves public read-only chain
 data, so no token is needed).
 
-### Bilingual — English / 简体中文
+**Swap** trades EXFER ⇄ BNB against the live pool rate, with a candlestick
+chart, market cap and 24h volume — and **Earn** puts the phone's CPU on the
+Argon2id proof-of-work, solo or pool.
 
-The whole UI switches live between English and Chinese (tap **EN / 中文** in
-Settings → Appearance). Same screens, fully localized:
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/wallet-zh.png" width="160" alt="钱包" /></td>
-    <td align="center"><img src="docs/screenshots/activity-zh.png" width="160" alt="动态" /></td>
-    <td align="center"><img src="docs/screenshots/send-zh.png" width="160" alt="发送" /></td>
-    <td align="center"><img src="docs/screenshots/receive-zh.png" width="160" alt="收款" /></td>
-    <td align="center"><img src="docs/screenshots/settings-zh.png" width="160" alt="设置" /></td>
-  </tr>
-  <tr>
-    <td align="center"><b>钱包</b><br/>余额 + 地址</td>
-    <td align="center"><b>动态</b><br/>来自 / 至 · 链上</td>
-    <td align="center"><b>发送</b><br/>最多 16 个收款人</td>
-    <td align="center"><b>收款</b><br/>二维码 + 复制</td>
-    <td align="center"><b>设置</b><br/>节点 · 索引器 · 备份</td>
-  </tr>
-</table>
+**Bilingual** — the whole UI switches live between English and 简体中文
+(**EN / 中文** in Settings → Appearance), alongside a light/dark theme and four
+accent colours.
 
 ## What you can do
 
