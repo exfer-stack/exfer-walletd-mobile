@@ -746,7 +746,9 @@ export function AgentTab({ lang }: { lang: Lang }) {
             <h2 className="title-lg">{t("agent.empty.title")}</h2>
             <p className="dim" style={{ margin: "8px 0 6px", fontSize: "14px", lineHeight: 1.5 }}>{t("agent.empty.subtitle")}</p>
             <p className="faint" style={{ margin: "0 8px 18px", fontSize: "12.5px", lineHeight: 1.5 }}>{t("agent.empty.safety")}</p>
-            {!hasKey && (
+            {/* Only nudge here when the composer ISN'T already gated — inside the
+                app both fire on a missing key and the same CTA rendered twice. */}
+            {!hasKey && !needsKey && (
               <div className="banner banner-info" style={{ margin: "0 4px 16px", textAlign: "left", display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }} data-testid="agent-nokey-nudge">
                 <span>{t("agent.nudge.connect")}</span>
                 <button type="button" className="btn btn-sm" style={{ flex: "0 0 auto" }} onClick={() => setShowSettings(true)}>{t("agent.nudge.connectCta")}</button>
